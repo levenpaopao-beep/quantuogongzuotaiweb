@@ -1,0 +1,40 @@
+# macOS
+.DS_Store
+
+# Python cache and virtual environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Node dependencies
+node_modules
+
+# Logs and generated output
+*.log
+outputs/
+
+# Local business data and databases
+基础数据库/*
+!基础数据库/report_rules.json
+erp数据源/
+temu数据源表/
+shein数据源表/
+低分预警输入表/
+低分预警历史归档/
+核价输入表/
+
+# Spreadsheet/report binaries generated or supplied locally
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+
+# Windows/macOS packaged runtimes and archives
+*.zip
+*.7z
+*.rar
+*.exe
+*.msi
