@@ -1,23 +1,25 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-set "PY=%~dp0runtime\python\python.exe"
 
-if not exist "%PY%" (
-  set "PY=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
-)
-
-if not exist "%PY%" (
-  echo Python runtime not found:
-  echo %PY%
-  echo.
+if not exist "%~dp0package.json" (
+  echo 缺少 package.json，无法启动 Electron 桌面版。
   pause
   exit /b 1
 )
 
-set "PYTHONPATH=%~dp0vendor"
-start "Daily Ops Service - keep this window open" cmd /k ""%PY%" -W ignore::DeprecationWarning "%~dp0daily_ops_app.py""
+where npm >nul 2>nul
+if errorlevel 1 (
+  echo 找不到 npm，请先安装 Node.js。
+  pause
+  exit /b 1
+)
 
-echo Starting Daily Ops Workbench...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ok=$false; for($i=0;$i -lt 30;$i++){ try { $r=Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8765/api/health' -TimeoutSec 1; if($r.StatusCode -eq 200){$ok=$true; break} } catch { Start-Sleep -Milliseconds 500 } }; if($ok){ Start-Process 'http://127.0.0.1:8765' } else { Write-Host 'Service did not start. Check the service window for errors.'; pause }"
+if not exist "%~dp0node_modules\electron" (
+  echo 首次启动需要安装桌面运行组件，请稍等...
+  set "ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/"
+  npm install --cache "%~dp0.npm-cache"
+)
+
+echo Starting Daily Ops Electron Desktop...
+npm start

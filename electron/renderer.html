@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PETCIRCLE 运营工作台</title>
+    <link rel="stylesheet" href="./renderer.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img class="brand-logo" src="./assets/petcircle-app-icon.png" alt="PETCIRCLE logo" />
+          <div class="brand-title">PETCIRCLE 运营工作台</div>
+        </div>
+        <button class="nav-item" data-page="overview">概览</button>
+        <div class="nav-section">工作流</div>
+        <button class="nav-item" data-page="daily">每日工作流</button>
+        <button class="nav-item active" data-page="weekly">每周工作流</button>
+        <button class="nav-item" data-page="monthly">每月工作流</button>
+        <div class="nav-section">数据管理</div>
+        <button class="nav-item" data-page="weekly">数据源管理</button>
+        <button class="nav-item" data-page="search">基础数据查询</button>
+        <div class="nav-section">报表管理</div>
+        <button class="nav-item" data-page="reports">报表模板</button>
+        <button class="nav-item" data-page="outputs">报表历史</button>
+        <div class="nav-section">系统管理</div>
+        <button class="nav-item" data-page="rules">规则设置</button>
+        <button class="nav-item" data-page="logs">操作日志</button>
+        <div class="operator">
+          <div class="avatar">OP</div>
+          <div>
+            <div class="operator-name">运营同学</div>
+            <div class="operator-role">运营组</div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="titlebar">
+          <div></div>
+          <h1><img class="title-logo" src="./assets/petcircle-app-icon.png" alt="" />PETCIRCLE 运营工作台</h1>
+          <div class="top-actions">
+            <button class="icon-action" id="refreshBtn">刷新</button>
+            <button class="icon-action" data-page="rules">设置</button>
+            <button class="icon-action">帮助</button>
+          </div>
+        </header>
+
+        <section class="page page-active" id="weeklyPage">
+          <div class="segmented">
+            <button class="segment active" data-mode="sources">数据源</button>
+            <button class="segment" data-mode="reports">生成报表</button>
+            <button class="segment" data-mode="outputs">输出记录</button>
+          </div>
+
+          <div class="workbench-grid">
+            <section class="panel source-panel">
+              <div class="panel-head">
+                <div>
+                  <h2>数据源状态</h2>
+                  <p id="statusSummary">正在读取数据源状态</p>
+                </div>
+                <button class="ghost-button" id="batchButton">批量操作⌄</button>
+              </div>
+              <div class="source-table">
+                <div class="table-row table-head">
+                  <span>数据源</span>
+                  <span>最新文件</span>
+                  <span>待提交</span>
+                  <span>记录数</span>
+                  <span>状态</span>
+                  <span>操作</span>
+                </div>
+                <div id="sourceRows"></div>
+              </div>
+              <div class="sync-card">
+                <strong>数据源同步提醒</strong>
+                <span id="syncHint">所有已启用的数据源均已检查完成</span>
+                <button class="ghost-button">查看同步日志</button>
+              </div>
+            </section>
+
+            <aside class="panel queue-panel">
+              <div class="panel-head">
+                <div>
+                  <h2>本周完成状态</h2>
+                  <p id="reportCount">本周生成队列 · 共 0 个报表</p>
+                </div>
+              </div>
+              <div class="queue-progress" id="completionSummary">
+                <span>已完成 0</span>
+                <span>未完成 0</span>
+              </div>
+              <div id="reportQueue" class="queue-list"></div>
+              <button class="primary-wide" id="generateWeeklyBtn">生成所有就绪报表</button>
+            </aside>
+          </div>
+        </section>
+
+        <section class="page" id="reportsPage">
+          <div class="simple-panel">
+            <h2>生成报表</h2>
+            <div id="reportCards" class="report-grid"></div>
+          </div>
+        </section>
+
+        <section class="page" id="outputsPage">
+          <div class="simple-panel">
+            <h2>输出记录</h2>
+            <div id="outputRows" class="output-list"></div>
+          </div>
+        </section>
+
+        <section class="page" id="rulesPage">
+          <div class="simple-panel">
+            <h2>规则设置</h2>
+            <div id="rulesForm" class="rules-grid"></div>
+            <button class="primary-button" id="saveRulesBtn">保存规则</button>
+          </div>
+        </section>
+
+        <section class="page" id="searchPage">
+          <div class="simple-panel">
+            <h2>基础数据查询</h2>
+            <div class="search-bar"><input id="searchInput" placeholder="输入 SKU、SKC、店铺或负责人" /><button id="searchBtn">查询</button></div>
+            <div id="searchRows" class="output-list"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div id="toast" class="toast"></div>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

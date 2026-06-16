@@ -57,6 +57,7 @@ STORE_ALIASES = {
     "十三（节日）": "十三弟",
     "十五弟（毛衣）": "十五弟",
 }
+STORE_CODE_TO_NAME = {code: name for name, code in STORE_CODE_MAP.items()}
 
 OUTPUT_HEADERS = [
     "SPU",
@@ -114,6 +115,28 @@ def store_display(value):
     return STORE_CODE_MAP.get(text, text)
 
 
+def owner_lookup_keys(value):
+    text = canonical_store(value)
+    keys = []
+    if text:
+        keys.append(text)
+    code = STORE_CODE_MAP.get(text)
+    if code:
+        keys.append(code)
+    name = STORE_CODE_TO_NAME.get(text)
+    if name:
+        keys.append(canonical_store(name))
+    return list(OrderedDict((key, True) for key in keys).keys())
+
+
+def owner_for_store(value, owners):
+    for key in owner_lookup_keys(value):
+        owner = owners.get(key)
+        if owner:
+            return owner
+    return ""
+
+
 def style_basic_sheet(ws):
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -163,6 +186,8 @@ def load_owner_map(owner_file=OWNER_FILE):
         owner = norm(cell(row, headers, "业务", "负责人"))
         if store and owner:
             owners[store] = owner
+            for key in owner_lookup_keys(store):
+                owners[key] = owner
     return owners
 
 
@@ -264,7 +289,7 @@ def load_sales_index(sales_files, owners):
                 continue
             store_raw = canonical_store(cell(row, headers, "店铺"))
             store = store_display(store_raw)
-            owner = owners.get(store_raw, "")
+            owner = owner_for_store(store_raw, owners)
             skc = norm(cell(row, headers, "SKC"))
             sku_code = norm(cell(row, headers, "SKU货号"))
             product_code = sku_code.split("@", 1)[0].split("-", 1)[0].strip() if sku_code else ""
@@ -315,7 +340,8 @@ def load_hot_spus(hot_files):
     return spus
 
 
-def build_output_rows(current_rows, history_spus, sales_index, erp_names, hot_spus):
+def build_output_rows(current_rows, history_spus, sales_index, erp_names, hot_spus, owners=None):
+    owners = owners or {}
     output_rows = []
     for row in current_rows:
         spu = norm(row.get("SPU"))
@@ -324,14 +350,18 @@ def build_output_rows(current_rows, history_spus, sales_index, erp_names, hot_sp
         in_sales = bool(sales)
         product_code = norm(sales.get("ERP货品编码", "")) if in_sales else ""
         product_name = erp_names.get(spu) or (erp_names.get(product_code) if product_code else "") or "无ERP匹配信息"
+        input_store = row.get("所属店铺_原始", "")
+        output_store = sales.get("所属店铺", store_display(input_store)) if in_sales else store_display(input_store)
+        product_owner = sales.get("产品负责人", "") if in_sales else ""
+        product_owner = product_owner or owner_for_store(input_store, owners) or owner_for_store(output_store, owners)
         output_rows.append(
             {
                 "SPU": spu,
                 "SKC": sales.get("SKC", "") if in_sales else "",
                 "货品名称": product_name,
                 "店铺品质分情况": row.get("店铺品质分情况", ""),
-                "所属店铺": sales.get("所属店铺", row.get("所属店铺_原始", "")) if in_sales else "",
-                "产品负责人": sales.get("产品负责人", "") if in_sales else "",
+                "所属店铺": output_store,
+                "产品负责人": product_owner,
                 "是否下架": status["是否下架"],
                 "平台仓库库存": int(sales.get("平台仓库库存", 0)) if in_sales else "",
                 "是否爆旺款": "是" if in_sales and spu in hot_spus else ("否" if in_sales else ""),
@@ -341,14 +371,6 @@ def build_output_rows(current_rows, history_spus, sales_index, erp_names, hot_sp
                 "填表时间": row.get("填表时间", ""),
             }
         )
-    output_rows.sort(
-        key=lambda item: (
-            0 if item["是否本周新增低分"] == "本周新增低分产品" else 1,
-            0 if item["是否下架"] == "在售" else 1,
-            str(item["所属店铺"]),
-            str(item["SPU"]),
-        )
-    )
     return output_rows
 
 
@@ -472,7 +494,7 @@ def generate_report(current_files, history_files, sales_files, hot_files, erp_fi
     sales_index = load_sales_index(sales_files, owners)
     hot_spus = load_hot_spus(hot_files)
     erp_names = load_erp_name_map(erp_files)
-    rows = build_output_rows(current_rows, history_spus, sales_index, erp_names, hot_spus)
+    rows = build_output_rows(current_rows, history_spus, sales_index, erp_names, hot_spus, owners)
     write_workbook(
         rows,
         output_path,

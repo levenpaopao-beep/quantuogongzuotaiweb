@@ -12,6 +12,8 @@ ZIP_PATH = ROOT / "outputs" / f"{PACKAGE_NAME}.zip"
 
 APP_FILES = [
     "daily_ops_app.py",
+    "daily_ops_desktop.py",
+    "daily_ops_desktop_adapter.py",
     "generate_temu_bargain_reply.py",
     "generate_temu_inventory_abnormal.py",
     "generate_temu_slow_moving_weekly.py",
@@ -52,11 +54,11 @@ if not exist "%PY%" (
   exit /b 1
 )
 
-start "Daily Ops Service - keep this window open" cmd /k ""%PY%" -W ignore::DeprecationWarning "%~dp0daily_ops_app.py""
-
 echo Starting Daily Ops Workbench...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ok=$false; for($i=0;$i -lt 30;$i++){ try { $r=Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8765/api/status' -TimeoutSec 1; if($r.StatusCode -eq 200){$ok=$true; break} } catch { Start-Sleep -Milliseconds 500 } }; if($ok){ Start-Process 'http://127.0.0.1:8765' } else { Write-Host 'Service did not start. Check the service window for errors.'; pause }"
+"%PY%" -W ignore::DeprecationWarning "%~dp0daily_ops_desktop.py"
+echo.
+echo 日常运营工作台桌面版已退出。
+pause
 """,
     )
 
@@ -69,12 +71,11 @@ def make_readme(package_root):
 使用方式：
 1. 解压整个文件夹到任意位置。
 2. 双击“启动日常运营工作台.bat”。
-3. 不要关闭弹出的服务窗口。
-4. 浏览器会自动打开 http://127.0.0.1:8765。
+3. 工作台会以桌面窗口打开，不需要浏览器和网址。
 
 数据源放置：
-- Temu平台表、Temu爆旺款：放入 temu数据源表，或在网页“数据源上传”中上传。
-- ERP基础信息、ERP组合装：放入 erp数据源，或在网页“数据源上传”中上传。
+- Temu平台表、Temu爆旺款：放入 temu数据源表，或在桌面软件“每周工作流”中上传。
+- ERP基础信息、ERP组合装：放入 erp数据源，或在桌面软件“每周工作流”中上传。
 - 店铺负责人表：放在本文件夹根目录，文件名建议为 店铺负责人对应表.xlsx。
 
 输出规则：
@@ -88,7 +89,7 @@ def make_readme(package_root):
 
 注意：
 - 本包面向 Windows 电脑。
-- 如果 8765 端口被占用，请先关闭其他正在运行的工作台服务。
+- 桌面版不需要本地端口；关闭窗口即可退出。
 """,
     )
 

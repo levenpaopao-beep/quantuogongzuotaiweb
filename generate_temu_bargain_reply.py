@@ -24,10 +24,12 @@ COMBO_FILES = None
 OUTPUT_HEADERS = [
     "商家编码",
     "货品名称",
-    "规格名称",
-    "店铺（显示编号）",
+    "skc",
+    "店铺",
     "申报价",
     "建议价格",
+    "成本价",
+    "批发价",
     "是否通过",
     "平台在售链接数",
     "平台在售最低申报价",
@@ -110,11 +112,12 @@ def header_map(row):
     return {text(value): idx for idx, value in enumerate(row) if text(value)}
 
 
-def get(row, headers, name):
-    idx = headers.get(name)
-    if idx is None or idx >= len(row):
-        return ""
-    return row[idx]
+def get(row, headers, *names):
+    for name in names:
+        idx = headers.get(name)
+        if idx is not None and idx < len(row):
+            return row[idx]
+    return ""
 
 
 def latest_by_date(pattern, folder):
@@ -203,6 +206,7 @@ def load_input_rows(path):
                 "商家编码": code,
                 "款号": product_code(code) if code else "",
                 "货品名称": text(get(row, headers, "货品名称")),
+                "skc": text(get(row, headers, "skc", "SKC")),
                 "规格名称": text(get(row, headers, "规格名称")),
                 "店铺": store_code(get(row, headers, "店铺")),
                 "原申报价": number(get(row, headers, "申报价")),
@@ -409,16 +413,17 @@ def enrich_input_rows(input_rows, erp_by_code, erp_by_name):
                 current["款号"] = product_code(chosen["商家编码"])
         if current.get("商家编码") and not current.get("款号"):
             current["款号"] = product_code(current["商家编码"])
-        proposed_price = number(current.get("原建议价格"))
-        if proposed_price <= 0:
-            proposed_price = number(current.get("原申报价"))
-        current["申报价"] = proposed_price
+        quoted_price = number(current.get("原申报价"))
+        platform_suggested_price = number(current.get("原建议价格"))
+        current["申报价"] = quoted_price
+        current["建议价格"] = platform_suggested_price if platform_suggested_price > 0 else ""
+        current["判断价格"] = platform_suggested_price if platform_suggested_price > 0 else quoted_price
         enriched.append(current)
     return enriched
 
 
 def evaluate_offer(offer):
-    price = number(offer.get("申报价"))
+    price = number(offer.get("判断价格", offer.get("申报价")))
     cost = number(offer.get("成本价"))
     wholesale = number(offer.get("批发价"))
     links = offer.get("在售链接") or []
@@ -426,30 +431,26 @@ def evaluate_offer(offer):
     min_price = min((number(link.get("申报价")) for link in links if number(link.get("申报价")) > 0), default=0)
 
     if cost > 0 and price < cost:
-        return {"是否通过": "拒绝上架-理由 亏损", "建议价格": money(cost)}
+        return {"是否通过": "拒绝上架-理由 亏损"}
 
     if link_count > 0 and offer.get("有爆旺款"):
-        return {"是否通过": "拒绝上架-理由 有爆旺款在售", "建议价格": ""}
+        return {"是否通过": "拒绝上架-理由 有爆旺款在售"}
 
     for link in links:
         link_price = number(link.get("申报价"))
         if number(link.get("7天销量")) > 10 and link_price > 0 and price < link_price * 0.95:
-            return {"是否通过": "拒绝上架-理由 有预备爆款链接在售", "建议价格": money(link_price * 0.95)}
+            return {"是否通过": "拒绝上架-理由 有预备爆款链接在售"}
 
     if link_count > 7:
-        return {"是否通过": "拒绝上架-理由 同时在架产品过多，15天以后再尝试上架", "建议价格": ""}
+        return {"是否通过": "拒绝上架-理由 同时在架产品过多，15天以后再尝试上架"}
 
     if 3 < link_count <= 6 and min_price > 0 and price < min_price * 0.95:
-        suggested = min_price * 0.95
-        status = f"拒绝上架-理由 报价过低建议价格为{money_text(suggested)}"
-        if cost > 0 and suggested < cost:
-            status += f"；现在最低申报价是{money_text(min_price)}，接近亏损"
-        return {"是否通过": status, "建议价格": money(suggested)}
+        return {"是否通过": "拒绝上架-理由 平台建议价低于在售最低价95%"}
 
     if wholesale > 0 and price < wholesale * 0.8:
-        return {"是否通过": "拒绝上架-理由 破价", "建议价格": money(wholesale * 0.8)}
+        return {"是否通过": "拒绝上架-理由 破价"}
 
-    return {"是否通过": "同意议价", "建议价格": ""}
+    return {"是否通过": "同意议价"}
 
 
 def build_output_rows(input_rows, erp, links_by_key, hot_keys):
@@ -466,9 +467,11 @@ def build_output_rows(input_rows, erp, links_by_key, hot_keys):
                 [
                     "",
                     row["货品名称"],
-                    row["规格名称"],
+                    row.get("skc", ""),
                     row["店铺"],
                     row["申报价"],
+                    row.get("建议价格", ""),
+                    "",
                     "",
                     "需人工核查-未匹配ERP货品",
                     len(links),
@@ -481,6 +484,7 @@ def build_output_rows(input_rows, erp, links_by_key, hot_keys):
         decision = evaluate_offer(
             {
                 "申报价": row["申报价"],
+                "判断价格": row.get("判断价格", row["申报价"]),
                 "成本价": erp_row.get("成本价", 0),
                 "批发价": erp_row.get("批发价", 0),
                 "在售链接": links,
@@ -491,10 +495,12 @@ def build_output_rows(input_rows, erp, links_by_key, hot_keys):
             [
                 row["商家编码"],
                 row["货品名称"] or erp_row.get("货品名称", ""),
-                row["规格名称"] or erp_row.get("规格名称", ""),
+                row.get("skc", ""),
                 row["店铺"],
                 row["申报价"],
-                decision["建议价格"],
+                row.get("建议价格", ""),
+                money(erp_row.get("成本价", 0)) if number(erp_row.get("成本价", 0)) else "",
+                money(erp_row.get("批发价", 0)) if number(erp_row.get("批发价", 0)) else "",
                 decision["是否通过"],
                 len(links),
                 money(min_price) if min_price else "",
@@ -524,7 +530,7 @@ def write_workbook(rows, output_path):
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = border
 
-    widths = [18, 26, 18, 14, 12, 18, 48, 16, 18, 20, 22]
+    widths = [18, 26, 18, 12, 12, 18, 12, 12, 48, 16, 18, 20, 22]
     for idx, width in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(idx)].width = width
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row, max_col=ws.max_column):

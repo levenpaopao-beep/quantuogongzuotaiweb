@@ -39,6 +39,10 @@ def txt(value):
 def num(value):
     if value is None or value == "":
         return 0.0
+    try:
+        return float(str(value).replace(",", "").strip())
+    except ValueError:
+        return 0.0
 
 
 def active_hot_rules():
@@ -48,10 +52,6 @@ def active_hot_rules():
     if isinstance(current, dict):
         merged.update(current)
     return merged
-    try:
-        return float(str(value).replace(",", "").strip())
-    except ValueError:
-        return 0.0
 
 
 def norm_sku(value):

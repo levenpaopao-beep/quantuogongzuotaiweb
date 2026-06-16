@@ -27,7 +27,7 @@ DEFAULT_RULES = {
         "new_slow_min_days": 30,
         "new_slow_max_days": 60,
         "old_slow_min_days": 180,
-        "group_by": "店铺+SPU",
+        "group_by": "店铺+SKC",
         "sales30_total_equals": 0,
     }
 }
@@ -46,7 +46,7 @@ STORE_ORDER = [
     "十一弟",
     "十二弟",
     "十三（节日）",
-    "十五弟（毛衣）",
+    "十五弟",
 ]
 STORE_RANK = {name: i for i, name in enumerate(STORE_ORDER)}
 STORE_ALIASES = {
@@ -55,7 +55,10 @@ STORE_ALIASES = {
     "十一": "十一弟",
     "十二": "十二弟",
     "十三": "十三（节日）",
-    "十五": "十五弟（毛衣）",
+    "十五": "十五弟",
+    "十五弟（毛衣）": "十五弟",
+    "15": "十五弟",
+    "15di": "十五弟",
 }
 
 DETAIL_COLUMNS = [
@@ -102,7 +105,52 @@ def norm(value):
 
 def canonical_store(value):
     text = norm(value)
-    return STORE_ALIASES.get(text, text)
+    return STORE_ALIASES.get(text, STORE_ALIASES.get(text.lower(), text))
+
+
+OWNER_STORE_CODE_MAP = {
+    "弟弟": "1",
+    "一弟": "1",
+    "二弟": "2",
+    "三弟": "3",
+    "四弟": "4",
+    "五弟": "5",
+    "六弟": "6",
+    "七弟": "7",
+    "八弟": "8",
+    "九弟": "9",
+    "九弟（喵喵）": "9",
+    "十弟": "10",
+    "十一": "11",
+    "十一弟": "11",
+    "十二": "12",
+    "十二弟": "12",
+    "十三": "13",
+    "十三弟": "13",
+    "十三（节日）": "13",
+    "十五": "15",
+    "十五弟": "15",
+    "十五弟（毛衣）": "15",
+    "15": "15",
+    "15di": "15",
+}
+
+
+def owner_lookup_keys(store):
+    raw = norm(store)
+    canonical = canonical_store(raw)
+    keys = {raw, canonical} - {""}
+    for item in list(keys):
+        if re.fullmatch(r"[一二三四五六七八九十]+", item):
+            keys.add(f"{item}弟")
+        if item.endswith("弟") and re.fullmatch(r"[一二三四五六七八九十]+", item[:-1]):
+            keys.add(item[:-1])
+        code = OWNER_STORE_CODE_MAP.get(item)
+        if code:
+            keys.add(code)
+            if code == "15":
+                keys.update({"十五", "十五弟", "十五弟（毛衣）", "15di"})
+    return keys
 
 
 def active_slow_rules():
@@ -188,6 +236,8 @@ def load_owner_map():
         owner = norm(row[owner_i] if owner_i < len(row) else "")
         if store and owner:
             owners[store] = owner
+            for key in owner_lookup_keys(store):
+                owners.setdefault(key, owner)
     return owners
 
 
@@ -266,7 +316,7 @@ def read_source_rows():
     groups = defaultdict(lambda: {"rows": [], "sales30_total": 0, "days": []})
     source_count = 0
     skipped_no_days = 0
-    skipped_no_spu = 0
+    skipped_no_skc = 0
     skipped_missing_required = 0
     erp_matched = 0
     erp_unmatched = 0
@@ -285,6 +335,7 @@ def read_source_rows():
         for source_row_num, values in enumerate(rows, start=2):
             source_count += 1
             store = canonical_store(values[hm["店铺"]] if hm["店铺"] < len(values) else "")
+            skc = norm(values[hm["SKC"]] if hm["SKC"] < len(values) else "")
             sku = norm(values[hm["SKU货号"]] if hm["SKU货号"] < len(values) else "")
             days = values[hm["加入站点时长"]] if hm["加入站点时长"] < len(values) else ""
             if not store or not sku:
@@ -295,8 +346,8 @@ def read_source_rows():
                 continue
             days_num = to_number(days)
             spu = spu_key(sku)
-            if not spu:
-                skipped_no_spu += 1
+            if not skc:
+                skipped_no_skc += 1
                 continue
 
             sales30 = to_number(values[hm["30天销量"]] if hm["30天销量"] < len(values) else 0)
@@ -314,7 +365,7 @@ def read_source_rows():
                 "负责人": owners.get(store, ""),
                 "ERP货品名称": erp.get("ERP货品名称") or norm(values[hm.get("产品名称", -1)] if hm.get("产品名称", -1) >= 0 and hm["产品名称"] < len(values) else ""),
                 "规格名称": erp.get("规格名称") or norm(values[hm.get("SKU属性", -1)] if hm.get("SKU属性", -1) >= 0 and hm["SKU属性"] < len(values) else ""),
-                "SKC": norm(values[hm["SKC"]] if hm["SKC"] < len(values) else ""),
+                "SKC": skc,
                 "SKU ID": norm(values[hm["SKU ID"]] if hm["SKU ID"] < len(values) else ""),
                 "SKU货号": sku,
                 "申报价": values[hm["申报价格"]] if hm["申报价格"] < len(values) else "",
@@ -334,30 +385,30 @@ def read_source_rows():
             }
             candidate_rows.append(row)
 
-            group = groups[(row["店铺"], spu)]
+            group = groups[(row["店铺"], row["SKC"])]
             group["rows"].append(row)
             group["sales30_total"] += sales30
             group["days"].append(days_num)
 
     new_rows = []
     old_rows = []
-    skipped_spu_has_sales = 0
-    skipped_spu_mixed_days = 0
+    skipped_skc_has_sales = 0
+    skipped_skc_mixed_days = 0
 
     for group in groups.values():
         if group["sales30_total"] != 0:
-            skipped_spu_has_sales += len(group["rows"])
+            skipped_skc_has_sales += len(group["rows"])
             continue
         min_days = min(group["days"]) if group["days"] else 0
         max_days = max(group["days"]) if group["days"] else 0
         if min_days > new_slow_min_days and max_days < new_slow_max_days:
             target = new_rows
-            action = f"新品滞销：上架超过{int(new_slow_min_days)}天且小于{int(new_slow_max_days)}天，SPU近30天无销量，检查曝光、价格、标题/主图，必要时优化后继续观察"
+            action = f"新品滞销：上架超过{int(new_slow_min_days)}天且小于{int(new_slow_max_days)}天，SKC近30天无销量，检查曝光、价格、标题/主图，必要时优化后继续观察"
         elif min_days > old_slow_min_days:
             target = old_rows
-            action = f"老品滞销：上架超过{int(old_slow_min_days)}天且SPU近30天无销量，建议下架、清仓或合并库存处理"
+            action = f"老品滞销：上架超过{int(old_slow_min_days)}天且SKC近30天无销量，建议下架、清仓或合并库存处理"
         else:
-            skipped_spu_mixed_days += len(group["rows"])
+            skipped_skc_mixed_days += len(group["rows"])
             continue
 
         for row in group["rows"]:
@@ -371,15 +422,20 @@ def read_source_rows():
         "源数据日期": source_date,
         "源文件": "、".join(path.name for path in source_files),
         "跳过：无上架天数": skipped_no_days,
-        "跳过：无SPU前缀": skipped_no_spu,
+        "跳过：无SKC": skipped_no_skc,
+        "跳过：无SPU前缀": 0,
         "跳过：缺少店铺或SKU": skipped_missing_required,
+        "参与SKC判断明细行数": len(candidate_rows),
+        "参与SKC判断组数": len(groups),
         "参与SPU判断明细行数": len(candidate_rows),
         "参与SPU判断组数": len(groups),
         "新品滞销上架天数超过": new_slow_min_days,
         "新品滞销上架天数小于": new_slow_max_days,
         "老品滞销上架天数超过": old_slow_min_days,
-        "跳过：SPU内30天有销量": skipped_spu_has_sales,
-        "跳过：SPU上架天数不在新品/老款范围": skipped_spu_mixed_days,
+        "跳过：SKC内30天有销量": skipped_skc_has_sales,
+        "跳过：SKC上架天数不在新品/老款范围": skipped_skc_mixed_days,
+        "跳过：SPU内30天有销量": skipped_skc_has_sales,
+        "跳过：SPU上架天数不在新品/老款范围": skipped_skc_mixed_days,
         "ERP基础表读取行数": erp_rows,
         "ERP组合装读取行数": combo_rows,
         "ERP匹配明细行数": erp_matched,
@@ -540,8 +596,8 @@ def add_validation_sheet(wb, new_rows, old_rows, source_stats):
     rows = [
         ["数据源日期", source_stats["源数据日期"], "读取 temu数据源表 中最新日期的 Temu仓库销售情况导出"],
         ["数据源文件", source_stats["源文件"], "读取最细 SKU 明细源表"],
-        ["新品筛选规则", "同店铺同SPU 30天销量合计=0，且上架天数大于30天、小于60天", "按SKU货号提取SPU前缀后分组判断，明细仍按SKU展开"],
-        ["老款筛选规则", "同店铺同SPU 30天销量合计=0，且组内最小上架天数>180", "按SKU货号提取SPU前缀后分组判断，明细仍按SKU展开"],
+        ["新品筛选规则", "同店铺同SKC 30天销量合计=0，且上架天数大于30天、小于60天", "按SKC分组判断，明细仍按SKU展开"],
+        ["老款筛选规则", "同店铺同SKC 30天销量合计=0，且组内最小上架天数>180", "按SKC分组判断，明细仍按SKU展开"],
         ["新品明细行数", len(new_rows), ""],
         ["新品去重SKC数", len({row.get("SKC") for row in new_rows if row.get("SKC")}), ""],
         ["新品去重SPU数", len({row.get("_SPU") for row in new_rows if row.get("_SPU")}), ""],
@@ -550,14 +606,14 @@ def add_validation_sheet(wb, new_rows, old_rows, source_stats):
         ["老款去重SPU数", len({row.get("_SPU") for row in old_rows if row.get("_SPU")}), ""],
         ["源表记录数", source_stats["源表记录数"], ""],
         ["跳过：无上架天数", source_stats["跳过：无上架天数"], ""],
-        ["跳过：无SPU前缀", source_stats["跳过：无SPU前缀"], ""],
+        ["跳过：无SKC", source_stats["跳过：无SKC"], ""],
         ["跳过：缺少店铺或SKU", source_stats["跳过：缺少店铺或SKU"], ""],
-        ["参与SPU判断明细行数", source_stats["参与SPU判断明细行数"], ""],
-        ["参与SPU判断组数", source_stats["参与SPU判断组数"], ""],
-        ["新品滞销定义", f"上架天数超过{int(source_stats['新品滞销上架天数超过'])}天且小于{int(source_stats['新品滞销上架天数小于'])}天，且同店铺同SPU近30天总销量为0", ""],
-        ["老品滞销定义", f"上架天数超过{int(source_stats['老品滞销上架天数超过'])}天，且同店铺同SPU近30天总销量为0", ""],
-        ["跳过：SPU内30天有销量", source_stats["跳过：SPU内30天有销量"], ""],
-        ["跳过：SPU上架天数不在新品/老款范围", source_stats["跳过：SPU上架天数不在新品/老款范围"], ""],
+        ["参与SKC判断明细行数", source_stats["参与SKC判断明细行数"], ""],
+        ["参与SKC判断组数", source_stats["参与SKC判断组数"], ""],
+        ["新品滞销定义", f"上架天数超过{int(source_stats['新品滞销上架天数超过'])}天且小于{int(source_stats['新品滞销上架天数小于'])}天，且同店铺同SKC近30天总销量为0", ""],
+        ["老品滞销定义", f"上架天数超过{int(source_stats['老品滞销上架天数超过'])}天，且同店铺同SKC近30天总销量为0", ""],
+        ["跳过：SKC内30天有销量", source_stats["跳过：SKC内30天有销量"], ""],
+        ["跳过：SKC上架天数不在新品/老款范围", source_stats["跳过：SKC上架天数不在新品/老款范围"], ""],
         ["ERP基础表读取行数", source_stats["ERP基础表读取行数"], ""],
         ["ERP组合装读取行数", source_stats["ERP组合装读取行数"], ""],
         ["ERP匹配明细行数", source_stats["ERP匹配明细行数"], ""],

@@ -23,6 +23,8 @@ PYTHON_EMBED_URL = f"https://www.python.org/ftp/python/{PYTHON_VERSION}/{PYTHON_
 
 APP_FILES = [
     "daily_ops_app.py",
+    "daily_ops_desktop.py",
+    "daily_ops_desktop_adapter.py",
     "generate_low_score_warning.py",
     "generate_temu_bargain_reply.py",
     "generate_temu_inventory_abnormal.py",
@@ -123,10 +125,6 @@ $InstallDir = Join-Path $env:LOCALAPPDATA 'DailyOpsWorkbenchV2'
 $desktop = [Environment]::GetFolderPath('Desktop')
 $shortcutPath = Join-Path $desktop '日常运营工作台 v2.0.lnk'
 
-try {
-  Invoke-WebRequest -UseBasicParsing -Method Post -Uri 'http://127.0.0.1:8765/api/shutdown' -ContentType 'application/json' -Body '{"reason":"uninstall"}' | Out-Null
-} catch {}
-
 if(Test-Path $InstallDir) {
   Remove-Item $InstallDir -Recurse -Force
 }
@@ -183,7 +181,7 @@ def make_readme(package_root):
 说明：
 - 报表输出目录为安装目录下的 outputs
 - 首次安装完成会自动启动工作台
-- 如需停止工作台，可运行安装目录中的“停止日常运营工作台.bat”
+- 如需停止工作台，直接关闭桌面窗口即可
 - 如需重新封装为 exe 安装向导，可在 Windows 上使用 scripts\\DailyOpsWorkbench_v2.0_InnoSetup.iss
 """
     write_text(package_root / "README_安装说明.txt", text)

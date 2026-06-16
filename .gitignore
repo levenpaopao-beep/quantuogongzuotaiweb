@@ -11,6 +11,7 @@ env/
 
 # Node dependencies
 node_modules
+.npm-cache/
 
 # Logs and generated output
 *.log

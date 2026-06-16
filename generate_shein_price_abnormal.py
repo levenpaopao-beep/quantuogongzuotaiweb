@@ -57,6 +57,35 @@ def sort_rows(rows):
     )
 
 
+def is_active_listing(row, headers):
+    return app.is_shein_active_listing(
+        app.cell(row, headers, "供应状态"),
+        app.cell(row, headers, "上架状态"),
+    )
+
+
+def summarize_source_files(files):
+    summary = {
+        store: {"active_skc": set(), "active_skc_count": 0}
+        for store in STORE_ORDER
+    }
+    for path in files:
+        store = store_from_file(path)
+        if store not in summary:
+            continue
+        rows = app.raw_xlsx.read_xlsx_rows(path)
+        if not rows:
+            continue
+        headers = app.header_map(rows[0])
+        for row in rows[1:]:
+            skc = app.norm(app.cell(row, headers, "SKC"))
+            if skc and is_active_listing(row, headers):
+                summary[store]["active_skc"].add(skc)
+    for item in summary.values():
+        item["active_skc_count"] = len(item["active_skc"])
+    return summary
+
+
 def main():
     OUTPUT.parent.mkdir(exist_ok=True)
     files = source_files()
@@ -110,6 +139,8 @@ def main():
             sales7 = app.to_number(app.cell(row, headers, "近7天销量"))
             sales30 = app.to_number(app.cell(row, headers, "近30天销量"))
             tag = app.norm(app.cell(row, headers, "商品标签"))
+            if not is_active_listing(row, headers):
+                continue
             item = summary[store]
             if skc:
                 item["skc"].add(skc)

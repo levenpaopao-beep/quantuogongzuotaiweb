@@ -7,6 +7,7 @@ from openpyxl import Workbook
 from generate_low_score_warning import (
     build_output_rows,
     classify_spu_status,
+    load_owner_map,
     load_low_score_rows,
     merge_current_rows,
 )
@@ -67,6 +68,40 @@ class LowScoreWarningTest(unittest.TestCase):
         erp_names = {"330318277": "天蓝色雨衣"}
         rows = build_output_rows(current_rows, set(), sales_index, erp_names, set())
         self.assertEqual(rows[0]["货品名称"], "天蓝色雨衣")
+
+    def test_preserves_import_spu_order_in_output(self):
+        current_rows = [
+            {"SPU": "300", "店铺品质分情况": "58.0", "所属店铺_原始": "3"},
+            {"SPU": "100", "店铺品质分情况": "57.0", "所属店铺_原始": "1"},
+            {"SPU": "200", "店铺品质分情况": "56.0", "所属店铺_原始": "2"},
+        ]
+        sales_index = {
+            "100": {"在售": True, "所属店铺": "1", "产品负责人": "小琴"},
+        }
+        rows = build_output_rows(current_rows, set(), sales_index, {}, set(), {"1": "小琴", "2": "洁琳", "3": "胡娟"})
+        self.assertEqual([row["SPU"] for row in rows], ["300", "100", "200"])
+
+    def test_uses_input_store_to_fill_owner_when_sales_missing(self):
+        current_rows = [{"SPU": "300", "店铺品质分情况": "58.0", "所属店铺_原始": "3"}]
+        rows = build_output_rows(current_rows, set(), {}, {}, set(), {"3": "胡娟"})
+        self.assertEqual(rows[0]["所属店铺"], "3")
+        self.assertEqual(rows[0]["产品负责人"], "胡娟")
+
+    def test_owner_map_supports_store_code_and_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "店铺负责人对应表.xlsx"
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["店铺", "业务"])
+            ws.append(["三弟", "胡娟"])
+            ws.append(["10", "洁琳"])
+            wb.save(path)
+
+            owners = load_owner_map(path)
+
+        self.assertEqual(owners["三弟"], "胡娟")
+        self.assertEqual(owners["3"], "胡娟")
+        self.assertEqual(owners["10"], "洁琳")
 
 
 if __name__ == "__main__":

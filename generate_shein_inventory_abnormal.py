@@ -18,7 +18,9 @@ OUTPUT = ROOT / "SHEIN仓备库存异常清单_20260603.xlsx"
 ERP_FILES = None
 SHEIN_FILES = None
 
-STORE_ORDER = ["琪琪", "童话", "牛牛", "加加", "宝宝"]
+EXCLUDED_PURCHASE_STORES = {"加加", "宝宝"}
+STORE_ORDER = ["琪琪", "童话", "牛牛"]
+ALL_STORE_NAMES = STORE_ORDER + sorted(EXCLUDED_PURCHASE_STORES)
 OWNERS = {
     "琪琪": "胡娟",
     "童话": "胡娟",
@@ -57,7 +59,7 @@ def size_rank(code):
 
 
 def store_from_file(path):
-    for store in STORE_ORDER:
+    for store in ALL_STORE_NAMES:
         if store in path.stem:
             return store
     return ""
@@ -65,7 +67,7 @@ def store_from_file(path):
 
 def latest_store_files():
     if SHEIN_FILES:
-        return [Path(path) for path in SHEIN_FILES]
+        return [Path(path) for path in SHEIN_FILES if store_from_file(Path(path)) not in EXCLUDED_PURCHASE_STORES]
     files = []
     for store in STORE_ORDER:
         candidates = sorted(
@@ -79,6 +81,44 @@ def latest_store_files():
 
 def header_map(row):
     return {norm(v): i for i, v in enumerate(row) if norm(v)}
+
+
+def is_active_listing(row, headers):
+    listing = xlsx.norm_text(cell(row, headers, "上架状态"))
+    return listing == "已上架"
+
+
+def cell(row, headers, *names):
+    for name in names:
+        if name in headers and headers[name] < len(row):
+            return row[headers[name]]
+    return None
+
+
+def summarize_source_files(files):
+    summary = {
+        store: {"active_skc": set(), "active_skc_count": 0}
+        for store in STORE_ORDER
+    }
+    for path in files:
+        path = Path(path)
+        store = store_from_file(path)
+        if store not in summary:
+            continue
+        rows = xlsx.read_xlsx_rows(path)
+        if not rows:
+            continue
+        hm = header_map(rows[0])
+        skc_i = hm.get("SKC")
+        if skc_i is None:
+            continue
+        for row in rows[1:]:
+            skc = norm(row[skc_i] if skc_i < len(row) else "")
+            if skc and is_active_listing(row, hm):
+                summary[store]["active_skc"].add(skc)
+    for item in summary.values():
+        item["active_skc_count"] = len(item["active_skc"])
+    return summary
 
 
 def load_erp_base():
@@ -179,6 +219,8 @@ def read_shein(records):
             sales7 = num(row[sales7_i] if sales7_i < len(row) else "")
             tag = norm(row[tag_i] if tag_i is not None and tag_i < len(row) else "")
 
+            if not is_active_listing(row, hm):
+                continue
             if skc:
                 summary[store]["skc"].add(skc)
             if skc and any(word in tag for word in ["高销款", "爆", "旺"]):
@@ -312,6 +354,7 @@ def build_workbook(summary, gt_2x, gt_1x, source_rows, erp_rows, combo_rows, ski
     check.append(["未匹配ERP/组合装跳过行数", skipped])
     check.append(["大于30天销量2倍明细行数", len(gt_2x)])
     check.append(["大于30天销量明细行数", len(gt_1x)])
+    check.append(["剔除店铺", "加加、宝宝"])
     check.append(["库存口径", "SHEIN仓库存"])
     check.append(["爆旺款口径", "商品标签包含高销款/爆/旺的唯一SKC数"])
     check.append(["排序规则", "店铺、SKC、商家编码尺码（XXS-XS-S-M-MD-L-XL-XXL）"])

@@ -37,7 +37,7 @@ RULES_FILE = ROOT / "基础数据库" / "report_rules.json"
 OWNER_FILE = ROOT / "店铺负责人对应表.xlsx"
 
 HOST = "127.0.0.1"
-PORT = 8765
+PORT = 8876
 CLIENT_CLOSE_SHUTDOWN_DELAY_SECONDS = 4
 SCHEDULED_SHUTDOWN = None
 SCHEDULED_SHUTDOWN_LOCK = threading.Lock()
@@ -77,6 +77,12 @@ WEEKLY_SOURCE_GROUPS = {
         "description": "Temu 爆旺款基准表，用于重复铺货保护款判断。",
         "patterns": ["*Temu爆旺款*.xlsx"],
         "folder": TEMU_DIR,
+    },
+    "temu_bargain_input": {
+        "name": "Temu 议价申报表",
+        "description": "上传需要回复的申报价/议价申报表，生成时按上传表格原始顺序返回回复。",
+        "patterns": ["*议价申报*.xlsx", "*申报价*.xlsx", "*新品申报表*.xlsx", "*新品申报价格表*.xlsx"],
+        "folder": BARGAIN_DIR,
     },
     "low_score_input": {
         "name": "店铺低分预警表",
@@ -123,9 +129,9 @@ REPORTS = {
         "sources": "Shein平台表、ERP基础信息、ERP组合装",
     },
     "temu_bargain": {
-        "name": "Temu核价回复",
-        "description": "根据新品申报价核验表和平台在售情况输出核价回复。",
-        "sources": "Temu核价输入表、Temu平台表、Temu爆旺款、ERP基础信息、ERP组合装",
+        "name": "Temu议价申报回复",
+        "description": "根据申报价/议价申报表和平台在售情况，按上传表格顺序输出回复。",
+        "sources": "Temu议价申报表、Temu平台表、Temu爆旺款、ERP基础信息、ERP组合装",
     },
     "low_score_warning": {
         "name": "店铺低分产品预警",
@@ -156,6 +162,43 @@ DEFAULT_RULES = {
         "sales30_total_equals": 0,
     },
 }
+
+OWNER_STORE_CODE_MAP = {
+    "弟弟": "1",
+    "一弟": "1",
+    "二弟": "2",
+    "三弟": "3",
+    "四弟": "4",
+    "五弟": "5",
+    "六弟": "6",
+    "七弟": "7",
+    "八弟": "8",
+    "九弟": "9",
+    "十弟": "10",
+    "十一": "11",
+    "十一弟": "11",
+    "十二": "12",
+    "十二弟": "12",
+    "十三": "13",
+    "十三弟": "13",
+    "十五": "15",
+    "十五弟": "15",
+}
+
+
+def owner_lookup_keys(store):
+    text = norm(store)
+    if not text:
+        return []
+    keys = {text}
+    if re.fullmatch(r"[一二三四五六七八九十]+", text):
+        keys.add(f"{text}弟")
+    if text.endswith("弟") and re.fullmatch(r"[一二三四五六七八九十]+", text[:-1]):
+        keys.add(text[:-1])
+    code = OWNER_STORE_CODE_MAP.get(text)
+    if code:
+        keys.add(code)
+    return sorted(keys, key=lambda item: (item != text, item))
 
 
 def cancel_scheduled_shutdown():
@@ -206,6 +249,16 @@ def output_path(project_name, version, suffix=".xlsx"):
     return OUTPUT_DIR / f"{today_code()}-{safe_name(project_name)}-{version_text(version)}-{stamp}{suffix}"
 
 
+def report_id_for_output(filename):
+    stem = Path(filename).stem
+    if "temu议价回复" in stem.lower() or "temu核价回复" in stem.lower():
+        return "temu_bargain"
+    for report_id, report in REPORTS.items():
+        if safe_name(report["name"]) in stem:
+            return report_id
+    return ""
+
+
 def recent_outputs(limit=20):
     OUTPUT_DIR.mkdir(exist_ok=True)
     files = sorted(
@@ -219,6 +272,7 @@ def recent_outputs(limit=20):
             "size": p.stat().st_size,
             "modified": datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
             "download": f"/download?path={quote(p.name)}",
+            "report": report_id_for_output(p.name),
         }
         for p in files[:limit]
     ]
@@ -313,7 +367,7 @@ def bargain_input_files():
     uploaded = manifest_paths("temu_bargain_input")
     if uploaded:
         return uploaded
-    return matching_files(BARGAIN_DIR, ["*新品申报表*.xlsx", "*新品申报价格表*.xlsx", "*.xlsx"])
+    return matching_files(BARGAIN_DIR, ["*议价申报*.xlsx", "*申报价*.xlsx", "*新品申报表*.xlsx", "*新品申报价格表*.xlsx", "*.xlsx"])
 
 
 def low_score_input_files():
@@ -342,6 +396,14 @@ def shein_source_map():
             )
             fallback[store] = [candidates[-1]] if candidates else []
     return fallback
+
+
+def size_order_map(value):
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, (list, tuple)):
+        return {str(size): index for index, size in enumerate(value)}
+    return {}
 
 
 def matching_files(folder, patterns):
@@ -559,6 +621,39 @@ def unique_upload_path(folder, filename):
     return folder / f"{stem}_{stamp}{suffix}"
 
 
+def xlsx_path_for_legacy_xls(path):
+    target = path.with_suffix(".xlsx")
+    if not target.exists():
+        return target
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    return path.with_name(f"{path.stem}_{stamp}.xlsx")
+
+
+def convert_xls_to_xlsx(source, target):
+    try:
+        import xlrd
+    except ImportError as exc:
+        raise RuntimeError("读取旧版 .xls 文件需要安装 xlrd：pip install xlrd") from exc
+
+    book = xlrd.open_workbook(str(source))
+    output = Workbook()
+    default_sheet = output.active
+    for sheet_index in range(book.nsheets):
+        sheet = book.sheet_by_index(sheet_index)
+        ws = default_sheet if sheet_index == 0 else output.create_sheet()
+        ws.title = safe_name(sheet.name, f"Sheet{sheet_index + 1}")[:31]
+        for row_index in range(sheet.nrows):
+            ws.append([sheet.cell_value(row_index, col_index) for col_index in range(sheet.ncols)])
+    output.save(target)
+    return target
+
+
+def normalize_uploaded_workbook(path):
+    if path.suffix.lower() == ".xls":
+        return convert_xls_to_xlsx(path, xlsx_path_for_legacy_xls(path))
+    return path
+
+
 def data_status():
     db_ok = DB_PATH.exists()
     db_tables = 0
@@ -576,7 +671,7 @@ def data_status():
         "shein_files": len(list(SHEIN_DIR.glob("*.xlsx"))) if SHEIN_DIR.exists() else 0,
         "erp_files": len(list(ERP_DIR.glob("*.xlsx"))) if ERP_DIR.exists() else 0,
         "source_groups": source_group_status(),
-        "outputs": recent_outputs(),
+        "outputs": recent_outputs(80),
         "database": {"exists": db_ok, "tables": db_tables, "rows": db_rows, "path": str(DB_PATH)},
         "reports": REPORTS,
         "rules": load_rules(),
@@ -598,7 +693,7 @@ def run_temu_inventory(output):
     module.TEMU_DIR = TEMU_DIR
     module.ERP_DIR = ERP_DIR
     module.ERP_FILES = erp_base_files()
-    module.SIZE_ORDER = load_rules().get("sort", {}).get("size_order", DEFAULT_RULES["sort"]["size_order"])
+    module.SIZE_ORDER = size_order_map(load_rules().get("sort", {}).get("size_order", DEFAULT_RULES["sort"]["size_order"]))
     module.COMBO_FILE = erp_combo_files()[0] if erp_combo_files() else ERP_DIR / "erp产品组合装基础信息表.xlsx"
     module.OWNER_FILE = OWNER_FILE
     module.OUTPUT = output
@@ -687,7 +782,7 @@ def run_temu_bargain(output):
     sales_files = temu_sales_files()
     hot_files = temu_hot_files()
     if not input_files:
-        raise FileNotFoundError("未找到Temu核价输入表")
+        raise FileNotFoundError("未找到Temu议价申报表")
     if not sales_files:
         raise FileNotFoundError("未找到Temu仓库销售情况导出数据")
     if not hot_files:
@@ -757,6 +852,7 @@ def run_shein_inventory(output):
     module.ERP_FILES = erp_base_files()
     module.SHEIN_FILES = shein_platform_files()
     module.OUTPUT = output
+    module.OWNERS = {**module.OWNERS, **load_owners()}
     erp_records, erp_rows = module.load_erp_base()
     combo_rows = module.load_combo_base(erp_records)
     summary, gt_2x, gt_1x, source_rows, skipped = module.read_shein(erp_records)
@@ -825,6 +921,7 @@ def run_shein_hot(output):
     module.COMBO_FILES = erp_combo_files()
     module.SOURCE_FILES = shein_source_map()
     module.RULES = load_rules()
+    module.STORE_OWNER = {**module.STORE_OWNER, **load_owners()}
     records, checks = module.load_sales_records()
     skc, hot, style_combos, combo_rows = module.aggregate(records)
     operations = module.build_operations(skc, hot, style_combos, combo_rows)
@@ -923,6 +1020,11 @@ def cell(row, headers, *names):
     return None
 
 
+def is_shein_active_listing(supply_status, listing_status):
+    listing = norm(listing_status)
+    return listing == "已上架"
+
+
 def load_owners():
     owners = {}
     for path in owner_files():
@@ -940,6 +1042,8 @@ def load_owners():
             owner = norm(cell(row, headers, "业务", "负责人"))
             if store and owner:
                 owners[store] = owner
+                for key in owner_lookup_keys(store):
+                    owners.setdefault(key, owner)
     return owners
 
 
@@ -1185,7 +1289,7 @@ HTML_PAGE = r"""<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>日常运营工作台 v2.0</title>
   <style>
-    :root { --bg:#f5f7fb; --panel:#fff; --ink:#1f2937; --muted:#6b7280; --line:#d8dee9; --blue:#1f4e78; --green:#2f7d5b; --red:#b42318; }
+    :root { --bg:#f5f7fb; --panel:#fff; --ink:#1f2937; --muted:#6b7280; --line:#d8dee9; --blue:#1f4e78; --green:#2f7d5b; --red:#b42318; --soft:#eef3f8; --amber:#8a5a00; }
     * { box-sizing:border-box; }
     body { margin:0; font-family:"Microsoft YaHei", Arial, sans-serif; background:var(--bg); color:var(--ink); }
     .app { display:grid; grid-template-columns:220px 1fr; min-height:100vh; }
@@ -1198,9 +1302,28 @@ HTML_PAGE = r"""<!doctype html>
     h1 { margin:0; font-size:24px; }
     h2 { font-size:18px; margin:0 0 12px; }
     .grid { display:grid; gap:14px; }
-    .cards { grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }
+    .cards { grid-template-columns:repeat(3,minmax(240px,1fr)); align-items:stretch; }
     .card, .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px; }
     .card h3 { margin:0 0 8px; font-size:17px; }
+    .report-card { height:360px; display:flex; flex-direction:column; padding:0; overflow:hidden; box-shadow:0 8px 22px rgba(31,78,120,.07); }
+    .report-top { padding:15px 15px 10px; border-bottom:1px solid #edf1f6; }
+    .report-title-row { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+    .report-card h3 { margin:0; font-size:16px; line-height:1.25; }
+    .report-index { flex:0 0 auto; min-width:28px; height:24px; border-radius:6px; background:var(--soft); color:#17324d; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
+    .report-desc { margin-top:8px; min-height:40px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    .report-sources { margin-top:7px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .report-body { padding:12px 15px 14px; display:flex; flex-direction:column; gap:10px; flex:1; min-height:0; }
+    .report-actions { display:flex; gap:8px; align-items:center; }
+    .report-actions input { width:76px; flex:0 0 auto; }
+    .report-actions button { flex:1; }
+    .report-footer { border-top:1px solid #edf1f6; padding-top:9px; display:flex; flex-direction:column; flex:1; min-height:0; }
+    .report-footer-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:7px; color:#344054; font-size:13px; font-weight:700; }
+    .report-output-list { flex:1; min-height:42px; overflow:hidden; display:grid; gap:6px; align-content:start; }
+    .report-output { min-height:36px; border:1px solid #e4e9f1; border-radius:6px; background:#fbfcfe; padding:6px 7px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; }
+    .report-output-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:#263445; }
+    .report-output-time { font-size:11px; color:var(--muted); margin-top:1px; }
+    .download-link { border:1px solid #c9d8e8; border-radius:6px; padding:5px 8px; background:#fff; font-size:12px; white-space:nowrap; }
+    .report-empty { border:1px dashed #d5dce8; border-radius:6px; color:var(--muted); font-size:12px; padding:10px; text-align:center; }
     .muted { color:var(--muted); font-size:13px; line-height:1.5; }
     button.primary, button.secondary, button.danger { border:0; border-radius:6px; padding:9px 12px; cursor:pointer; font-weight:600; }
     button.primary { background:var(--blue); color:#fff; }
@@ -1223,9 +1346,22 @@ HTML_PAGE = r"""<!doctype html>
     .section { display:none; }
     .section.active { display:block; }
     .toolbar { margin-bottom:14px; }
-    .source-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; margin-bottom:14px; }
-    .source-card { border:1px solid var(--line); border-radius:8px; padding:14px; background:#fff; }
-    .source-card h3 { margin:0 0 6px; font-size:16px; }
+    .weekly-shell { display:grid; gap:14px; }
+    .weekly-hero { background:#fff; border:1px solid var(--line); border-radius:8px; padding:16px; display:flex; justify-content:space-between; gap:16px; align-items:center; }
+    .weekly-hero h2 { margin-bottom:6px; }
+    .source-grid { display:grid; grid-template-columns:repeat(3,minmax(240px,1fr)); gap:14px; margin-bottom:0; align-items:stretch; }
+    .source-card, .weekly-source-card { border:1px solid var(--line); border-radius:8px; padding:0; background:#fff; height:330px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 22px rgba(31,78,120,.06); }
+    .source-card h3, .weekly-source-card h3 { margin:0; font-size:16px; line-height:1.25; }
+    .weekly-source-head { padding:14px 14px 10px; border-bottom:1px solid #edf1f6; display:grid; gap:7px; }
+    .weekly-source-title { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+    .weekly-source-desc { min-height:38px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    .weekly-source-body { padding:12px 14px; display:grid; gap:8px; flex:1; min-height:0; }
+    .source-meta { border:1px solid #e8edf5; border-radius:8px; background:#fbfcfe; padding:9px 10px; min-height:82px; display:grid; gap:4px; align-content:start; }
+    .source-meta-line { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .source-upload-row { margin-top:auto; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; }
+    .source-upload-row input[type=file] { min-width:0; width:100%; }
+    .source-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .source-actions button { padding-left:8px; padding-right:8px; }
     .badge { display:inline-block; border-radius:999px; padding:3px 8px; font-size:12px; font-weight:700; background:#eef3f8; color:#17324d; }
     .badge.ok { background:#e2f0d9; color:#2f6b3f; }
     .badge.warn { background:#fff2cc; color:#7a5200; }
@@ -1235,6 +1371,8 @@ HTML_PAGE = r"""<!doctype html>
     .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
     .field label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
     .field input, .field textarea { width:100%; }
+    @media (max-width:1180px) { .cards, .source-grid { grid-template-columns:repeat(2,minmax(240px,1fr)); } }
+    @media (max-width:760px) { .app { grid-template-columns:1fr; } aside { position:static; } .cards, .source-grid { grid-template-columns:1fr; } main { padding:16px; } header, .weekly-hero { align-items:flex-start; flex-direction:column; gap:12px; } .report-card { height:380px; } .weekly-source-card { height:350px; } }
   </style>
 </head>
 <body>
@@ -1245,7 +1383,6 @@ HTML_PAGE = r"""<!doctype html>
       <button class="active" data-tab="tasks">任务面板</button>
       <button data-tab="weekly">每周工作流</button>
       <button data-tab="rules">规则设置</button>
-      <button data-tab="upload">数据源上传</button>
       <button data-tab="search">基础数据查询</button>
       <button data-tab="files">输出文件</button>
     </nav>
@@ -1267,30 +1404,20 @@ HTML_PAGE = r"""<!doctype html>
     </section>
 
     <section id="weekly" class="section">
-      <div class="panel">
-        <h2>每周数据源</h2>
-        <div class="muted" style="margin-bottom:12px;">每周上传最新 ERP 产品数据源、Temu 销售表、Shein 销售表、Temu 爆旺款表；系统会显示最新文件和更新状态。</div>
-        <div class="source-grid" id="weeklySources"></div>
-        <div class="row">
-          <button class="primary" onclick="runWeeklyReports()">生成本周报表</button>
-          <button class="secondary" onclick="refreshStatus()">刷新数据源状态</button>
+      <div class="weekly-shell">
+        <div class="weekly-hero">
+          <div>
+            <h2>每周数据源</h2>
+            <div class="muted">上传、结束本次上传、生成每周报表都在这里完成。每个数据源卡片会显示最新文件、待提交文件和当前状态。</div>
+          </div>
+          <div class="row">
+            <button class="primary" onclick="runWeeklyReports()">生成本周报表</button>
+            <button class="secondary" onclick="refreshStatus()">刷新状态</button>
+          </div>
         </div>
+        <div class="source-grid" id="weeklySources"></div>
         <div class="status" id="weeklyStatus"></div>
         <div class="result-list" id="weeklyResults"></div>
-      </div>
-    </section>
-
-    <section id="upload" class="section">
-      <div class="panel">
-        <h2>上传数据源</h2>
-        <div class="row">
-          <select id="uploadType"></select>
-          <input id="uploadFile" type="file" accept=".xlsx,.xls,.csv" multiple>
-          <button class="primary" onclick="uploadFile()">上传</button>
-          <button class="secondary" onclick="finishSelectedBatch()">结束所选数据源本次上传</button>
-          <button class="secondary" onclick="clearSelectedBatch()">清空所选数据源本次上传</button>
-        </div>
-        <div class="status" id="uploadStatus"></div>
       </div>
     </section>
 
@@ -1354,7 +1481,8 @@ HTML_PAGE = r"""<!doctype html>
 <script>
 let appStatus = null;
 let userRequestedShutdown = false;
-const titles = {tasks:'任务面板', weekly:'每周工作流', rules:'规则设置', upload:'数据源上传', search:'基础数据查询', files:'输出文件'};
+const reportRunMessages = {};
+const titles = {tasks:'任务面板', weekly:'每周工作流', rules:'规则设置', search:'基础数据查询', files:'输出文件'};
 document.querySelectorAll('nav button').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
@@ -1370,7 +1498,8 @@ async function refreshStatus(){
   try {
     appStatus = await api('/api/status');
     document.getElementById('statusLine').textContent = `当前版本 ${appStatus.version || 'v2.0'}，Temu数据源 ${appStatus.temu_files} 个，Shein数据源 ${appStatus.shein_files} 个，ERP数据源 ${appStatus.erp_files} 个，基础库 ${appStatus.database.tables} 表 / ${appStatus.database.rows} 行`;
-    renderReports(); renderUploadTypes(); renderOutputs(); renderWeeklySources(); renderRules();
+    renderReports(); renderOutputs(); renderWeeklySources(); renderRules();
+    updateReportOutputCapacity();
   } catch(e) { document.getElementById('statusLine').textContent = e.message; }
 }
 function splitList(value){ return String(value || '').split(/[,，\s]+/).map(s => s.trim()).filter(Boolean); }
@@ -1440,12 +1569,57 @@ async function shutdownWorkbench(){
 }
 function renderReports(){
   const wrap = document.getElementById('reportCards'); wrap.innerHTML = '';
-  Object.entries(appStatus.reports).forEach(([id, r]) => {
-    const card = document.createElement('div'); card.className='card';
-    card.innerHTML = `<h3>${r.name}</h3><div class="muted">${r.description}</div><div class="muted" style="margin-top:8px;">所需数据源：${r.sources}</div>
-      <div class="row" style="margin-top:12px;"><input id="ver_${id}" value="V1" style="width:80px"><button class="primary" onclick="runReport('${id}')">生成</button></div>
-      <div class="status" id="st_${id}"></div>`;
+  Object.entries(appStatus.reports).forEach(([id, r], index) => {
+    const card = document.createElement('div'); card.className='card report-card';
+    card.innerHTML = `<div class="report-top">
+        <div class="report-title-row"><h3>${esc(r.name)}</h3><div class="report-index">${index + 1}</div></div>
+        <div class="muted report-desc">${esc(r.description)}</div>
+        <div class="muted report-sources" title="${esc(r.sources)}">所需数据源：${esc(r.sources)}</div>
+      </div>
+      <div class="report-body">
+        <div class="report-actions"><input id="ver_${id}" value="V1"><button class="primary" onclick="runReport('${id}')">生成表格</button></div>
+        <div class="status" id="st_${id}">${reportRunMessages[id] || ''}</div>
+        <div class="report-footer">
+          <div class="report-footer-head"><span>最近生成</span><span class="muted">${reportOutputs(id).length} 个</span></div>
+          <div class="report-output-list" id="outs_${id}" data-report="${id}"></div>
+        </div>
+      </div>`;
     wrap.appendChild(card);
+    renderReportOutputItems(id);
+  });
+  updateReportOutputCapacity();
+}
+function reportOutputs(id){
+  return (appStatus.outputs || []).filter(f => f.report === id);
+}
+function shortModified(value){
+  const text = String(value || '');
+  return text.length > 11 ? text.slice(5, 16) : text;
+}
+function renderReportOutputItems(id){
+  const list = document.getElementById('outs_' + id);
+  if(!list || !appStatus) return;
+  const capacity = Math.max(1, Number(list.dataset.capacity || 3));
+  const files = reportOutputs(id).slice(0, capacity);
+  if(!files.length){
+    list.innerHTML = '<div class="report-empty">暂无已生成表格</div>';
+    return;
+  }
+  list.innerHTML = files.map(f => `<div class="report-output">
+    <div>
+      <div class="report-output-name" title="${esc(f.name)}">${esc(f.name)}</div>
+      <div class="report-output-time">${esc(shortModified(f.modified))} · ${fmtSize(f.size)}</div>
+    </div>
+    <a class="download-link" href="${f.download}">下载</a>
+  </div>`).join('');
+}
+function updateReportOutputCapacity(){
+  document.querySelectorAll('.report-output-list').forEach(list => {
+    const rows = Math.max(1, Math.floor(list.clientHeight / 44));
+    if(String(rows) !== list.dataset.capacity){
+      list.dataset.capacity = String(rows);
+      renderReportOutputItems(list.dataset.report);
+    }
   });
 }
 async function runReport(id){
@@ -1453,20 +1627,19 @@ async function runReport(id){
   try {
     const version = document.getElementById('ver_'+id).value || 'V1';
     const res = await api('/api/reports/run', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({report:id, version})});
-    st.innerHTML = `<span class="ok">生成完成：</span><a href="${res.result.download}">${res.result.file}</a>`;
+    reportRunMessages[id] = `<span class="ok">生成完成：</span><a href="${res.result.download}">${esc(res.result.file)}</a>`;
+    st.innerHTML = reportRunMessages[id];
     await refreshStatus();
   } catch(e) { st.innerHTML = `<span class="bad">${e.message}</span>`; }
 }
-function renderUploadTypes(){
-  const sel = document.getElementById('uploadType'); if(sel.options.length) return;
-  Object.entries(appStatus.upload_targets).forEach(([key,label]) => { const o=document.createElement('option'); o.value=key; o.textContent=label; sel.appendChild(o); });
-}
+window.addEventListener('resize', updateReportOutputCapacity);
 async function uploadFile(category=null, inputId=null, statusId=null){
   const fileInput = document.getElementById(inputId || 'uploadFile');
   const files = Array.from(fileInput.files || []);
   const st = document.getElementById(statusId || 'uploadStatus');
   if(!files.length){ st.textContent='请选择文件'; return; }
-  const targetCategory = category || document.getElementById('uploadType').value;
+  if(!category){ st.textContent='请选择每周工作流里的数据源模块上传'; return; }
+  const targetCategory = category;
   st.textContent=`正在上传 ${files.length} 个文件...`;
   try {
     let last = null;
@@ -1479,12 +1652,6 @@ async function uploadFile(category=null, inputId=null, statusId=null){
     await refreshStatus();
   }
   catch(e){ st.innerHTML=`<span class="bad">${e.message}</span>`; }
-}
-function finishSelectedBatch(){
-  finishBatch(document.getElementById('uploadType').value, 'uploadStatus');
-}
-function clearSelectedBatch(){
-  clearBatch(document.getElementById('uploadType').value, 'uploadStatus');
 }
 async function finishBatch(category, statusId){
   const st = document.getElementById(statusId);
@@ -1513,17 +1680,24 @@ function renderWeeklySources(){
     const id = 'weekly_file_' + g.key;
     const stid = 'weekly_st_' + g.key;
     const batchNames = (g.batch_files || []).length ? (g.batch_files || []).map(esc).join('、') : (latest ? esc(latest.name) : '暂无');
-    const pendingLine = g.pending_count ? `<div class="muted">本次待结束上传：${g.pending_count} 个文件</div>` : '';
-    const batchActions = `<button class="primary" onclick="finishBatch('${g.key}','${stid}')">结束本次上传</button><button class="secondary" onclick="clearBatch('${g.key}','${stid}')">清空本次上传</button>`;
-    const card = document.createElement('div'); card.className = 'source-card';
-    card.innerHTML = `<h3>${esc(g.name)} <span class="badge ${badgeClass(g.status)}">${esc(g.status)}</span></h3>
-      <div class="muted">${esc(g.description)}</div>
-      <div class="muted" style="margin-top:8px;">最新文件：${batchNames}</div>
-      <div class="muted">更新时间：${latest ? esc(latest.modified) : '-'}</div>
-      <div class="muted">记录数：${g.total_rows !== '' ? g.total_rows : (latest && latest.rows !== '' ? latest.rows : '-')}</div>
-      ${pendingLine}
-      <div class="row" style="margin-top:10px;"><input id="${id}" type="file" accept=".xlsx,.xls,.csv" multiple><button class="secondary" onclick="uploadFile('${g.upload_target}','${id}','${stid}')">上传</button>${batchActions}</div>
-      <div class="status" id="${stid}"></div>`;
+    const pendingText = g.pending_count ? `待结束上传：${g.pending_count} 个文件` : '无待提交文件';
+    const rowsText = g.total_rows !== '' ? g.total_rows : (latest && latest.rows !== '' ? latest.rows : '-');
+    const card = document.createElement('div'); card.className = 'weekly-source-card';
+    card.innerHTML = `<div class="weekly-source-head">
+        <div class="weekly-source-title"><h3>${esc(g.name)}</h3><span class="badge ${badgeClass(g.status)}">${esc(g.status)}</span></div>
+        <div class="muted weekly-source-desc">${esc(g.description)}</div>
+      </div>
+      <div class="weekly-source-body">
+        <div class="source-meta">
+          <div class="muted source-meta-line" title="${batchNames}">最新文件：${batchNames}</div>
+          <div class="muted source-meta-line">更新时间：${latest ? esc(latest.modified) : '-'}</div>
+          <div class="muted source-meta-line">记录数：${rowsText}</div>
+          <div class="muted source-meta-line">${pendingText}</div>
+        </div>
+        <div class="source-upload-row"><input id="${id}" type="file" accept=".xlsx,.xls,.csv" multiple><button class="secondary" onclick="uploadFile('${g.upload_target}','${id}','${stid}')">上传</button></div>
+        <div class="source-actions"><button class="primary" onclick="finishBatch('${g.key}','${stid}')">结束上传</button><button class="secondary" onclick="clearBatch('${g.key}','${stid}')">清空待提交</button></div>
+        <div class="status" id="${stid}"></div>
+      </div>`;
     wrap.appendChild(card);
   });
 }
@@ -1584,11 +1758,6 @@ function renderOutputs(){
 }
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 refreshStatus();
-window.addEventListener('pagehide', () => {
-  if (!userRequestedShutdown && navigator.sendBeacon) {
-    navigator.sendBeacon('/api/client-close', new Blob([JSON.stringify({reason:'pagehide'})], {type:'application/json'}));
-  }
-});
 </script>
 </body>
 </html>"""
@@ -1677,8 +1846,7 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 result = export_search(payload.get("q", ""), payload.get("limit", 500))
                 self.send_json({"ok": True, **result})
             elif parsed.path == "/api/client-close":
-                self.send_json({"ok": True, "message": "页面已关闭，工作台将延迟释放端口"})
-                schedule_shutdown_after_client_close(self.server)
+                self.send_json({"ok": True, "message": "页面关闭通知已忽略，工作台保持运行"})
             elif parsed.path == "/api/shutdown":
                 cancel_scheduled_shutdown()
                 self.send_json({"ok": True, "message": "工作台正在关闭"})
@@ -1709,6 +1877,7 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
         target = unique_upload_path(folder, file_item.filename)
         with target.open("wb") as fh:
             shutil.copyfileobj(file_item.file, fh)
+        target = normalize_uploaded_workbook(target)
         source_state = record_uploaded_source(category, target)
         self.send_json({"ok": True, "category": label, "saved": str(target), "source_state": source_state})
 
