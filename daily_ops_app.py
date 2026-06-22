@@ -1585,6 +1585,21 @@ def export_search(query, limit=500):
     return {"file": out.name, "download": f"/download?path={quote(out.name)}", "rows": len(rows)}
 
 
+def handle_search_api(action, headers, payload):
+    try:
+        operator = operator_from_token(token_from_headers(headers))
+        if not can_review_tasks(operator):
+            return json_bytes({"ok": False, "error": f"只有管理员可以执行{action}"}, status=403)
+        if action == "GET":
+            rows = search_database(payload.get("q", ""), payload.get("limit", "100"))
+            return json_bytes({"ok": True, "rows": rows})
+        return json_bytes({"ok": False, "error": "基础数据查询接口不存在"}, status=404)
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
 def operation_task_store():
     return daily_ops_tasks.OperationTaskStore(TASK_DB_PATH)
 
@@ -2791,8 +2806,10 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "rules": load_rules()})
             elif parsed.path == "/api/search":
                 params = parse_qs(parsed.query)
-                rows = search_database(params.get("q", [""])[0], params.get("limit", ["100"])[0])
-                self.send_json({"ok": True, "rows": rows})
+                self.send_payload(*handle_search_api("GET", self.headers, {
+                    "q": params.get("q", [""])[0],
+                    "limit": params.get("limit", ["100"])[0],
+                }))
             elif parsed.path == "/api/tasks":
                 params = parse_qs(parsed.query)
                 status, content_type, body = handle_tasks_api("GET", self.headers, task_query_payload(params))

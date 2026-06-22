@@ -1599,6 +1599,34 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["operator"]["role"], "admin")
 
+    def test_search_api_requires_admin_session(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        owner = daily_ops_app.login_operator("owner", "小琴", "")
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+
+        status, _content_type, body = daily_ops_app.handle_search_api("GET", {}, {"q": "A", "limit": "10"})
+        self.assertEqual(status, 401)
+        self.assertIn("请先登录", json.loads(body)["error"])
+
+        status, _content_type, body = daily_ops_app.handle_search_api(
+            "GET",
+            {"X-Operator-Token": owner["token"]},
+            {"q": "A", "limit": "10"},
+        )
+        self.assertEqual(status, 403)
+        self.assertIn("只有管理员", json.loads(body)["error"])
+
+        with patch.object(daily_ops_app, "search_database", return_value=[{"content": "A"}]):
+            status, _content_type, body = daily_ops_app.handle_search_api(
+                "GET",
+                {"X-Operator-Token": admin["token"]},
+                {"q": "A", "limit": "10"},
+            )
+
+        payload = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["rows"], [{"content": "A"}])
+
     def test_end_to_end_task_workflow_exports_traceable_ledger(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         with TemporaryDirectory() as tmp:
