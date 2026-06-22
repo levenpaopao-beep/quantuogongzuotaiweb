@@ -574,22 +574,34 @@ def report_task_detail(report_id, row, headers):
 
 
 REPORT_TASK_TYPE = {
+    "temu_price": "价格异常",
+    "temu_inventory": "库存异常",
     "temu_hot": "爆旺冲突",
     "shein_hot": "爆旺冲突",
+    "shein_price": "价格异常",
+    "shein_inventory": "库存异常",
     "low_score_warning": "低分预警",
     "temu_slow": "滞销处理",
     "temu_bargain": "议价审核",
 }
 
 REPORT_PLATFORM = {
+    "temu_price": "Temu",
+    "temu_inventory": "Temu",
     "temu_hot": "Temu",
     "low_score_warning": "Temu",
     "temu_slow": "Temu",
     "temu_bargain": "Temu",
+    "shein_price": "Shein",
+    "shein_inventory": "Shein",
     "shein_hot": "Shein",
 }
 
 REPORT_DETAIL_FIELDS = {
+    "temu_price": ["申报价", "成本价", "批发价", "批发价80%", "7天销量", "30天销量"],
+    "shein_price": ["申报价", "成本价", "批发价", "批发价80%", "7天销量", "30天销量"],
+    "temu_inventory": ["仓备可用", "30天销量", "7天销量", "触发规则"],
+    "shein_inventory": ["仓备可用", "30天销量", "7天销量", "触发规则"],
     "temu_hot": ["冲突类型", "爆旺款skc", "爆旺skc", "申报价", "7天销量", "30天销量", "库存", "平台仓备货"],
     "shein_hot": ["冲突类型", "爆旺款skc", "爆旺skc", "申报价", "7天销量", "30天销量", "库存", "平台仓备货"],
     "low_score_warning": ["品质分", "是否已下架", "是否下架", "是否本周新增低分", "低分原因"],
@@ -626,6 +638,10 @@ def rows_from_report_workbook(report_id, report_name, workbook_path):
 
 
 def should_import_sheet(report_id, headers):
+    if report_id in {"temu_price", "shein_price"}:
+        return any(name in headers for name in ["申报价", "成本价", "批发价", "批发价80%"])
+    if report_id in {"temu_inventory", "shein_inventory"}:
+        return any(name in headers for name in ["仓备可用", "触发规则"])
     if report_id in {"temu_hot", "shein_hot"}:
         return any(name in headers for name in ["处理意见", "冲突类型"])
     if report_id == "low_score_warning":
@@ -647,6 +663,8 @@ def map_report_row(report_id, report_name, file_name, sheet_name, row_number, ro
     spu = row_value(row, headers, "SPU", "spu", "爆旺skc")
     product_name = row_value(row, headers, "货品名称", "ERP货品名称", "品名", "名称")
     system_action = row_value(row, headers, "处理意见", "建议动作", "操作", "是否通过")
+    if not norm(system_action) and report_id in {"temu_price", "shein_price", "temu_inventory", "shein_inventory"}:
+        system_action = sheet_name
     task_detail = report_task_detail(report_id, row, headers)
     if not any(norm(value) for value in [store, owner, merchant_code, skc, spu, product_name, system_action]):
         return None

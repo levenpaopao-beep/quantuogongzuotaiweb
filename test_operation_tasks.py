@@ -677,6 +677,41 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(len(slow_rows), 1)
             self.assertIn("预警类型：新品滞销", slow_rows[0]["task_detail"])
 
+    def test_price_and_inventory_reports_create_operation_tasks(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            price = root / "price.xlsx"
+            workbook = daily_ops_tasks.Workbook()
+            ws = workbook.active
+            ws.title = "低于成本价"
+            ws.append(["店铺", "SKC", "商家编码", "货品名称", "申报价", "成本价", "负责人", "7天销量", "30天销量"])
+            ws.append(["7", "SKC-P1", "SKU-P1", "破价猫窝", 18.5, 20, "小琴", 3, 9])
+            workbook.save(price)
+
+            price_rows = daily_ops_tasks.rows_from_report_workbook("temu_price", "Temu申报价异常", price)
+            self.assertEqual(len(price_rows), 1)
+            self.assertEqual(price_rows[0]["task_type"], "价格异常")
+            self.assertEqual(price_rows[0]["system_action"], "低于成本价")
+            self.assertIn("申报价：18.5", price_rows[0]["task_detail"])
+            self.assertIn("成本价：20", price_rows[0]["task_detail"])
+
+            inventory = root / "inventory.xlsx"
+            workbook = daily_ops_tasks.Workbook()
+            ws = workbook.active
+            ws.title = "仓备大于30天销量2倍"
+            ws.append(["店铺", "SKC", "商家编码", "货品名称", "仓备可用", "30天销量", "7天销量", "负责人"])
+            ws.append(["琪琪", "SKC-I1", "SKU-I1", "库存猫抓板", 120, 20, 4, "洁琳"])
+            workbook.save(inventory)
+
+            inventory_rows = daily_ops_tasks.rows_from_report_workbook("shein_inventory", "Shein仓备库存异常", inventory)
+            self.assertEqual(len(inventory_rows), 1)
+            self.assertEqual(inventory_rows[0]["platform"], "Shein")
+            self.assertEqual(inventory_rows[0]["task_type"], "库存异常")
+            self.assertEqual(inventory_rows[0]["system_action"], "仓备大于30天销量2倍")
+            self.assertIn("仓备可用：120", inventory_rows[0]["task_detail"])
+            self.assertIn("30天销量：20", inventory_rows[0]["task_detail"])
+
     def test_store_owner_mapping_fills_report_tasks_without_owner_column(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         with TemporaryDirectory() as tmp:
