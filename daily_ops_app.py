@@ -2387,18 +2387,26 @@ function applyEntryParams(){
   updateOwnerEntryLink();
 }
 async function loginOperator(){
-  const payload = {
-    role: document.getElementById('loginRole').value,
-    user: document.getElementById('loginUser').value.trim(),
-    password: document.getElementById('loginPassword').value
-  };
-  const res = await api('/api/session/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-  operatorSession = res.session;
-  operatorToken = res.session.token;
-  localStorage.setItem('operatorSession', JSON.stringify(operatorSession));
-  localStorage.setItem('operatorToken', operatorToken);
-  renderOperator();
-  await refreshStatus();
+  const el = document.getElementById('operatorIdentity');
+  if(el) el.textContent = '正在登录...';
+  try {
+    const payload = {
+      role: document.getElementById('loginRole').value,
+      user: document.getElementById('loginUser').value.trim(),
+      password: document.getElementById('loginPassword').value
+    };
+    const res = await api('/api/session/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    operatorSession = res.session;
+    operatorToken = res.session.token;
+    localStorage.setItem('operatorSession', JSON.stringify(operatorSession));
+    localStorage.setItem('operatorToken', operatorToken);
+    document.getElementById('loginPassword').value = '';
+    renderOperator();
+    await refreshStatus();
+  } catch(e) {
+    document.getElementById('loginPassword').value = '';
+    if(el) el.innerHTML = `<span class="bad">登录失败：${esc(e.message)}</span>`;
+  }
 }
 async function logoutOperator(){
   try {

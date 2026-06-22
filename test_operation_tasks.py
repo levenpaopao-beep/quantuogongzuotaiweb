@@ -1977,6 +1977,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("function clearOperatorSession", html)
         self.assertIn("error.status = r.status", html)
         self.assertIn("if(error.status === 401) clearOperatorSession()", html)
+        self.assertIn("正在登录", html)
+        self.assertIn("登录失败", html)
+        self.assertIn("catch(e)", html)
         self.assertIn("function showTaskError", html)
         self.assertGreaterEqual(html.count("showTaskError(e)"), 6)
 
