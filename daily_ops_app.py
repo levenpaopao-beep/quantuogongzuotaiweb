@@ -585,6 +585,21 @@ def configured_owner_for_store(platform, store):
     return ""
 
 
+def owner_from_assignments(assignments, platform, store):
+    platform = norm(platform)
+    keys = owner_lookup_keys(store) or ([norm(store)] if norm(store) else [])
+    for assignment in assignments or []:
+        assignment_platform = norm(assignment.get("platform"))
+        if assignment_platform and platform and assignment_platform != platform:
+            continue
+        if assignment_platform and not platform:
+            continue
+        assignment_keys = set(owner_lookup_keys(assignment.get("store")) or [norm(assignment.get("store"))])
+        if any(key in assignment_keys for key in keys):
+            return norm(assignment.get("owner"))
+    return ""
+
+
 def bargain_input_files():
     uploaded = manifest_paths("temu_bargain_input")
     if uploaded:
@@ -1517,6 +1532,32 @@ def operation_task_store():
     return daily_ops_tasks.OperationTaskStore(TASK_DB_PATH)
 
 
+def assign_existing_unassigned_tasks(assignments, actor="管理员"):
+    store = operation_task_store()
+    payload = store.load()
+    timestamp = now_text()
+    assigned = 0
+    for task in payload.get("tasks", []):
+        if norm(task.get("owner")):
+            continue
+        owner = owner_from_assignments(assignments, task.get("platform", ""), task.get("store", ""))
+        if not owner:
+            continue
+        task["owner"] = owner
+        task["updated_at"] = timestamp
+        task.setdefault("history", []).append({
+            "time": timestamp,
+            "actor": norm(actor) or "管理员",
+            "event": "自动指派",
+            "action": f"按店铺负责人配置指派给 {owner}",
+            "remark": "保存店铺负责人配置时自动补齐",
+        })
+        assigned += 1
+    if assigned:
+        store.save(payload)
+    return assigned
+
+
 def apply_store_owner_mapping(rows):
     mapped = []
     for row in rows:
@@ -1707,7 +1748,8 @@ def handle_store_owners_api(action, headers, payload=None):
         payload = payload or {}
         if action == "POST_SAVE":
             assignments = save_store_owner_assignments(payload.get("assignments", []))
-            return json_bytes({"ok": True, "assignments": assignments, "owners": operation_owner_directory()})
+            assigned_existing = assign_existing_unassigned_tasks(assignments, operator.get("user", "管理员"))
+            return json_bytes({"ok": True, "assignments": assignments, "assigned_existing": assigned_existing, "owners": operation_owner_directory()})
         return json_bytes({"ok": False, "error": "店铺负责人接口不存在"}, status=404)
     except PermissionError as exc:
         return json_bytes({"ok": False, "error": str(exc)}, status=401)
@@ -2142,7 +2184,7 @@ async function saveStoreOwners(){
     renderStoreOwners(res.assignments || []);
     await loadOwnerOptions();
     updateOwnerEntryLink();
-    if(st) st.innerHTML = `<span class="ok">负责人配置已保存：</span>${res.assignments?.length || 0} 条。后续生成任务会自动使用。`;
+    if(st) st.innerHTML = `<span class="ok">负责人配置已保存：</span>${res.assignments?.length || 0} 条；已补齐 ${res.assigned_existing || 0} 条未分配任务。后续生成任务会自动使用。`;
   } catch(e){
     if(st) st.innerHTML = `<span class="bad">${e.message}</span>`;
   }

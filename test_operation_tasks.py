@@ -430,6 +430,41 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(status, 200)
                 self.assertEqual([row["store"] for row in payload["assignments"]], ["7", "琪琪"])
 
+    def test_saving_store_owner_mapping_assigns_existing_unassigned_tasks(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+        owner = daily_ops_app.login_operator("owner", "小琴", "")
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            owner_map = root / "store_owner_map.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "7", "owner": "", "merchant_code": "A", "source_report": "r", "source_row": 1},
+                {"platform": "Shein", "task_type": "爆旺冲突", "store": "琪琪", "owner": "", "merchant_code": "B", "source_report": "r", "source_row": 2},
+            ])
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
+                 patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_map):
+                status, _content_type, body = daily_ops_app.handle_store_owners_api(
+                    "POST_SAVE",
+                    {"X-Operator-Token": admin["token"]},
+                    {"assignments": [{"platform": "Temu", "store": "7", "owner": "小琴"}]},
+                )
+                payload = json.loads(body)
+                self.assertEqual(status, 200)
+                self.assertEqual(payload["assigned_existing"], 1)
+
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "GET",
+                    {"X-Operator-Token": owner["token"]},
+                    {},
+                )
+                owner_payload = json.loads(body)
+                self.assertEqual(status, 200)
+                self.assertEqual(len(owner_payload["tasks"]), 1)
+                self.assertEqual(owner_payload["tasks"][0]["store"], "7")
+                self.assertEqual(owner_payload["summary"]["unassigned"], 0)
+
     def test_local_web_page_exposes_operation_task_workflow(self):
         html = daily_ops_app.HTML_PAGE
         self.assertIn("/api/tasks", html)
@@ -446,6 +481,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("标记完成", html)
         self.assertIn("指派负责人", html)
         self.assertIn("店铺负责人配置", html)
+        self.assertIn("assigned_existing", html)
+        self.assertIn("补齐", html)
         for text in ["来源", "source_report", "source_file", "source_row"]:
             self.assertIn(text, html)
 
