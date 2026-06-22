@@ -242,6 +242,16 @@ function taskSourceText(task) {
   return `来源：${source || "-"}${row}`;
 }
 
+function taskActionButtons(task) {
+  const operator = currentOperator();
+  const historyButton = `<button class="tool-button" data-action="history" data-id="${task.id}">查看记录</button>`;
+  const submitButton = `<button class="tool-button" data-action="submit" data-id="${task.id}">店长填写</button>`;
+  if (operator.role === "owner") {
+    return `${historyButton}${submitButton}<span class="file-meta">店长只能填写自己负责的任务</span>`;
+  }
+  return `${historyButton}<button class="tool-button" data-action="assign" data-id="${task.id}">指派负责人</button>${submitButton}<button class="tool-button primary-mini" data-action="approve" data-id="${task.id}">管理员审核</button><button class="tool-button" data-action="done" data-id="${task.id}">标记完成</button><button class="tool-button danger-mini" data-action="reject" data-id="${task.id}">驳回</button>`;
+}
+
 function renderTaskCenter() {
   renderTaskSummary();
   const rows = $("#taskRows");
@@ -259,7 +269,7 @@ function renderTaskCenter() {
       <div>${task.system_action || ""}</div>
       <div>${task.owner_action || "-"}<br><span class="file-meta">${task.owner_remark || ""}</span></div>
       <div>${task.admin_decision || "-"}<br><span class="file-meta">${task.admin_remark || ""}</span></div>
-      <div class="task-actions"><button class="tool-button" data-action="history" data-id="${task.id}">查看记录</button><button class="tool-button" data-action="assign" data-id="${task.id}">指派负责人</button><button class="tool-button" data-action="submit" data-id="${task.id}">店长填写</button><button class="tool-button primary-mini" data-action="approve" data-id="${task.id}">管理员审核</button><button class="tool-button" data-action="done" data-id="${task.id}">标记完成</button><button class="tool-button danger-mini" data-action="reject" data-id="${task.id}">驳回</button></div>
+      <div class="task-actions">${taskActionButtons(task)}</div>
     </div>`).join("");
   rows.querySelectorAll('[data-action="history"]').forEach((button) => button.addEventListener("click", () => showTaskHistory(button.dataset.id)));
   rows.querySelectorAll('[data-action="assign"]').forEach((button) => button.addEventListener("click", () => assignTask(button.dataset.id)));

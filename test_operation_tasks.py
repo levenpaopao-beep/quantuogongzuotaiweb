@@ -520,7 +520,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         css = (root / "electron" / "renderer.css").read_text(encoding="utf-8")
         for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "批量通过", "批量驳回", "标记完成", "指派负责人", "店铺负责人配置", "导出任务"]:
             self.assertIn(text, html + js)
-        for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "batchReviewTasks", "doneTask", "assignTask", "loadStoreOwners", "saveStoreOwners", "exportTasks"]:
+        for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "batchReviewTasks", "doneTask", "assignTask", "loadStoreOwners", "saveStoreOwners", "exportTasks", "taskActionButtons"]:
+            self.assertIn(text, js)
+        for text in ["operator.role === \"owner\"", "店长只能填写自己负责的任务"]:
             self.assertIn(text, js)
         for text in ["来源", "source_report", "source_file", "source_row"]:
             self.assertIn(text, js)
