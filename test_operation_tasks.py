@@ -1748,6 +1748,34 @@ class OperationTaskStoreTest(unittest.TestCase):
             exported = json.loads(body)
             self.assertIn(exported["file"], daily_ops_app.DOWNLOAD_GRANTS[owner["token"]])
 
+    def test_task_export_filename_includes_key_filter_context(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            output_dir = root / "outputs"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "7", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+            ])
+            task = store.list_tasks()[0]
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已下架", remark="")
+            store.review_task(submitted["id"], admin="管理员", decision="通过", remark="同意")
+
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
+                 patch.object(daily_ops_app, "OUTPUT_DIR", output_dir):
+                exported = daily_ops_app.export_operation_tasks(
+                    role="owner",
+                    user="小琴",
+                    status=daily_ops_tasks.STATUS_APPROVED,
+                    platform="Temu",
+                    task_type="爆旺冲突",
+                )
+
+            self.assertIn("小琴", exported["file"])
+            self.assertIn("已通过", exported["file"])
+            self.assertIn("Temu", exported["file"])
+            self.assertIn("爆旺冲突", exported["file"])
+
     def test_owner_directory_api_is_available_before_login(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         with TemporaryDirectory() as tmp:

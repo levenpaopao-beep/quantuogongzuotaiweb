@@ -1716,10 +1716,24 @@ def mark_operation_task_done(task_id, actor, remark=""):
     return operation_task_store().mark_done(task_id, actor, remark)
 
 
+def operation_task_export_title(filters):
+    parts = ["运营任务台账"]
+    for key in ["platform", "user", "status", "task_type", "store", "next_handler"]:
+        value = norm(filters.get(key, ""))
+        if value:
+            parts.append(value)
+    if norm(filters.get("overdue")) in {"1", "true", "是", "超时"}:
+        parts.append("超时")
+    if norm(filters.get("unassigned")) in {"1", "true", "是", "未分配"}:
+        parts.append("未分配")
+    if norm(filters.get("reworked")) in {"1", "true", "是", "返工"}:
+        parts.append("返工")
+    return "-".join(parts)
+
+
 def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked=""):
     rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned, next_handler=next_handler, reworked=reworked)
     history_rows = sum(len(row.get("history") or []) for row in rows)
-    out = output_path("运营任务台账", "V1")
     filters = {
         "role": role,
         "user": user,
@@ -1732,6 +1746,7 @@ def export_operation_tasks(role="admin", user="", status="", task_type="", store
         "next_handler": next_handler,
         "reworked": reworked,
     }
+    out = output_path(operation_task_export_title(filters), "V1")
     operation_task_store().export_tasks(out, rows, filters=filters)
     return {"file": out.name, "download": f"/download?path={quote(out.name)}", "rows": len(rows), "history_rows": history_rows}
 
