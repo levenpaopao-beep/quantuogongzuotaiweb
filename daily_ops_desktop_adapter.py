@@ -71,8 +71,21 @@ def export_search(query, limit=500):
     return app.export_search(query, limit)
 
 
-def operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked=""):
-    rows = app.list_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked)
+def operator_role(payload):
+    return app.norm((payload or {}).get("role", "")) or "admin"
+
+
+def operator_user(payload, fallback="管理员"):
+    return app.norm((payload or {}).get("user", "")) or fallback
+
+
+def require_admin_payload(payload, action):
+    if operator_role(payload) != "admin":
+        raise PermissionError(f"只有管理员可以{action}")
+
+
+def operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", open_only=""):
+    rows = app.list_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked, open_only)
     return {"summary": app.summarize_operation_tasks(rows), "tasks": rows}
 
 
@@ -96,8 +109,33 @@ def mark_operation_task_done(task_id, actor, remark=""):
     return app.mark_operation_task_done(task_id, actor, remark)
 
 
-def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked=""):
-    return app.export_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked)
+def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", open_only=""):
+    return app.export_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked, open_only)
+
+
+def submit_operation_task_payload(payload):
+    payload = payload or {}
+    return submit_operation_task(payload.get("id", ""), operator_user(payload, payload.get("actor", "")), payload.get("action", ""), payload.get("remark", ""))
+
+
+def assign_operation_task_payload(payload):
+    require_admin_payload(payload, "指派任务")
+    return assign_operation_task(payload.get("id", ""), operator_user(payload), payload.get("owner", ""), payload.get("remark", ""))
+
+
+def review_operation_task_payload(payload):
+    require_admin_payload(payload, "审核任务")
+    return review_operation_task(payload.get("id", ""), operator_user(payload), payload.get("decision", ""), payload.get("remark", ""))
+
+
+def review_operation_tasks_payload(payload):
+    require_admin_payload(payload, "批量审核任务")
+    return review_operation_tasks(payload.get("ids", []), operator_user(payload), payload.get("decision", ""), payload.get("remark", ""))
+
+
+def mark_operation_task_done_payload(payload):
+    require_admin_payload(payload, "标记完成")
+    return mark_operation_task_done(payload.get("id", ""), operator_user(payload), payload.get("remark", ""))
 
 
 def store_owners():

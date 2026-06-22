@@ -75,19 +75,19 @@ def command(argv):
         return ok(adapter.operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked, open_only))
     if name == "submit-task":
         payload = json.loads(sys.stdin.read() or "{}")
-        return ok(adapter.submit_operation_task(payload.get("id", ""), payload.get("actor", ""), payload.get("action", ""), payload.get("remark", "")))
+        return ok(adapter.submit_operation_task_payload(payload))
     if name == "assign-task":
         payload = json.loads(sys.stdin.read() or "{}")
-        return ok(adapter.assign_operation_task(payload.get("id", ""), payload.get("actor", ""), payload.get("owner", ""), payload.get("remark", "")))
+        return ok(adapter.assign_operation_task_payload(payload))
     if name == "review-task":
         payload = json.loads(sys.stdin.read() or "{}")
-        return ok(adapter.review_operation_task(payload.get("id", ""), payload.get("admin", ""), payload.get("decision", ""), payload.get("remark", "")))
+        return ok(adapter.review_operation_task_payload(payload))
     if name == "batch-review-tasks":
         payload = json.loads(sys.stdin.read() or "{}")
-        return ok(adapter.review_operation_tasks(payload.get("ids", []), payload.get("admin", ""), payload.get("decision", ""), payload.get("remark", "")))
+        return ok(adapter.review_operation_tasks_payload(payload))
     if name == "done-task":
         payload = json.loads(sys.stdin.read() or "{}")
-        return ok(adapter.mark_operation_task_done(payload.get("id", ""), payload.get("actor", ""), payload.get("remark", "")))
+        return ok(adapter.mark_operation_task_done_payload(payload))
     if name == "export-tasks":
         payload = json.loads(sys.stdin.read() or "{}")
         return ok(adapter.export_operation_tasks(

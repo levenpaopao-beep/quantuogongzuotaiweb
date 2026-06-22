@@ -1,6 +1,7 @@
 import unittest
 import os
 import json
+import io
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ from openpyxl import load_workbook
 
 import daily_ops_tasks
 import daily_ops_app
+import daily_ops_cli
 import daily_ops_desktop_adapter
 
 
@@ -1605,6 +1607,28 @@ class OperationTaskStoreTest(unittest.TestCase):
                 owner_payload = json.loads(body)
                 self.assertEqual(len(owner_payload["tasks"]), 1)
                 self.assertEqual(owner_payload["summary"]["unassigned"], 0)
+
+    def test_desktop_task_commands_enforce_operator_role(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "1", "owner": "", "merchant_code": "A", "source_report": "r", "source_file": "a.xlsx", "source_row": 1},
+            ])
+
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+                task_id = store.list_tasks()[0]["id"]
+                owner_payload = {"role": "owner", "user": "小琴", "id": task_id, "owner": "小琴", "remark": "店长不能指派"}
+                with patch("sys.stdin", io.StringIO(json.dumps(owner_payload, ensure_ascii=False))):
+                    with self.assertRaises(PermissionError):
+                        daily_ops_cli.command(["assign-task"])
+
+                admin_payload = {"role": "admin", "user": "管理员", "id": task_id, "owner": "小琴", "remark": "补齐负责人"}
+                with patch("sys.stdin", io.StringIO(json.dumps(admin_payload, ensure_ascii=False))):
+                    result = daily_ops_cli.command(["assign-task"])
+                self.assertTrue(result["ok"])
+                self.assertEqual(result["data"]["owner"], "小琴")
 
     def test_completed_task_cannot_be_reassigned(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
