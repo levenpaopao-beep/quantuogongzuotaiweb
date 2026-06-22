@@ -316,6 +316,11 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(summary["owner_status"]["洁琳"]["by_status"]["待店长处理"], 1)
             self.assertEqual(summary["owner_status"]["未分配"]["total"], 1)
             self.assertEqual(summary["owner_status"]["未分配"]["by_status"]["待店长处理"], 1)
+            self.assertEqual(summary["by_next_handler"], {"管理员": 3, "店长": 1})
+            self.assertEqual(summary["by_next_action"]["审核通过或驳回"], 1)
+            self.assertEqual(summary["by_next_action"]["标记完成或归档"], 1)
+            self.assertEqual(summary["by_next_action"]["指派负责人"], 1)
+            self.assertEqual(summary["by_next_action"]["填写处理结果"], 1)
 
     def test_task_summary_counts_overdue_owner_and_review_work(self):
         with TemporaryDirectory() as tmp:

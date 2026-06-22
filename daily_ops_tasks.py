@@ -230,6 +230,8 @@ class OperationTaskStore:
         by_status = {}
         by_type = {}
         by_owner = {}
+        by_next_handler = {}
+        by_next_action = {}
         owner_status = {}
         overdue = {"total": 0, "by_status": {}}
         unassigned = 0
@@ -237,6 +239,9 @@ class OperationTaskStore:
             status = norm(row.get("status"))
             by_status[status] = by_status.get(status, 0) + 1
             by_type[norm(row.get("task_type"))] = by_type.get(norm(row.get("task_type")), 0) + 1
+            next_handler, next_action = task_next_step(row, now=now)
+            by_next_handler[next_handler] = by_next_handler.get(next_handler, 0) + 1
+            by_next_action[next_action] = by_next_action.get(next_action, 0) + 1
             owner = norm(row.get("owner"))
             if owner:
                 by_owner[owner] = by_owner.get(owner, 0) + 1
@@ -256,6 +261,8 @@ class OperationTaskStore:
             "by_status": by_status,
             "by_type": by_type,
             "by_owner": by_owner,
+            "by_next_handler": by_next_handler,
+            "by_next_action": by_next_action,
             "owner_status": owner_status,
             "overdue": overdue,
             "unassigned": unassigned,

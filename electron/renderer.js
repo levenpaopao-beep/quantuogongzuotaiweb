@@ -224,13 +224,17 @@ function renderTaskSummary() {
   const summary = state.taskSummary || {};
   const status = summary.by_status || {};
   const overdue = summary.overdue || {};
+  const nextHandler = summary.by_next_handler || {};
   const cards = [
     ["全部任务", summary.total || 0],
+    ["管理员待办", nextHandler["管理员"] || 0],
+    ["店长待办", nextHandler["店长"] || 0],
     ["待店长处理", status["待店长处理"] || 0],
     ["待管理员审核", status["待管理员审核"] || 0],
     ["超时未处理", overdue.total || 0],
     ["已通过", status["已通过"] || 0],
     ["未分配", summary.unassigned || 0],
+    ["无需处理", nextHandler["无需处理"] || 0],
   ];
   wrap.innerHTML = cards.map(([label, value]) => `<div class="task-kpi"><span>${label}</span><strong>${value}</strong></div>`).join("");
   renderOwnerTaskSummary();
