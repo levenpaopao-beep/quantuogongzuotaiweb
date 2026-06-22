@@ -1933,6 +1933,7 @@ HTML_PAGE = r"""<!doctype html>
 
     <section id="tasks" class="section active">
       <div class="task-summary" id="taskSummary"></div>
+      <div class="task-summary" id="ownerTaskSummary"></div>
       <div class="panel">
         <h2>任务台账</h2>
         <div class="task-filters">
@@ -2468,6 +2469,17 @@ function renderTaskSummary(){
     ['未分配', summary.unassigned || 0],
   ];
   wrap.innerHTML = cards.map(([label, value]) => `<div class="task-kpi"><span class="muted">${label}</span><strong>${value}</strong></div>`).join('');
+  renderOwnerTaskSummary();
+}
+function renderOwnerTaskSummary(){
+  const wrap = document.getElementById('ownerTaskSummary'); if(!wrap) return;
+  const ownerStatus = taskState.summary?.owner_status || {};
+  const rows = Object.values(ownerStatus).sort((a, b) => (b.total || 0) - (a.total || 0));
+  if(!rows.length){ wrap.innerHTML = ''; return; }
+  wrap.innerHTML = rows.map(item => {
+    const status = item.by_status || {};
+    return `<div class="task-kpi"><span class="muted">负责人待办：${esc(item.owner)}</span><strong>${item.total || 0}</strong><div class="muted">待店长 ${status['待店长处理'] || 0} / 待审核 ${status['待管理员审核'] || 0} / 已完成 ${status['已完成'] || 0}</div></div>`;
+  }).join('');
 }
 function taskSourceText(task){
   const source = [task.source_report, task.source_file].filter(Boolean).join(' / ');

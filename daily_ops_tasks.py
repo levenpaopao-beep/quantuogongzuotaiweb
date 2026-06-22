@@ -132,20 +132,27 @@ class OperationTaskStore:
         by_status = {}
         by_type = {}
         by_owner = {}
+        owner_status = {}
         unassigned = 0
         for row in rows:
-            by_status[norm(row.get("status"))] = by_status.get(norm(row.get("status")), 0) + 1
+            status = norm(row.get("status"))
+            by_status[status] = by_status.get(status, 0) + 1
             by_type[norm(row.get("task_type"))] = by_type.get(norm(row.get("task_type")), 0) + 1
             owner = norm(row.get("owner"))
             if owner:
                 by_owner[owner] = by_owner.get(owner, 0) + 1
             else:
+                owner = "未分配"
                 unassigned += 1
+            item = owner_status.setdefault(owner, {"owner": owner, "total": 0, "by_status": {}})
+            item["total"] += 1
+            item["by_status"][status] = item["by_status"].get(status, 0) + 1
         return {
             "total": len(rows),
             "by_status": by_status,
             "by_type": by_type,
             "by_owner": by_owner,
+            "owner_status": owner_status,
             "unassigned": unassigned,
         }
 

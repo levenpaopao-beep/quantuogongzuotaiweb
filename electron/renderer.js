@@ -227,6 +227,22 @@ function renderTaskSummary() {
     ["未分配", summary.unassigned || 0],
   ];
   wrap.innerHTML = cards.map(([label, value]) => `<div class="task-kpi"><span>${label}</span><strong>${value}</strong></div>`).join("");
+  renderOwnerTaskSummary();
+}
+
+function renderOwnerTaskSummary() {
+  const wrap = $("#ownerTaskSummary");
+  if (!wrap) return;
+  const ownerStatus = state.taskSummary?.owner_status || {};
+  const rows = Object.values(ownerStatus).sort((a, b) => (b.total || 0) - (a.total || 0));
+  if (!rows.length) {
+    wrap.innerHTML = "";
+    return;
+  }
+  wrap.innerHTML = rows.map((item) => {
+    const status = item.by_status || {};
+    return `<div class="task-kpi"><span>负责人待办：${item.owner || ""}</span><strong>${item.total || 0}</strong><p>待店长 ${status["待店长处理"] || 0} / 待审核 ${status["待管理员审核"] || 0} / 已完成 ${status["已完成"] || 0}</p></div>`;
+  }).join("");
 }
 
 function taskBadge(status) {

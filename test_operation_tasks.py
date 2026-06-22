@@ -142,6 +142,29 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(summary["unassigned"], 1)
             self.assertEqual(summary["by_owner"], {"小琴": 1})
 
+    def test_task_summary_breaks_status_counts_down_by_owner(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "7", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "低分预警", "store": "8", "owner": "小琴", "merchant_code": "B", "source_report": "r", "source_row": 2},
+                {"platform": "Shein", "task_type": "爆旺冲突", "store": "琪琪", "owner": "洁琳", "merchant_code": "C", "source_report": "r", "source_row": 3},
+                {"platform": "Temu", "task_type": "滞销处理", "store": "9", "owner": "", "merchant_code": "D", "source_report": "r", "source_row": 4},
+            ])
+            xiaoqin_rows = store.list_tasks(role="owner", user="小琴")
+            store.submit_owner_action(xiaoqin_rows[0]["id"], actor="小琴", action="已处理", remark="")
+            store.submit_owner_action(xiaoqin_rows[1]["id"], actor="小琴", action="已处理", remark="")
+            store.review_task(xiaoqin_rows[0]["id"], admin="管理员", decision="通过", remark="")
+
+            summary = store.summary()
+            self.assertEqual(summary["owner_status"]["小琴"]["total"], 2)
+            self.assertEqual(summary["owner_status"]["小琴"]["by_status"]["待管理员审核"], 1)
+            self.assertEqual(summary["owner_status"]["小琴"]["by_status"]["已通过"], 1)
+            self.assertEqual(summary["owner_status"]["洁琳"]["by_status"]["待店长处理"], 1)
+            self.assertEqual(summary["owner_status"]["未分配"]["total"], 1)
+            self.assertEqual(summary["owner_status"]["未分配"]["by_status"]["待店长处理"], 1)
+
     def test_admin_can_assign_unassigned_task_to_owner(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -486,6 +509,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("taskActionButtons", html)
         self.assertIn("operatorSession.role === 'owner'", html)
         self.assertIn("店长只能填写自己负责的任务", html)
+        self.assertIn("负责人待办", html)
+        self.assertIn("renderOwnerTaskSummary", html)
+        self.assertIn("owner_status", html)
         for text in ["来源", "source_report", "source_file", "source_row"]:
             self.assertIn(text, html)
 
@@ -520,8 +546,10 @@ class OperationTaskStoreTest(unittest.TestCase):
         css = (root / "electron" / "renderer.css").read_text(encoding="utf-8")
         for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "批量通过", "批量驳回", "标记完成", "指派负责人", "店铺负责人配置", "导出任务"]:
             self.assertIn(text, html + js)
-        for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "batchReviewTasks", "doneTask", "assignTask", "loadStoreOwners", "saveStoreOwners", "exportTasks", "taskActionButtons"]:
+        for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "batchReviewTasks", "doneTask", "assignTask", "loadStoreOwners", "saveStoreOwners", "exportTasks", "taskActionButtons", "renderOwnerTaskSummary"]:
             self.assertIn(text, js)
+        self.assertIn("owner_status", js)
+        self.assertIn("负责人待办", html + js)
         for text in ["operator.role === \"owner\"", "店长只能填写自己负责的任务"]:
             self.assertIn(text, js)
         for text in ["来源", "source_report", "source_file", "source_row"]:
