@@ -349,6 +349,13 @@ function showTaskHistory(id) {
   window.alert(`${title}\n\n${lines.join("\n\n")}`);
 }
 
+function showTaskError(error) {
+  const line = $("#taskStatusLine");
+  const message = error.message || "任务操作失败";
+  if (line) line.textContent = message;
+  showToast(message);
+}
+
 async function loadTasks(showToastOnDone = true) {
   const line = $("#taskStatusLine");
   if (line) line.textContent = "正在读取任务...";
@@ -361,71 +368,95 @@ async function loadTasks(showToastOnDone = true) {
 }
 
 async function submitTask(id) {
-  const actor = $("#taskUser")?.value.trim() || window.prompt("填写人") || "";
-  if (!actor) return;
-  const action = window.prompt("店长填写处理动作，例如：已下架、申请退货、继续观察、同意议价");
-  if (!action) return;
-  const remark = window.prompt("备注") || "";
-  await api.submitTask({ id, actor, action, remark });
-  await loadTasks(false);
-  showToast("店长填写已提交");
+  try {
+    const actor = $("#taskUser")?.value.trim() || window.prompt("填写人") || "";
+    if (!actor) return;
+    const action = window.prompt("店长填写处理动作，例如：已下架、申请退货、继续观察、同意议价");
+    if (!action) return;
+    const remark = window.prompt("备注") || "";
+    await api.submitTask({ id, actor, action, remark });
+    await loadTasks(false);
+    showToast("店长填写已提交");
+  } catch (error) {
+    showTaskError(error);
+  }
 }
 
 async function assignTask(id) {
-  const actor = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
-  const owner = window.prompt("指派给负责人");
-  if (!owner) return;
-  const remark = window.prompt("指派备注") || "";
-  await api.assignTask({ id, actor, owner, remark });
-  await loadTasks(false);
-  showToast("任务负责人已指派");
+  try {
+    const actor = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
+    const owner = window.prompt("指派给负责人");
+    if (!owner) return;
+    const remark = window.prompt("指派备注") || "";
+    await api.assignTask({ id, actor, owner, remark });
+    await loadTasks(false);
+    showToast("任务负责人已指派");
+  } catch (error) {
+    showTaskError(error);
+  }
 }
 
 async function reviewTask(id, decision) {
-  const admin = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
-  const remark = window.prompt(decision === "驳回" ? "管理员审核：驳回原因（必填）" : `管理员审核：${decision}`) || "";
-  if (decision === "驳回" && !remark.trim()) {
-    showToast("驳回任务必须填写原因");
-    return;
+  try {
+    const admin = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
+    const remark = window.prompt(decision === "驳回" ? "管理员审核：驳回原因（必填）" : `管理员审核：${decision}`) || "";
+    if (decision === "驳回" && !remark.trim()) {
+      showToast("驳回任务必须填写原因");
+      return;
+    }
+    await api.reviewTask({ id, admin, decision, remark });
+    await loadTasks(false);
+    showToast(`管理员审核${decision}`);
+  } catch (error) {
+    showTaskError(error);
   }
-  await api.reviewTask({ id, admin, decision, remark });
-  await loadTasks(false);
-  showToast(`管理员审核${decision}`);
 }
 
 async function batchReviewTasks(decision) {
-  const admin = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
-  const ids = state.tasks.filter((task) => task.status === "待管理员审核").map((task) => task.id);
-  if (!ids.length) {
-    showToast("当前筛选没有待管理员审核任务");
-    return;
+  try {
+    const admin = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
+    const ids = state.tasks.filter((task) => task.status === "待管理员审核").map((task) => task.id);
+    if (!ids.length) {
+      showToast("当前筛选没有待管理员审核任务");
+      return;
+    }
+    const remark = window.prompt(decision === "驳回" ? "批量驳回原因（必填）" : `批量${decision}备注`) || "";
+    if (decision === "驳回" && !remark.trim()) {
+      showToast("批量驳回任务必须填写原因");
+      return;
+    }
+    const result = await api.batchReviewTasks({ ids, admin, decision, remark });
+    await loadTasks(false);
+    showToast(`已批量${decision} ${result.count || 0} 条任务`);
+  } catch (error) {
+    showTaskError(error);
   }
-  const remark = window.prompt(decision === "驳回" ? "批量驳回原因（必填）" : `批量${decision}备注`) || "";
-  if (decision === "驳回" && !remark.trim()) {
-    showToast("批量驳回任务必须填写原因");
-    return;
-  }
-  const result = await api.batchReviewTasks({ ids, admin, decision, remark });
-  await loadTasks(false);
-  showToast(`已批量${decision} ${result.count || 0} 条任务`);
 }
 
 async function doneTask(id) {
-  const actor = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
-  const remark = window.prompt("完成确认说明（必填）") || "";
-  if (!remark.trim()) {
-    showToast("标记完成必须填写确认说明");
-    return;
+  try {
+    const actor = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
+    const remark = window.prompt("完成确认说明（必填）") || "";
+    if (!remark.trim()) {
+      showToast("标记完成必须填写确认说明");
+      return;
+    }
+    await api.doneTask({ id, actor, remark });
+    await loadTasks(false);
+    showToast("任务已标记完成");
+  } catch (error) {
+    showTaskError(error);
   }
-  await api.doneTask({ id, actor, remark });
-  await loadTasks(false);
-  showToast("任务已标记完成");
 }
 
 async function exportTasks() {
-  const result = await api.exportTasks(taskFilters());
-  showToast(`任务台账已导出：${result.file || ""}`);
-  await refreshAll();
+  try {
+    const result = await api.exportTasks(taskFilters());
+    showToast(`任务台账已导出：${result.file || ""}`);
+    await refreshAll();
+  } catch (error) {
+    showTaskError(error);
+  }
 }
 
 function flattenRules(rules) {

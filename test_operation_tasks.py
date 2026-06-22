@@ -1400,6 +1400,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("未分配", html + js + daily_ops_app.HTML_PAGE)
         self.assertIn("assigned_existing", js)
         self.assertIn("已补齐", js)
+        self.assertIn("function showTaskError", js)
+        self.assertGreaterEqual(js.count("showTaskError(error)"), 6)
         for text in ["task-summary", "task-table", "task-actions"]:
             self.assertIn(text, css)
 
