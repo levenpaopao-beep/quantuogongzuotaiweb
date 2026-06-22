@@ -315,6 +315,7 @@ def task_query_payload(params):
         "platform": params.get("platform", [""])[0],
         "overdue": params.get("overdue", [""])[0],
         "unassigned": params.get("unassigned", [""])[0],
+        "reworked": params.get("reworked", [""])[0],
     }
 
 
@@ -1680,7 +1681,7 @@ def operation_owner_directory():
     return sorted(owners.values(), key=lambda row: (-row["task_count"], row["owner"]))
 
 
-def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler=""):
+def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked=""):
     return operation_task_store().list_tasks(
         role=role,
         user=user,
@@ -1691,6 +1692,7 @@ def list_operation_tasks(role="admin", user="", status="", task_type="", store="
         overdue=overdue,
         unassigned=unassigned,
         next_handler=next_handler,
+        reworked=reworked,
     )
 
 
@@ -1714,8 +1716,8 @@ def mark_operation_task_done(task_id, actor, remark=""):
     return operation_task_store().mark_done(task_id, actor, remark)
 
 
-def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler=""):
-    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned, next_handler=next_handler)
+def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked=""):
+    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned, next_handler=next_handler, reworked=reworked)
     history_rows = sum(len(row.get("history") or []) for row in rows)
     out = output_path("运营任务台账", "V1")
     filters = {
@@ -1728,6 +1730,7 @@ def export_operation_tasks(role="admin", user="", status="", task_type="", store
         "overdue": overdue,
         "unassigned": unassigned,
         "next_handler": next_handler,
+        "reworked": reworked,
     }
     operation_task_store().export_tasks(out, rows, filters=filters)
     return {"file": out.name, "download": f"/download?path={quote(out.name)}", "rows": len(rows), "history_rows": history_rows}
@@ -1755,6 +1758,7 @@ def handle_tasks_api(action, headers, payload):
                 overdue=payload.get("overdue", ""),
                 unassigned=payload.get("unassigned", ""),
                 next_handler=payload.get("next_handler", ""),
+                reworked=payload.get("reworked", ""),
             )
             return json_bytes({"ok": True, "operator": operator, "summary": summarize_operation_tasks(rows), "tasks": rows})
         if action == "POST_SUBMIT":
@@ -1797,6 +1801,7 @@ def handle_tasks_api(action, headers, payload):
                 overdue=payload.get("overdue", ""),
                 unassigned=payload.get("unassigned", ""),
                 next_handler=payload.get("next_handler", ""),
+                reworked=payload.get("reworked", ""),
             )
             grant_download(token, result.get("file", ""))
             return json_bytes({"ok": True, **result})
@@ -2024,6 +2029,7 @@ HTML_PAGE = r"""<!doctype html>
           <select id="taskNextHandler"><option value="">全部下一步</option><option>管理员</option><option>店长</option><option>无需处理</option></select>
           <label><input id="taskOverdue" type="checkbox"> 只看超时</label>
           <label><input id="taskUnassigned" type="checkbox"> 只看未分配</label>
+          <label><input id="taskReworked" type="checkbox"> 只看返工</label>
           <button class="primary" onclick="loadTasks()">查询</button>
           <button class="primary" onclick="batchReviewTasks('通过')">批量通过</button>
           <button class="danger" onclick="batchReviewTasks('驳回')">批量驳回</button>
@@ -2536,6 +2542,7 @@ function taskQuery(){
   params.set('next_handler', document.getElementById('taskNextHandler')?.value || '');
   params.set('overdue', document.getElementById('taskOverdue')?.checked ? '1' : '');
   params.set('unassigned', document.getElementById('taskUnassigned')?.checked ? '1' : '');
+  params.set('reworked', document.getElementById('taskReworked')?.checked ? '1' : '');
   return params;
 }
 async function loadTasks(showMessage=true){

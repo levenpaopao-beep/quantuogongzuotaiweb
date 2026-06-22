@@ -727,16 +727,39 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(resubmitted["status"], daily_ops_tasks.STATUS_PENDING_REVIEW)
             self.assertEqual(resubmitted["rejection_count"], 1)
             self.assertEqual(resubmitted["last_rejection_reason"], "缺少后台截图")
+            store.upsert_generated_tasks([
+                {
+                    "platform": "Temu",
+                    "task_type": "议价审核",
+                    "store": "8",
+                    "owner": "小琴",
+                    "merchant_code": "A-002",
+                    "product_name": "蓝色球衣",
+                    "system_action": "确认是否接受议价",
+                    "source_report": "Temu议价审核表",
+                    "source_row": 3,
+                }
+            ])
 
-            export_path = store.export_tasks(root / "导出.xlsx")
+            reworked_rows = store.list_tasks(reworked="1")
+            self.assertEqual([row["product_name"] for row in reworked_rows], ["红色球衣"])
+
+            export_path = store.export_tasks(root / "导出.xlsx", tasks=reworked_rows, filters={"reworked": "1"})
             workbook = load_workbook(export_path, read_only=True, data_only=True)
             try:
                 ws = workbook["任务台账"]
                 headers = [cell.value for cell in ws[1]]
                 rejection_count_col = headers.index("驳回次数") + 1
                 last_reason_col = headers.index("最近驳回原因") + 1
+                self.assertEqual(ws.max_row, 2)
                 self.assertEqual(ws.cell(row=2, column=rejection_count_col).value, 1)
                 self.assertEqual(ws.cell(row=2, column=last_reason_col).value, "缺少后台截图")
+                criteria_ws = workbook["导出口径"]
+                criteria = {
+                    criteria_ws.cell(row=row, column=1).value: criteria_ws.cell(row=row, column=2).value
+                    for row in range(2, criteria_ws.max_row + 1)
+                }
+                self.assertEqual(criteria["reworked"], "1")
             finally:
                 workbook.close()
 
@@ -1508,11 +1531,13 @@ class OperationTaskStoreTest(unittest.TestCase):
             "platform": ["Temu"],
             "overdue": ["1"],
             "unassigned": ["1"],
+            "reworked": ["1"],
         })
 
         self.assertEqual(payload["platform"], "Temu")
         self.assertEqual(payload["overdue"], "1")
         self.assertEqual(payload["unassigned"], "1")
+        self.assertEqual(payload["reworked"], "1")
 
     def test_admin_workflow_apis_require_admin_session(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()

@@ -215,6 +215,7 @@ function taskFilters() {
     next_handler: $("#taskNextHandler")?.value || "",
     overdue: $("#taskOverdue")?.checked ? "1" : "",
     unassigned: $("#taskUnassigned")?.checked ? "1" : "",
+    reworked: $("#taskReworked")?.checked ? "1" : "",
   };
 }
 
