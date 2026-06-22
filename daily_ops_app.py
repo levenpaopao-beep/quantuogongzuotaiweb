@@ -1007,6 +1007,35 @@ def data_status():
     }
 
 
+def public_status(payload):
+    safe = dict(payload)
+    safe["source_groups"] = []
+    safe["outputs"] = []
+    safe["reports"] = {}
+    safe["rules"] = {}
+    safe["upload_targets"] = {}
+    safe["report_tasks"] = {}
+    database = dict(safe.get("database") or {})
+    database["path"] = ""
+    safe["database"] = database
+    return safe
+
+
+def handle_status_api(headers):
+    try:
+        payload = data_status()
+        token = token_from_headers(headers or {})
+        if token:
+            operator = operator_from_token(token)
+            if can_review_tasks(operator):
+                return json_bytes({"ok": True, **payload})
+        return json_bytes({"ok": True, **public_status(payload)})
+    except PermissionError:
+        return json_bytes({"ok": True, **public_status(data_status())})
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
 def load_module(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
@@ -2318,7 +2347,7 @@ async function loginOperator(){
   localStorage.setItem('operatorSession', JSON.stringify(operatorSession));
   localStorage.setItem('operatorToken', operatorToken);
   renderOperator();
-  await loadTasks();
+  await refreshStatus();
 }
 async function logoutOperator(){
   try {
@@ -2873,7 +2902,7 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
             if parsed.path == "/":
                 self.send_payload(200, "text/html; charset=utf-8", HTML_PAGE.encode("utf-8"))
             elif parsed.path == "/api/status":
-                self.send_json({"ok": True, **data_status()})
+                self.send_payload(*handle_status_api(self.headers))
             elif parsed.path == "/api/rules":
                 self.send_json({"ok": True, "rules": load_rules()})
             elif parsed.path == "/api/search":

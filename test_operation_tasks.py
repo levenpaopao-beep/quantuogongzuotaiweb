@@ -2026,6 +2026,48 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(status["report_tasks"]["temu_hot"]["by_status"][daily_ops_tasks.STATUS_PENDING_OWNER], 2)
                 self.assertEqual(status["report_tasks"]["shein_hot"]["total"], 1)
 
+    def test_status_api_hides_operational_details_without_admin_session(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        owner = daily_ops_app.login_operator("owner", "小琴", "")
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+
+        full_status = {
+            "version": "v2.0",
+            "temu_files": 1,
+            "shein_files": 1,
+            "erp_files": 1,
+            "source_groups": [{"key": "temu_platform", "latest": {"name": "temu.xlsx"}}],
+            "outputs": [{"name": "运营任务台账.xlsx"}],
+            "database": {"exists": True, "tables": 1, "rows": 2, "path": "/tmp/db.sqlite"},
+            "tasks": {"total": 3},
+            "report_tasks": {"temu_hot": {"total": 1}},
+            "reports": {"temu_hot": {"name": "Temu爆旺款重复预警"}},
+            "rules": {"hot_item": {}},
+            "upload_targets": {"temu_platform": "Temu平台表"},
+        }
+        with patch.object(daily_ops_app, "data_status", return_value=full_status):
+            status, _content_type, body = daily_ops_app.handle_status_api({})
+            public_payload = json.loads(body)
+            self.assertEqual(status, 200)
+            self.assertEqual(public_payload["outputs"], [])
+            self.assertEqual(public_payload["source_groups"], [])
+            self.assertEqual(public_payload["database"]["path"], "")
+            self.assertEqual(public_payload["reports"], {})
+            self.assertEqual(public_payload["rules"], {})
+
+            status, _content_type, body = daily_ops_app.handle_status_api({"X-Operator-Token": owner["token"]})
+            owner_payload = json.loads(body)
+            self.assertEqual(status, 200)
+            self.assertEqual(owner_payload["outputs"], [])
+            self.assertEqual(owner_payload["source_groups"], [])
+
+            status, _content_type, body = daily_ops_app.handle_status_api({"X-Operator-Token": admin["token"]})
+            admin_payload = json.loads(body)
+            self.assertEqual(status, 200)
+            self.assertEqual(admin_payload["outputs"], [{"name": "运营任务台账.xlsx"}])
+            self.assertEqual(admin_payload["source_groups"][0]["latest"]["name"], "temu.xlsx")
+            self.assertEqual(admin_payload["database"]["path"], "/tmp/db.sqlite")
+
     def test_report_queue_surfaces_persisted_task_counts(self):
         root = Path(__file__).resolve().parent
         html = daily_ops_app.HTML_PAGE
