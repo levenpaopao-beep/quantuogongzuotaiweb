@@ -346,7 +346,11 @@ async function assignTask(id) {
 
 async function reviewTask(id, decision) {
   const admin = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
-  const remark = window.prompt(`管理员审核：${decision}`) || "";
+  const remark = window.prompt(decision === "驳回" ? "管理员审核：驳回原因（必填）" : `管理员审核：${decision}`) || "";
+  if (decision === "驳回" && !remark.trim()) {
+    showToast("驳回任务必须填写原因");
+    return;
+  }
   await api.reviewTask({ id, admin, decision, remark });
   await loadTasks(false);
   showToast(`管理员审核${decision}`);
@@ -359,7 +363,11 @@ async function batchReviewTasks(decision) {
     showToast("当前筛选没有待管理员审核任务");
     return;
   }
-  const remark = window.prompt(`批量${decision}备注`) || "";
+  const remark = window.prompt(decision === "驳回" ? "批量驳回原因（必填）" : `批量${decision}备注`) || "";
+  if (decision === "驳回" && !remark.trim()) {
+    showToast("批量驳回任务必须填写原因");
+    return;
+  }
   const result = await api.batchReviewTasks({ ids, admin, decision, remark });
   await loadTasks(false);
   showToast(`已批量${decision} ${result.count || 0} 条任务`);

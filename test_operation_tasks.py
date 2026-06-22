@@ -426,6 +426,8 @@ class OperationTaskStoreTest(unittest.TestCase):
                 store.review_task(task["id"], admin="管理员", decision="通过", remark="未提交就审核")
 
             submitted = store.submit_owner_action(task["id"], actor="小琴", action="已下架", remark="后台已处理")
+            with self.assertRaises(ValueError):
+                store.review_task(submitted["id"], admin="管理员", decision="驳回", remark="")
             reviewed = store.review_task(submitted["id"], admin="管理员", decision="通过", remark="同意")
             self.assertEqual(reviewed["status"], daily_ops_tasks.STATUS_APPROVED)
 
@@ -732,6 +734,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("overdue", html)
         self.assertIn("taskOverdue", html)
         self.assertIn("只看超时", html)
+        self.assertIn("驳回原因", html)
+        self.assertIn("必须填写原因", html)
         for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
             self.assertIn(text, html)
 
@@ -774,6 +778,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("overdue", js)
         self.assertIn("taskOverdue", html)
         self.assertIn("只看超时", html)
+        self.assertIn("驳回原因", js)
+        self.assertIn("必须填写原因", js)
         for text in ["operator.role === \"owner\"", "店长只能填写自己负责的任务"]:
             self.assertIn(text, js)
         for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
@@ -989,6 +995,23 @@ class OperationTaskStoreTest(unittest.TestCase):
                 payload = json.loads(body)
                 self.assertEqual(payload["count"], 2)
                 self.assertEqual([row["status"] for row in payload["tasks"]], [daily_ops_tasks.STATUS_APPROVED, daily_ops_tasks.STATUS_APPROVED])
+
+    def test_batch_reject_requires_admin_remark(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "1", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+            ])
+            task = store.list_tasks()[0]
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已处理", remark="")
+
+            with self.assertRaises(ValueError):
+                store.review_tasks([submitted["id"]], admin="管理员", decision="驳回", remark="")
+
+            rejected = store.review_tasks([submitted["id"]], admin="管理员", decision="驳回", remark="处理截图不完整")
+            self.assertEqual(rejected["tasks"][0]["status"], daily_ops_tasks.STATUS_REJECTED)
+            self.assertEqual(rejected["tasks"][0]["admin_remark"], "处理截图不完整")
 
     def test_http_task_export_can_filter_overdue_tasks(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
