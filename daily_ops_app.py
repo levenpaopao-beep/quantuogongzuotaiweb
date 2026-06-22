@@ -1015,6 +1015,7 @@ def public_status(payload):
     safe["rules"] = {}
     safe["upload_targets"] = {}
     safe["report_tasks"] = {}
+    safe["tasks"] = {}
     database = dict(safe.get("database") or {})
     database["path"] = ""
     safe["database"] = database
