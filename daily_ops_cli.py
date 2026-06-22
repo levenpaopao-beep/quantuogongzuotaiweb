@@ -120,8 +120,7 @@ def command(argv):
         return ok(adapter.store_owners())
     if name == "save-store-owners":
         payload = read_payload()
-        require_admin(payload, "维护负责人配置")
-        return ok(adapter.save_store_owners(payload.get("assignments", [])))
+        return ok(adapter.save_store_owners_payload(payload))
     if name == "create-backup":
         require_admin(read_payload(), "生成备份")
         return ok(adapter.create_backup())

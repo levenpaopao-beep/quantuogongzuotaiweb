@@ -188,10 +188,16 @@ def store_owners():
     return {"assignments": app.load_store_owner_assignments(), "owners": app.operation_owner_directory()}
 
 
-def save_store_owners(assignments):
+def save_store_owners(assignments, actor="管理员"):
     saved = app.save_store_owner_assignments(assignments)
-    assigned_existing = app.assign_existing_unassigned_tasks(saved, "管理员")
+    assigned_existing = app.assign_existing_unassigned_tasks(saved, actor)
     return {"assignments": saved, "assigned_existing": assigned_existing, "owners": app.operation_owner_directory()}
+
+
+def save_store_owners_payload(payload):
+    payload = payload or {}
+    require_admin_payload(payload, "维护负责人配置")
+    return save_store_owners(payload.get("assignments", []), operator_user(payload))
 
 
 def create_backup():

@@ -1712,13 +1712,14 @@ def assign_existing_unassigned_tasks(assignments, actor="管理员"):
             continue
         task["owner"] = owner
         task["updated_at"] = timestamp
-        task.setdefault("history", []).append({
-            "time": timestamp,
-            "actor": norm(actor) or "管理员",
-            "event": "自动指派",
-            "action": f"按店铺负责人配置指派给 {owner}",
-            "remark": "保存店铺负责人配置时自动补齐",
-        })
+        task.setdefault("history", []).append(daily_ops_tasks.history_entry(
+            task,
+            norm(actor) or "管理员",
+            "自动指派",
+            f"按店铺负责人配置指派给 {owner}",
+            "保存店铺负责人配置时自动补齐",
+            time=timestamp,
+        ))
         assigned += 1
     if assigned:
         store.save(payload)

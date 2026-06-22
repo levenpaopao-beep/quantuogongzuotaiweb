@@ -1285,6 +1285,32 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(len(owner_rows), 1)
                 self.assertEqual(owner_rows[0]["owner"], "小琴")
 
+    def test_desktop_store_owner_save_records_actual_admin_for_auto_assignment(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            owner_map = root / "store_owner_map.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "价格异常", "store": "7", "owner": "", "merchant_code": "A", "source_report": "r", "source_row": 1},
+            ])
+            payload = {
+                "role": "admin",
+                "user": "运营主管",
+                "assignments": [{"platform": "Temu", "store": "7", "owner": "小琴"}],
+            }
+
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
+                 patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_map), \
+                 patch("sys.stdin", io.StringIO(json.dumps(payload, ensure_ascii=False))):
+                result = daily_ops_cli.command(["save-store-owners"])
+
+            self.assertTrue(result["ok"])
+            task = daily_ops_tasks.OperationTaskStore(task_db).list_tasks()[0]
+            self.assertEqual(task["history"][-1]["event"], "自动指派")
+            self.assertEqual(task["history"][-1]["actor"], "运营主管")
+            self.assertEqual(task["history"][-1]["status_after"], daily_ops_tasks.STATUS_PENDING_OWNER)
+
     def test_local_web_page_exposes_operation_task_workflow(self):
         html = daily_ops_app.HTML_PAGE
         self.assertIn("/api/tasks", html)
