@@ -71,7 +71,8 @@ def command(argv):
         unassigned = args[7] if len(args) > 7 else ""
         next_handler = args[8] if len(args) > 8 else ""
         reworked = args[9] if len(args) > 9 else ""
-        return ok(adapter.operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked))
+        open_only = args[10] if len(args) > 10 else ""
+        return ok(adapter.operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked, open_only))
     if name == "submit-task":
         payload = json.loads(sys.stdin.read() or "{}")
         return ok(adapter.submit_operation_task(payload.get("id", ""), payload.get("actor", ""), payload.get("action", ""), payload.get("remark", "")))
@@ -100,6 +101,7 @@ def command(argv):
             payload.get("unassigned", ""),
             payload.get("next_handler", ""),
             payload.get("reworked", ""),
+            payload.get("open_only", ""),
         ))
     if name == "store-owners":
         return ok(adapter.store_owners())

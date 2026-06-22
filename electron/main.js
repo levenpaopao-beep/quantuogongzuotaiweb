@@ -116,6 +116,7 @@ ipcMain.handle("api:tasks", (_event, filters) => {
     payload.unassigned || "",
     payload.next_handler || "",
     payload.reworked || "",
+    payload.open_only || "",
   ]);
 });
 ipcMain.handle("api:submit-task", (_event, payload) => runPython("submit-task", [], JSON.stringify(payload || {})));

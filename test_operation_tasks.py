@@ -1334,6 +1334,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertIn(text, preload)
         for text in ["api:tasks", "api:submit-task", "api:review-task", "api:batch-review-tasks", "api:done-task", "api:assign-task", "api:export-tasks", "api:store-owners", "api:save-store-owners"]:
             self.assertIn(text, main)
+        self.assertIn("payload.open_only", main)
 
     def test_desktop_adapter_scopes_task_summary_like_task_rows(self):
         with TemporaryDirectory() as tmp:
@@ -2179,6 +2180,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("/api/backup/restore", html)
         self.assertIn("生成备份", html)
         self.assertIn("restore-backup", cli)
+        self.assertIn("open_only", cli)
         self.assertIn("create_backup", adapter)
 
     def test_report_generation_surfaces_task_sync_summary(self):
