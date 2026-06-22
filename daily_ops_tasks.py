@@ -130,6 +130,15 @@ def public_task(row):
     return item
 
 
+def can_update_generated_owner(task):
+    if task.get("status") != STATUS_PENDING_OWNER:
+        return False
+    for item in task.get("history") or []:
+        if norm(item.get("event")) in {"任务指派", "自动指派"}:
+            return False
+    return True
+
+
 class OperationTaskStore:
     def __init__(self, path):
         self.path = Path(path)
@@ -260,7 +269,7 @@ class OperationTaskStore:
                     "source_row",
                 ]:
                     task[key] = row.get(key, task.get(key, ""))
-                if row.get("owner"):
+                if row.get("owner") and can_update_generated_owner(task):
                     task["owner"] = row.get("owner", "")
                 task["updated_at"] = timestamp
                 updated += 1

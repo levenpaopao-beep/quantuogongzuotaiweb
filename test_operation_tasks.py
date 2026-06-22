@@ -442,6 +442,65 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(updated["system_action"], "继续下架重复铺货")
             self.assertEqual(updated["history"][-1]["event"], "任务指派")
 
+    def test_reimport_does_not_move_submitted_task_to_another_owner(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            source = {
+                "platform": "Temu",
+                "task_type": "价格异常",
+                "store": "7",
+                "owner": "小琴",
+                "merchant_code": "A-001",
+                "product_name": "红色球衣",
+                "system_action": "低于成本价",
+                "source_report": "Temu申报价异常",
+                "source_file": "price.xlsx",
+                "source_sheet": "低于成本价",
+                "source_row": 2,
+            }
+            store.upsert_generated_tasks([source])
+            task = store.list_tasks()[0]
+            store.submit_owner_action(task["id"], actor="小琴", action="已调价", remark="后台已处理")
+
+            result = store.upsert_generated_tasks([{**source, "owner": "洁琳", "system_action": "低于成本价，继续处理"}])
+
+            self.assertEqual(result["updated"], 1)
+            updated = store.list_tasks()[0]
+            self.assertEqual(updated["owner"], "小琴")
+            self.assertEqual(updated["status"], daily_ops_tasks.STATUS_PENDING_REVIEW)
+            self.assertEqual(updated["owner_action"], "已调价")
+            self.assertEqual(updated["system_action"], "低于成本价，继续处理")
+
+    def test_reimport_does_not_overwrite_manual_assignment_with_source_owner(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            source = {
+                "platform": "Shein",
+                "task_type": "库存异常",
+                "store": "琪琪",
+                "owner": "",
+                "merchant_code": "B-001",
+                "product_name": "宠物背带",
+                "system_action": "仓备大于30天销量2倍",
+                "source_report": "Shein仓备库存异常",
+                "source_file": "inventory.xlsx",
+                "source_sheet": "仓备大于30天销量2倍",
+                "source_row": 2,
+            }
+            store.upsert_generated_tasks([source])
+            task = store.list_tasks()[0]
+            store.assign_task(task["id"], actor="管理员", owner="洁琳", remark="按负责人配置补齐")
+
+            result = store.upsert_generated_tasks([{**source, "owner": "小琴", "system_action": "仓备仍异常"}])
+
+            self.assertEqual(result["updated"], 1)
+            updated = store.list_tasks()[0]
+            self.assertEqual(updated["owner"], "洁琳")
+            self.assertEqual(updated["system_action"], "仓备仍异常")
+            self.assertEqual(updated["history"][-1]["event"], "任务指派")
+
     def test_unassigned_task_must_be_assigned_before_owner_submit(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
