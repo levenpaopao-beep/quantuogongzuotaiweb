@@ -102,6 +102,32 @@ class OperationTaskStoreTest(unittest.TestCase):
             finally:
                 workbook.close()
 
+    def test_generated_tasks_are_deduped_within_same_batch_but_not_across_weekly_files(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            first_week = {
+                "platform": "Temu",
+                "task_type": "爆旺冲突",
+                "store": "7",
+                "owner": "小琴",
+                "merchant_code": "A-001",
+                "skc": "SKC1",
+                "product_name": "红色球衣",
+                "system_action": "立即下架",
+                "source_report": "Temu爆旺款重复预警",
+                "source_file": "2026-W25-爆旺.xlsx",
+                "source_sheet": "具体店铺操作表",
+                "source_row": 2,
+            }
+            second_week = {**first_week, "source_file": "2026-W26-爆旺.xlsx"}
+
+            self.assertEqual(store.upsert_generated_tasks([first_week])["created"], 1)
+            self.assertEqual(store.upsert_generated_tasks([first_week])["updated"], 1)
+            second_result = store.upsert_generated_tasks([second_week])
+            self.assertEqual(second_result["created"], 1)
+            self.assertEqual(second_result["total"], 2)
+
     def test_task_status_flow_rejects_invalid_operations(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

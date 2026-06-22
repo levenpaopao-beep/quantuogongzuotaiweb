@@ -77,6 +77,7 @@ def task_identity(row):
         norm(row.get("skc")),
         norm(row.get("spu")),
         norm(row.get("source_report")),
+        norm(row.get("source_file")),
         norm(row.get("source_sheet")),
         norm(row.get("source_row")),
     ]
