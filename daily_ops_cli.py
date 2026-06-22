@@ -13,6 +13,14 @@ def fail(exc):
     return {"ok": False, "error": str(exc), "traceback": traceback.format_exc()}
 
 
+def read_payload():
+    return json.loads(sys.stdin.read() or "{}")
+
+
+def require_admin(payload, action):
+    adapter.require_admin_payload(payload or {}, action)
+
+
 def command(argv):
     if not argv:
         raise ValueError("缺少命令")
@@ -30,16 +38,21 @@ def command(argv):
     if name == "import-source":
         if len(args) < 2:
             raise ValueError("import-source 需要分类和文件路径")
+        require_admin(read_payload(), "上传数据源")
         return ok(adapter.import_source_files(args[0], args[1:]))
     if name == "finish-upload":
+        require_admin(read_payload(), "结束上传")
         return ok(adapter.finish_upload(args[0]))
     if name == "clear-upload":
+        require_admin(read_payload(), "清空待提交文件")
         return ok(adapter.clear_upload(args[0]))
     if name == "generate-report":
         report_id = args[0]
         version = args[1] if len(args) > 1 else "V1"
+        require_admin(read_payload(), "生成报表")
         return ok(adapter.generate_report(report_id, version))
     if name == "generate-weekly":
+        require_admin(read_payload(), "生成本周报表")
         return ok(adapter.generate_weekly_reports())
     if name == "open-output":
         path = adapter.output_file_path(args[0])
@@ -52,13 +65,16 @@ def command(argv):
     if name == "load-rules":
         return ok(adapter.load_rules())
     if name == "save-rules":
-        payload = json.loads(sys.stdin.read() or "{}")
-        return ok(adapter.save_rules(payload))
+        payload = read_payload()
+        require_admin(payload, "维护规则")
+        return ok(adapter.save_rules(payload.get("rules", payload)))
     if name == "search":
         limit = int(args[1]) if len(args) > 1 else 200
+        require_admin(read_payload(), "查询基础数据")
         return ok(adapter.search(args[0], limit))
     if name == "export-search":
         limit = int(args[1]) if len(args) > 1 else 500
+        require_admin(read_payload(), "导出基础数据查询")
         return ok(adapter.export_search(args[0], limit))
     if name == "tasks":
         role = args[0] if len(args) > 0 else "admin"
@@ -74,22 +90,22 @@ def command(argv):
         open_only = args[10] if len(args) > 10 else ""
         return ok(adapter.operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked, open_only))
     if name == "submit-task":
-        payload = json.loads(sys.stdin.read() or "{}")
+        payload = read_payload()
         return ok(adapter.submit_operation_task_payload(payload))
     if name == "assign-task":
-        payload = json.loads(sys.stdin.read() or "{}")
+        payload = read_payload()
         return ok(adapter.assign_operation_task_payload(payload))
     if name == "review-task":
-        payload = json.loads(sys.stdin.read() or "{}")
+        payload = read_payload()
         return ok(adapter.review_operation_task_payload(payload))
     if name == "batch-review-tasks":
-        payload = json.loads(sys.stdin.read() or "{}")
+        payload = read_payload()
         return ok(adapter.review_operation_tasks_payload(payload))
     if name == "done-task":
-        payload = json.loads(sys.stdin.read() or "{}")
+        payload = read_payload()
         return ok(adapter.mark_operation_task_done_payload(payload))
     if name == "export-tasks":
-        payload = json.loads(sys.stdin.read() or "{}")
+        payload = read_payload()
         return ok(adapter.export_operation_tasks(
             payload.get("role", "admin"),
             payload.get("user", ""),
@@ -106,12 +122,15 @@ def command(argv):
     if name == "store-owners":
         return ok(adapter.store_owners())
     if name == "save-store-owners":
-        payload = json.loads(sys.stdin.read() or "{}")
+        payload = read_payload()
+        require_admin(payload, "维护负责人配置")
         return ok(adapter.save_store_owners(payload.get("assignments", [])))
     if name == "create-backup":
+        require_admin(read_payload(), "生成备份")
         return ok(adapter.create_backup())
     if name == "restore-backup":
-        payload = json.loads(sys.stdin.read() or "{}")
+        payload = read_payload()
+        require_admin(payload, "恢复备份")
         backup_path = payload.get("path", args[0] if args else "")
         return ok(adapter.restore_backup(backup_path))
     raise ValueError(f"未知命令：{name}")

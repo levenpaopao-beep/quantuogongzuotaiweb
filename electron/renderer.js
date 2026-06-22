@@ -518,7 +518,7 @@ async function loadStoreOwners() {
 
 async function saveStoreOwners() {
   const assignments = parseStoreOwnerText();
-  const result = await api.saveStoreOwners({ assignments });
+  const result = await api.saveStoreOwners(operatorPayload({ assignments }));
   state.storeOwners = result.assignments || [];
   renderStoreOwners();
   showToast(`负责人配置已保存：${state.storeOwners.length} 条；已补齐 ${result.assigned_existing || 0} 条未分配任务`);
@@ -614,7 +614,7 @@ async function uploadSource(group) {
       message: files.length ? `正在提交 ${files.length} 个文件...` : "请先选择要上传的文件。",
     };
     renderSources(state.status.source_groups || []);
-    const result = await api.uploadSource(group, files);
+    const result = await api.uploadSource(group, files, operatorPayload());
     state.sourceProgress[group.key] = {
       kind: "success",
       title: `上传成功：${result.count} 个文件`,
@@ -635,7 +635,7 @@ async function uploadSource(group) {
 
 async function finishUpload(group) {
   try {
-    const result = await api.finishUpload(group.upload_target);
+    const result = await api.finishUpload(group.upload_target, operatorPayload());
     state.sourceProgress[group.key] = {
       kind: "success",
       title: "已更新",
@@ -655,14 +655,14 @@ async function finishUpload(group) {
 }
 
 async function clearUpload(group) {
-  await api.clearUpload(group.upload_target);
+  await api.clearUpload(group.upload_target, operatorPayload());
   showToast(`${group.name} 已清空待提交`);
   await refreshAll();
 }
 
 async function generateReport(reportId) {
   showToast("开始生成表格");
-  const result = await api.generateReport(reportId, "V1");
+  const result = await api.generateReport(reportId, "V1", operatorPayload());
   state.reportTaskSync[reportId] = result.task_sync || {};
   await refreshAll();
   showToast(`表格已生成：${result.file || ""}；${taskSyncSummary(result.task_sync)}`);
@@ -700,7 +700,7 @@ function bindEvents() {
   $("#saveOperatorBtn").addEventListener("click", saveOperator);
   $("#generateWeeklyBtn").addEventListener("click", async () => {
     showToast("开始生成所有就绪报表");
-    const result = await api.generateWeekly();
+    const result = await api.generateWeekly(operatorPayload());
     (result.results || []).forEach((item) => {
       if (item.status === "ok") state.reportTaskSync[item.report] = item.task_sync || {};
     });
@@ -709,7 +709,7 @@ function bindEvents() {
   });
   $("#saveRulesBtn").addEventListener("click", async () => {
     state.rules = collectRules();
-    await api.saveRules(state.rules);
+    await api.saveRules(operatorPayload({ rules: state.rules }));
     showToast("规则已保存");
   });
   $("#loadStoreOwnersBtn").addEventListener("click", loadStoreOwners);
@@ -717,7 +717,7 @@ function bindEvents() {
   $("#searchBtn").addEventListener("click", async () => {
     const query = $("#searchInput").value.trim();
     if (!query) return;
-    const rows = await api.search(query, 80);
+    const rows = await api.search(query, 80, operatorPayload());
     $("#searchRows").innerHTML = rows.map((row) => `<div class="output-row"><div><strong>${Object.values(row).slice(0, 3).join(" · ")}</strong><p>${Object.entries(row).slice(0, 8).map(([k, v]) => `${k}: ${v}`).join("　")}</p></div></div>`).join("");
   });
 }

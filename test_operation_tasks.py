@@ -1630,6 +1630,53 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertTrue(result["ok"])
                 self.assertEqual(result["data"]["owner"], "小琴")
 
+    def test_desktop_admin_commands_enforce_operator_role(self):
+        owner_payload = {"role": "owner", "user": "小琴", "assignments": [], "path": "/tmp/backup.zip"}
+        admin_payload = {"role": "admin", "user": "管理员", "assignments": [], "path": "/tmp/backup.zip"}
+        guarded_commands = [
+            (["generate-weekly"], daily_ops_desktop_adapter.generate_weekly_reports, {"ran": True}),
+            (["generate-report", "temu_hot", "V1.1"], daily_ops_desktop_adapter.generate_report, {"file": "hot.xlsx"}),
+            (["save-rules"], daily_ops_desktop_adapter.save_rules, {"saved": True}),
+            (["search", "SKU-A", "80"], daily_ops_desktop_adapter.search, [{"content": "SKU-A"}]),
+            (["export-search", "SKU-A", "80"], daily_ops_desktop_adapter.export_search, {"file": "search.xlsx"}),
+            (["save-store-owners"], daily_ops_desktop_adapter.save_store_owners, {"assignments": []}),
+            (["create-backup"], daily_ops_desktop_adapter.create_backup, {"file": "backup.zip"}),
+            (["restore-backup"], daily_ops_desktop_adapter.restore_backup, {"count": 1}),
+        ]
+
+        for argv, target, return_value in guarded_commands:
+            with self.subTest(command=argv[0]):
+                with patch("sys.stdin", io.StringIO(json.dumps(owner_payload, ensure_ascii=False))), \
+                     patch.object(daily_ops_desktop_adapter, target.__name__, return_value=return_value):
+                    with self.assertRaises(PermissionError):
+                        daily_ops_cli.command(argv)
+
+                with patch("sys.stdin", io.StringIO(json.dumps(admin_payload, ensure_ascii=False))), \
+                     patch.object(daily_ops_desktop_adapter, target.__name__, return_value=return_value):
+                    result = daily_ops_cli.command(argv)
+                self.assertTrue(result["ok"])
+
+    def test_desktop_source_import_commands_enforce_operator_role(self):
+        owner_payload = {"role": "owner", "user": "小琴"}
+        admin_payload = {"role": "admin", "user": "管理员"}
+        source_commands = [
+            (["import-source", "temu_platform", "/tmp/source.xlsx"], daily_ops_desktop_adapter.import_source_files, {"count": 1}),
+            (["finish-upload", "temu_platform"], daily_ops_desktop_adapter.finish_upload, {"rows": 1}),
+            (["clear-upload", "temu_platform"], daily_ops_desktop_adapter.clear_upload, {"cleared": True}),
+        ]
+
+        for argv, target, return_value in source_commands:
+            with self.subTest(command=argv[0]):
+                with patch("sys.stdin", io.StringIO(json.dumps(owner_payload, ensure_ascii=False))), \
+                     patch.object(daily_ops_desktop_adapter, target.__name__, return_value=return_value):
+                    with self.assertRaises(PermissionError):
+                        daily_ops_cli.command(argv)
+
+                with patch("sys.stdin", io.StringIO(json.dumps(admin_payload, ensure_ascii=False))), \
+                     patch.object(daily_ops_desktop_adapter, target.__name__, return_value=return_value):
+                    result = daily_ops_cli.command(argv)
+                self.assertTrue(result["ok"])
+
     def test_completed_task_cannot_be_reassigned(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         admin = daily_ops_app.login_operator("admin", "管理员", "")
