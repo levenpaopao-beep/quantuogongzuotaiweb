@@ -2014,6 +2014,7 @@ HTML_PAGE = r"""<!doctype html>
           <select id="taskRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
           <input id="taskUser" placeholder="负责人姓名">
           <select id="taskStatus"><option value="">全部状态</option><option>待店长处理</option><option>待管理员审核</option><option>已通过</option><option>已驳回</option><option>已完成</option></select>
+          <select id="taskPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option></select>
           <select id="taskType"><option value="">全部类型</option><option>价格异常</option><option>库存异常</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
           <input id="taskStore" placeholder="店铺">
           <label><input id="taskOverdue" type="checkbox"> 只看超时</label>
@@ -2524,6 +2525,7 @@ function taskQuery(){
   params.set('role', document.getElementById('taskRole')?.value || 'admin');
   params.set('user', document.getElementById('taskUser')?.value.trim() || '');
   params.set('status', document.getElementById('taskStatus')?.value || '');
+  params.set('platform', document.getElementById('taskPlatform')?.value || '');
   params.set('task_type', document.getElementById('taskType')?.value || '');
   params.set('store', document.getElementById('taskStore')?.value.trim() || '');
   params.set('overdue', document.getElementById('taskOverdue')?.checked ? '1' : '');

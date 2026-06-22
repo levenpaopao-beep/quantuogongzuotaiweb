@@ -211,7 +211,7 @@ function taskFilters() {
     status: $("#taskStatus")?.value || "",
     task_type: $("#taskType")?.value || "",
     store: $("#taskStore")?.value.trim() || "",
-    platform: "",
+    platform: $("#taskPlatform")?.value || "",
     overdue: $("#taskOverdue")?.checked ? "1" : "",
     unassigned: $("#taskUnassigned")?.checked ? "1" : "",
   };
