@@ -1174,6 +1174,22 @@ class OperationTaskStoreTest(unittest.TestCase):
             finally:
                 workbook.close()
 
+    def test_task_query_payload_keeps_web_filter_controls(self):
+        payload = daily_ops_app.task_query_payload({
+            "role": ["admin"],
+            "user": [""],
+            "status": [""],
+            "task_type": ["低分预警"],
+            "store": ["7"],
+            "platform": ["Temu"],
+            "overdue": ["1"],
+            "unassigned": ["1"],
+        })
+
+        self.assertEqual(payload["platform"], "Temu")
+        self.assertEqual(payload["overdue"], "1")
+        self.assertEqual(payload["unassigned"], "1")
+
     def test_admin_workflow_apis_require_admin_session(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         owner = daily_ops_app.login_operator("owner", "小琴", "")

@@ -288,6 +288,19 @@ def can_review_tasks(operator):
     return operator.get("role") == "admin"
 
 
+def task_query_payload(params):
+    return {
+        "role": params.get("role", ["admin"])[0],
+        "user": params.get("user", [""])[0],
+        "status": params.get("status", [""])[0],
+        "task_type": params.get("task_type", [""])[0],
+        "store": params.get("store", [""])[0],
+        "platform": params.get("platform", [""])[0],
+        "overdue": params.get("overdue", [""])[0],
+        "unassigned": params.get("unassigned", [""])[0],
+    }
+
+
 def json_bytes(payload, status=200):
     body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
     return status, "application/json; charset=utf-8", body
@@ -2722,14 +2735,7 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "rows": rows})
             elif parsed.path == "/api/tasks":
                 params = parse_qs(parsed.query)
-                status, content_type, body = handle_tasks_api("GET", self.headers, {
-                    "role": params.get("role", ["admin"])[0],
-                    "user": params.get("user", [""])[0],
-                    "status": params.get("status", [""])[0],
-                    "task_type": params.get("task_type", [""])[0],
-                    "store": params.get("store", [""])[0],
-                    "platform": params.get("platform", [""])[0],
-                })
+                status, content_type, body = handle_tasks_api("GET", self.headers, task_query_payload(params))
                 self.send_payload(status, content_type, body)
             elif parsed.path == "/api/owners":
                 self.send_payload(*handle_owners_api())
