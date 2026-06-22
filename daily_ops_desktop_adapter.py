@@ -116,8 +116,8 @@ def operation_tasks_payload(payload):
     )
 
 
-def submit_operation_task(task_id, actor, action, remark=""):
-    return app.submit_operation_task(task_id, actor, action, remark)
+def submit_operation_task(task_id, actor, action, remark="", proof=""):
+    return app.submit_operation_task(task_id, actor, action, remark, proof)
 
 
 def assign_operation_task(task_id, actor, owner, remark=""):
@@ -161,7 +161,7 @@ def submit_operation_task_payload(payload):
     payload = payload or {}
     if operator_role(payload) != "owner":
         raise PermissionError("只有店长可以填写处理结果")
-    return submit_operation_task(payload.get("id", ""), operator_user(payload, payload.get("actor", "")), payload.get("action", ""), payload.get("remark", ""))
+    return submit_operation_task(payload.get("id", ""), operator_user(payload, payload.get("actor", "")), payload.get("action", ""), payload.get("remark", ""), payload.get("proof", ""))
 
 
 def assign_operation_task_payload(payload):

@@ -1809,8 +1809,8 @@ def list_operation_tasks(role="admin", user="", status="", task_type="", store="
     )
 
 
-def submit_operation_task(task_id, actor, action, remark=""):
-    return operation_task_store().submit_owner_action(task_id, actor, action, remark)
+def submit_operation_task(task_id, actor, action, remark="", proof=""):
+    return operation_task_store().submit_owner_action(task_id, actor, action, remark, proof)
 
 
 def assign_operation_task(task_id, actor, owner, remark=""):
@@ -1900,7 +1900,7 @@ def handle_tasks_api(action, headers, payload):
             task = operation_task_store().require_task(task_id)[1]
             if norm(task.get("owner")) != norm(operator.get("user")):
                 return json_bytes({"ok": False, "error": "不能处理其他负责人的任务"}, status=403)
-            task = submit_operation_task(task_id, operator.get("user", ""), payload.get("action", ""), payload.get("remark", ""))
+            task = submit_operation_task(task_id, operator.get("user", ""), payload.get("action", ""), payload.get("remark", ""), payload.get("proof", ""))
             return json_bytes({"ok": True, "task": task})
         if action == "POST_ASSIGN":
             if not can_review_tasks(operator):
@@ -2827,7 +2827,7 @@ function renderTaskRows(){
     <td>${esc(task.store)}<br><span class="muted">${esc(task.owner)}</span></td>
     <td class="task-product"><strong>${esc(task.product_name || task.merchant_code || task.skc || task.spu)}</strong><br><span class="muted">${esc(task.merchant_code)} ${esc(task.skc)} ${esc(task.spu)}</span></td>
     <td>${esc(task.system_action)}<br><span class="muted">${esc(task.task_detail || '')}</span></td>
-    <td>${esc(task.owner_action || '-')}<br><span class="muted">${esc(task.owner_remark || '')}</span></td>
+    <td>${esc(task.owner_action || '-')}<br><span class="muted">${esc(task.owner_remark || '')}</span><br><span class="muted">${task.owner_proof ? '凭证：' + esc(task.owner_proof) : ''}</span></td>
     <td>${esc(task.admin_decision || '-')}<br><span class="muted">${esc(task.admin_remark || '')}</span></td>
     <td><div class="task-actions">${taskActionButtons(task)}</div></td>
   </tr>`).join('');
@@ -2855,7 +2855,8 @@ async function submitTask(id){
     const action = prompt('处理动作，例如：已下架、申请退货、继续观察、同意议价');
     if(!action) return;
     const remark = prompt('备注') || '';
-    await api('/api/tasks/submit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, actor, action, remark})});
+    const proof = prompt('处理凭证，例如截图链接、后台单号，可空') || '';
+    await api('/api/tasks/submit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, actor, action, remark, proof})});
     await loadTasks();
   } catch(e){ showTaskError(e); }
 }

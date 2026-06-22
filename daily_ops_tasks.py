@@ -34,6 +34,7 @@ TASK_COLUMNS = [
     ("task_detail", "任务详情"),
     ("owner_action", "店长处理动作"),
     ("owner_remark", "店长备注"),
+    ("owner_proof", "店长处理凭证"),
     ("owner_submitted_by", "店长提交人"),
     ("owner_submitted_at", "店长提交时间"),
     ("admin_decision", "管理员审核结果"),
@@ -414,6 +415,7 @@ class OperationTaskStore:
                     "task_detail": row.get("task_detail", ""),
                     "owner_action": "",
                     "owner_remark": "",
+                    "owner_proof": "",
                     "owner_submitted_by": "",
                     "owner_submitted_at": "",
                     "admin_decision": "",
@@ -457,7 +459,7 @@ class OperationTaskStore:
         self.save(payload)
         return public_task(task)
 
-    def submit_owner_action(self, task_id, actor, action, remark=""):
+    def submit_owner_action(self, task_id, actor, action, remark="", proof=""):
         payload, task = self.require_task(task_id)
         action = norm(action)
         if not action:
@@ -473,6 +475,7 @@ class OperationTaskStore:
         timestamp = now_text()
         task["owner_action"] = action
         task["owner_remark"] = norm(remark)
+        task["owner_proof"] = norm(proof)
         task["owner_submitted_by"] = actor
         task["owner_submitted_at"] = timestamp
         task["status"] = STATUS_PENDING_REVIEW

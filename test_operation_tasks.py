@@ -86,9 +86,11 @@ class OperationTaskStoreTest(unittest.TestCase):
                 actor="小琴",
                 action="已下架",
                 remark="已在后台处理",
+                proof="后台截图：https://example.test/proof-a",
             )
             self.assertEqual(submitted["status"], daily_ops_tasks.STATUS_PENDING_REVIEW)
             self.assertEqual(submitted["owner_action"], "已下架")
+            self.assertEqual(submitted["owner_proof"], "后台截图：https://example.test/proof-a")
 
             reviewed = store.review_task(
                 submitted["id"],
@@ -110,8 +112,11 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertIn("任务状态", headers)
                 self.assertIn("店长处理动作", headers)
                 self.assertIn("管理员审核结果", headers)
+                self.assertIn("店长处理凭证", headers)
                 self.assertIn("是否超时", headers)
                 self.assertIn("超时天数", headers)
+                proof_col = headers.index("店长处理凭证") + 1
+                self.assertEqual(ws.cell(row=2, column=proof_col).value, "后台截图：https://example.test/proof-a")
                 log_ws = workbook["操作记录"]
                 log_headers = [cell.value for cell in log_ws[1]]
                 self.assertIn("事件", log_headers)

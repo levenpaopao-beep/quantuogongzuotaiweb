@@ -332,7 +332,7 @@ function renderTaskCenter() {
       <div>${task.store || ""}<br><span class="file-meta">${task.owner || ""}</span></div>
       <div class="task-product"><strong>${task.product_name || task.merchant_code || task.skc || task.spu || ""}</strong><span>${[task.merchant_code, task.skc, task.spu].filter(Boolean).join(" ")}</span></div>
       <div>${task.system_action || ""}<br><span class="file-meta">${task.task_detail || ""}</span></div>
-      <div>${task.owner_action || "-"}<br><span class="file-meta">${task.owner_remark || ""}</span></div>
+      <div>${task.owner_action || "-"}<br><span class="file-meta">${task.owner_remark || ""}</span><br><span class="file-meta">${task.owner_proof ? `凭证：${task.owner_proof}` : ""}</span></div>
       <div>${task.admin_decision || "-"}<br><span class="file-meta">${task.admin_remark || ""}</span></div>
       <div class="task-actions">${taskActionButtons(task)}</div>
     </div>`).join("");
@@ -389,7 +389,8 @@ async function submitTask(id) {
     const action = window.prompt("店长填写处理动作，例如：已下架、申请退货、继续观察、同意议价");
     if (!action) return;
     const remark = window.prompt("备注") || "";
-    await api.submitTask(operatorPayload({ id, actor, action, remark }));
+    const proof = window.prompt("处理凭证，例如截图链接、后台单号，可空") || "";
+    await api.submitTask(operatorPayload({ id, actor, action, remark, proof }));
     await loadTasks(false);
     showToast("店长填写已提交");
   } catch (error) {
