@@ -1968,6 +1968,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("applyEntryParams", html)
         self.assertIn("URLSearchParams(window.location.search)", html)
         self.assertIn("role=owner", html)
+        self.assertIn("url.search = ''", html)
+        self.assertIn("请以店长身份登录", html)
 
     def test_web_download_links_include_operator_token(self):
         html = daily_ops_app.HTML_PAGE

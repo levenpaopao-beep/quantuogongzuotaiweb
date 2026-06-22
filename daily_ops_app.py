@@ -2335,6 +2335,7 @@ function applyRoleVisibility(){
 }
 function ownerEntryUrl(owner){
   const url = new URL(window.location.href);
+  url.search = '';
   url.searchParams.set('role', 'owner');
   url.searchParams.set('user', owner);
   return url.toString();
@@ -2367,6 +2368,8 @@ function applyEntryParams(){
   document.getElementById('taskRole').value = 'owner';
   document.getElementById('taskRole').disabled = true;
   document.getElementById('taskUser').value = user;
+  const el = document.getElementById('operatorIdentity');
+  if(el) el.textContent = `请以店长身份登录：${user}`;
   updateOwnerEntryLink();
 }
 async function loginOperator(){
