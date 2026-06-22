@@ -441,6 +441,7 @@ class OperationTaskStore:
         rows = list(tasks) if tasks is not None else self.list_tasks()
         filters = dict(filters or {})
         history_rows = sum(len(row.get("history") or []) for row in rows)
+        summary = self.summary(rows, now=now)
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         workbook = Workbook()
@@ -473,7 +474,7 @@ class OperationTaskStore:
         style_task_sheet(log_ws)
         owner_ws = workbook.create_sheet("负责人汇总")
         owner_ws.append(["负责人", "任务总数", STATUS_PENDING_OWNER, STATUS_PENDING_REVIEW, "超时未处理", STATUS_APPROVED, STATUS_REJECTED, STATUS_DONE])
-        owner_rows = sorted(self.summary(rows, now=now).get("owner_status", {}).values(), key=lambda item: (-item.get("total", 0), item.get("owner", "")))
+        owner_rows = sorted(summary.get("owner_status", {}).values(), key=lambda item: (-item.get("total", 0), item.get("owner", "")))
         for item in owner_rows:
             status = item.get("by_status", {})
             owner_ws.append([
@@ -487,6 +488,18 @@ class OperationTaskStore:
                 status.get(STATUS_DONE, 0),
             ])
         style_task_sheet(owner_ws)
+        summary_ws = workbook.create_sheet("状态汇总")
+        summary_ws.append(["指标", "数量"])
+        summary_ws.append(["任务总数", summary.get("total", 0)])
+        summary_ws.append(["超时未处理", summary.get("overdue", {}).get("total", 0)])
+        summary_ws.append(["未分配", summary.get("unassigned", 0)])
+        for status in [STATUS_PENDING_OWNER, STATUS_PENDING_REVIEW, STATUS_APPROVED, STATUS_REJECTED, STATUS_DONE]:
+            summary_ws.append([status, summary.get("by_status", {}).get(status, 0)])
+        summary_ws.append(["", ""])
+        summary_ws.append(["任务类型", "数量"])
+        for task_type, count in sorted(summary.get("by_type", {}).items()):
+            summary_ws.append([task_type or "未填写", count])
+        style_task_sheet(summary_ws)
         criteria_ws = workbook.create_sheet("导出口径")
         criteria_ws.append(["字段", "值"])
         for key in ["role", "user", "status", "task_type", "store", "platform", "overdue"]:

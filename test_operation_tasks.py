@@ -86,7 +86,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             export_path = store.export_tasks(root / "导出.xlsx", filters={"role": "owner", "user": "小琴", "status": "已通过"}, now=datetime(2026, 6, 22, 12, 0, 0))
             workbook = load_workbook(export_path, read_only=True, data_only=True)
             try:
-                self.assertEqual(workbook.sheetnames, ["任务台账", "操作记录", "负责人汇总", "导出口径"])
+                self.assertEqual(workbook.sheetnames, ["任务台账", "操作记录", "负责人汇总", "状态汇总", "导出口径"])
                 ws = workbook["任务台账"]
                 self.assertEqual(ws.max_row, 3)
                 headers = [cell.value for cell in ws[1]]
@@ -108,6 +108,13 @@ class OperationTaskStoreTest(unittest.TestCase):
                 owner_rows = {owner_ws.cell(row=row, column=1).value: row for row in range(2, owner_ws.max_row + 1)}
                 self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=2).value, 1)
                 self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=6).value, 1)
+                summary_ws = workbook["状态汇总"]
+                summary = {
+                    summary_ws.cell(row=row, column=1).value: summary_ws.cell(row=row, column=2).value
+                    for row in range(2, summary_ws.max_row + 1)
+                }
+                self.assertEqual(summary["任务总数"], 2)
+                self.assertIn("超时未处理", summary)
                 criteria_ws = workbook["导出口径"]
                 criteria = {
                     criteria_ws.cell(row=row, column=1).value: criteria_ws.cell(row=row, column=2).value
@@ -1154,10 +1161,12 @@ class OperationTaskStoreTest(unittest.TestCase):
                 exported_path = output_dir / exported["file"]
                 exported_book = load_workbook(exported_path, read_only=True, data_only=True)
                 try:
-                    self.assertEqual(exported_book.sheetnames, ["任务台账", "操作记录", "负责人汇总", "导出口径"])
+                    self.assertEqual(exported_book.sheetnames, ["任务台账", "操作记录", "负责人汇总", "状态汇总", "导出口径"])
                     self.assertEqual(exported_book["任务台账"].max_row, 2)
                     self.assertEqual(exported_book["操作记录"].max_row, 3)
                     self.assertEqual(exported_book["负责人汇总"].max_row, 2)
+                    self.assertEqual(exported_book["状态汇总"].cell(row=2, column=1).value, "任务总数")
+                    self.assertEqual(exported_book["状态汇总"].cell(row=2, column=2).value, 1)
                     criteria_ws = exported_book["导出口径"]
                     criteria = {
                         criteria_ws.cell(row=row, column=1).value: criteria_ws.cell(row=row, column=2).value
