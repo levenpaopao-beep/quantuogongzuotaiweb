@@ -1844,9 +1844,20 @@ def handle_tasks_api(action, headers, payload):
         return json_bytes({"ok": False, "error": str(exc)}, status=500)
 
 
-def handle_owners_api():
+def public_owner_directory():
+    return [{"owner": row.get("owner", "")} for row in operation_owner_directory()]
+
+
+def handle_owners_api(headers=None):
     try:
-        return json_bytes({"ok": True, "owners": operation_owner_directory()})
+        token = token_from_headers(headers or {})
+        if token:
+            operator = operator_from_token(token)
+            if can_review_tasks(operator):
+                return json_bytes({"ok": True, "owners": operation_owner_directory()})
+        return json_bytes({"ok": True, "owners": public_owner_directory()})
+    except PermissionError:
+        return json_bytes({"ok": True, "owners": public_owner_directory()})
     except Exception as exc:
         return json_bytes({"ok": False, "error": str(exc)}, status=500)
 
@@ -2815,7 +2826,7 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 status, content_type, body = handle_tasks_api("GET", self.headers, task_query_payload(params))
                 self.send_payload(status, content_type, body)
             elif parsed.path == "/api/owners":
-                self.send_payload(*handle_owners_api())
+                self.send_payload(*handle_owners_api(self.headers))
             elif parsed.path == "/api/store-owners":
                 self.send_payload(*handle_store_owners_api("GET", self.headers))
             elif parsed.path == "/download":

@@ -1822,6 +1822,8 @@ class OperationTaskStoreTest(unittest.TestCase):
 
     def test_owner_directory_api_is_available_before_login(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
+        owner = daily_ops_app.login_operator("owner", "小琴", "")
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             task_db = root / "tasks.json"
@@ -1835,8 +1837,18 @@ class OperationTaskStoreTest(unittest.TestCase):
                 payload = json.loads(body)
                 self.assertEqual(status, 200)
                 self.assertEqual(payload["owners"][0]["owner"], "小琴")
-                self.assertEqual(payload["owners"][0]["stores"], ["7"])
+                self.assertNotIn("stores", payload["owners"][0])
                 self.assertEqual(payload["owners"][1]["owner"], "洁琳")
+
+                status, _content_type, body = daily_ops_app.handle_owners_api({"X-Operator-Token": owner["token"]})
+                payload = json.loads(body)
+                self.assertEqual(status, 200)
+                self.assertNotIn("stores", payload["owners"][0])
+
+                status, _content_type, body = daily_ops_app.handle_owners_api({"X-Operator-Token": admin["token"]})
+                payload = json.loads(body)
+                self.assertEqual(status, 200)
+                self.assertEqual(payload["owners"][0]["stores"], ["7"])
 
     def test_backup_exports_only_operational_state_and_can_restore(self):
         with TemporaryDirectory() as tmp:
