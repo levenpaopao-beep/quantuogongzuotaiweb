@@ -222,10 +222,9 @@ function renderOutputs() {
 }
 
 function taskFilters() {
-  const operator = currentOperator();
   return {
-    role: operator.role || $("#taskRole")?.value || "admin",
-    user: operator.user || $("#taskUser")?.value.trim() || "",
+    role: $("#taskRole")?.value || "admin",
+    user: $("#taskUser")?.value.trim() || "",
     status: $("#taskStatus")?.value || "",
     task_type: $("#taskType")?.value || "",
     store: $("#taskStore")?.value.trim() || "",
@@ -369,7 +368,7 @@ async function loadTasks(showToastOnDone = true) {
   try {
     const line = $("#taskStatusLine");
     if (line) line.textContent = "正在读取任务...";
-    const result = await api.tasks(taskFilters());
+    const result = await api.tasks(operatorPayload({ filters: taskFilters() }));
     state.taskSummary = result.summary || {};
     state.tasks = result.tasks || [];
     renderTaskCenter();
@@ -464,7 +463,7 @@ async function doneTask(id) {
 
 async function exportTasks() {
   try {
-    const result = await api.exportTasks(taskFilters());
+    const result = await api.exportTasks(operatorPayload({ filters: taskFilters() }));
     showToast(`任务台账已导出：${result.file || ""}`);
     await refreshAll();
   } catch (error) {

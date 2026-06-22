@@ -1630,6 +1630,33 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertTrue(result["ok"])
                 self.assertEqual(result["data"]["owner"], "小琴")
 
+    def test_desktop_task_query_and_export_scope_owner_payload(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            output_dir = root / "outputs"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "1", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "2", "owner": "洁琳", "merchant_code": "B", "source_report": "r", "source_row": 2},
+            ])
+            owner_payload = {
+                "role": "owner",
+                "user": "小琴",
+                "filters": {"role": "admin", "user": "", "open_only": "1"},
+            }
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
+                 patch.object(daily_ops_app, "OUTPUT_DIR", output_dir):
+                with patch("sys.stdin", io.StringIO(json.dumps(owner_payload, ensure_ascii=False))):
+                    listed = daily_ops_cli.command(["tasks"])
+                self.assertTrue(listed["ok"])
+                self.assertEqual([row["owner"] for row in listed["data"]["tasks"]], ["小琴"])
+
+                with patch("sys.stdin", io.StringIO(json.dumps(owner_payload, ensure_ascii=False))):
+                    exported = daily_ops_cli.command(["export-tasks"])
+                self.assertTrue(exported["ok"])
+                self.assertEqual(exported["data"]["rows"], 1)
+
     def test_desktop_admin_commands_enforce_operator_role(self):
         owner_payload = {"role": "owner", "user": "小琴", "assignments": [], "path": "/tmp/backup.zip"}
         admin_payload = {"role": "admin", "user": "管理员", "assignments": [], "path": "/tmp/backup.zip"}

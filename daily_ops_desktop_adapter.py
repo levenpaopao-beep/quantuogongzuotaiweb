@@ -89,6 +89,33 @@ def operation_tasks(role="admin", user="", status="", task_type="", store="", pl
     return {"summary": app.summarize_operation_tasks(rows), "tasks": rows}
 
 
+def desktop_task_filters(payload):
+    payload = payload or {}
+    filters = dict(payload.get("filters") or {})
+    role = operator_role(payload)
+    user = operator_user(payload, "")
+    filters["role"] = "admin" if role == "admin" else "owner"
+    filters["user"] = "" if role == "admin" else user
+    return filters
+
+
+def operation_tasks_payload(payload):
+    filters = desktop_task_filters(payload)
+    return operation_tasks(
+        filters.get("role", "admin"),
+        filters.get("user", ""),
+        filters.get("status", ""),
+        filters.get("task_type", ""),
+        filters.get("store", ""),
+        filters.get("platform", ""),
+        filters.get("overdue", ""),
+        filters.get("unassigned", ""),
+        filters.get("next_handler", ""),
+        filters.get("reworked", ""),
+        filters.get("open_only", ""),
+    )
+
+
 def submit_operation_task(task_id, actor, action, remark=""):
     return app.submit_operation_task(task_id, actor, action, remark)
 
@@ -111,6 +138,23 @@ def mark_operation_task_done(task_id, actor, remark=""):
 
 def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", open_only=""):
     return app.export_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked, open_only)
+
+
+def export_operation_tasks_payload(payload):
+    filters = desktop_task_filters(payload)
+    return export_operation_tasks(
+        filters.get("role", "admin"),
+        filters.get("user", ""),
+        filters.get("status", ""),
+        filters.get("task_type", ""),
+        filters.get("store", ""),
+        filters.get("platform", ""),
+        filters.get("overdue", ""),
+        filters.get("unassigned", ""),
+        filters.get("next_handler", ""),
+        filters.get("reworked", ""),
+        filters.get("open_only", ""),
+    )
 
 
 def submit_operation_task_payload(payload):

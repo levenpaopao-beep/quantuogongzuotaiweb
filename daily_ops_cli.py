@@ -21,6 +21,25 @@ def require_admin(payload, action):
     adapter.require_admin_payload(payload or {}, action)
 
 
+def task_payload(payload):
+    payload = dict(payload or {})
+    if "filters" not in payload:
+        payload["filters"] = {
+            "role": payload.get("role", "admin"),
+            "user": payload.get("user", ""),
+            "status": payload.get("status", ""),
+            "task_type": payload.get("task_type", ""),
+            "store": payload.get("store", ""),
+            "platform": payload.get("platform", ""),
+            "overdue": payload.get("overdue", ""),
+            "unassigned": payload.get("unassigned", ""),
+            "next_handler": payload.get("next_handler", ""),
+            "reworked": payload.get("reworked", ""),
+            "open_only": payload.get("open_only", ""),
+        }
+    return payload
+
+
 def command(argv):
     if not argv:
         raise ValueError("缺少命令")
@@ -77,18 +96,7 @@ def command(argv):
         require_admin(read_payload(), "导出基础数据查询")
         return ok(adapter.export_search(args[0], limit))
     if name == "tasks":
-        role = args[0] if len(args) > 0 else "admin"
-        user = args[1] if len(args) > 1 else ""
-        status = args[2] if len(args) > 2 else ""
-        task_type = args[3] if len(args) > 3 else ""
-        store = args[4] if len(args) > 4 else ""
-        platform = args[5] if len(args) > 5 else ""
-        overdue = args[6] if len(args) > 6 else ""
-        unassigned = args[7] if len(args) > 7 else ""
-        next_handler = args[8] if len(args) > 8 else ""
-        reworked = args[9] if len(args) > 9 else ""
-        open_only = args[10] if len(args) > 10 else ""
-        return ok(adapter.operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked, open_only))
+        return ok(adapter.operation_tasks_payload(task_payload(read_payload())))
     if name == "submit-task":
         payload = read_payload()
         return ok(adapter.submit_operation_task_payload(payload))
@@ -105,20 +113,8 @@ def command(argv):
         payload = read_payload()
         return ok(adapter.mark_operation_task_done_payload(payload))
     if name == "export-tasks":
-        payload = read_payload()
-        return ok(adapter.export_operation_tasks(
-            payload.get("role", "admin"),
-            payload.get("user", ""),
-            payload.get("status", ""),
-            payload.get("task_type", ""),
-            payload.get("store", ""),
-            payload.get("platform", ""),
-            payload.get("overdue", ""),
-            payload.get("unassigned", ""),
-            payload.get("next_handler", ""),
-            payload.get("reworked", ""),
-            payload.get("open_only", ""),
-        ))
+        payload = task_payload(read_payload())
+        return ok(adapter.export_operation_tasks_payload(payload))
     if name == "store-owners":
         return ok(adapter.store_owners())
     if name == "save-store-owners":
