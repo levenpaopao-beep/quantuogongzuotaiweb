@@ -1308,6 +1308,21 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertEqual(status, 401)
         self.assertIn("请先登录", json.loads(body)["error"])
 
+    def test_operator_session_expires_after_configured_seconds(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        with patch.dict(os.environ, {"DAILY_OPS_SESSION_SECONDS": "1"}):
+            session = daily_ops_app.login_operator("owner", "小琴", "")
+            self.assertEqual(daily_ops_app.operator_from_token(session["token"])["user"], "小琴")
+            daily_ops_app.OPERATOR_SESSIONS[session["token"]]["login_at"] = "2026-06-22 11:59:58"
+            with patch.object(daily_ops_app, "datetime") as fake_datetime:
+                fake_datetime.now.return_value = datetime(2026, 6, 22, 12, 0, 0)
+                fake_datetime.strptime = datetime.strptime
+                fake_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+                with self.assertRaises(PermissionError) as ctx:
+                    daily_ops_app.operator_from_token(session["token"])
+            self.assertIn("登录已过期", str(ctx.exception))
+            self.assertNotIn(session["token"], daily_ops_app.OPERATOR_SESSIONS)
+
     def test_lan_mode_requires_admin_password_configuration(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         with patch.dict(os.environ, {"DAILY_OPS_HOST": "0.0.0.0"}, clear=True):

@@ -48,6 +48,7 @@ SCHEDULED_SHUTDOWN = None
 SCHEDULED_SHUTDOWN_LOCK = threading.Lock()
 OPERATOR_SESSIONS = {}
 DOWNLOAD_GRANTS = {}
+DEFAULT_OPERATOR_SESSION_SECONDS = 12 * 60 * 60
 
 UPLOAD_TARGETS = {
     "temu_platform": ("Temu平台表", TEMU_DIR),
@@ -268,11 +269,34 @@ def login_operator(role, user, password=""):
     return session
 
 
+def operator_session_seconds():
+    try:
+        return max(1, int(os.environ.get("DAILY_OPS_SESSION_SECONDS", DEFAULT_OPERATOR_SESSION_SECONDS)))
+    except ValueError:
+        return DEFAULT_OPERATOR_SESSION_SECONDS
+
+
+def session_is_expired(session, now=None):
+    login_at = norm(session.get("login_at"))
+    if not login_at:
+        return True
+    try:
+        logged_at = datetime.strptime(login_at, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return True
+    now = now or datetime.now()
+    return (now - logged_at).total_seconds() > operator_session_seconds()
+
+
 def operator_from_token(token):
     token = norm(token)
     if not token or token not in OPERATOR_SESSIONS:
         raise PermissionError("请先登录")
-    return OPERATOR_SESSIONS[token]
+    session = OPERATOR_SESSIONS[token]
+    if session_is_expired(session):
+        logout_operator(token)
+        raise PermissionError("登录已过期，请重新登录")
+    return session
 
 
 def logout_operator(token):
