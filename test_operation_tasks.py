@@ -184,6 +184,105 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(summary["unassigned"], 1)
             self.assertEqual(summary["by_owner"], {"小琴": 1})
 
+    def test_tasks_expose_next_handler_and_action_for_workflow_routing(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            task_db.write_text(json.dumps({"tasks": [
+                {
+                    "id": "unassigned",
+                    "platform": "Temu",
+                    "task_type": "爆旺冲突",
+                    "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                    "store": "7",
+                    "owner": "",
+                    "product_name": "未分配商品",
+                    "created_at": "2026-06-22 09:00:00",
+                    "updated_at": "2026-06-22 09:00:00",
+                    "history": [],
+                },
+                {
+                    "id": "owner-overdue",
+                    "platform": "Temu",
+                    "task_type": "低分预警",
+                    "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                    "store": "8",
+                    "owner": "小琴",
+                    "product_name": "超时待处理商品",
+                    "created_at": "2026-06-18 09:00:00",
+                    "updated_at": "2026-06-18 09:00:00",
+                    "history": [],
+                },
+                {
+                    "id": "owner-normal",
+                    "platform": "Temu",
+                    "task_type": "滞销处理",
+                    "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                    "store": "9",
+                    "owner": "洁琳",
+                    "product_name": "待店长商品",
+                    "created_at": "2026-06-22 09:00:00",
+                    "updated_at": "2026-06-22 09:00:00",
+                    "history": [],
+                },
+                {
+                    "id": "review",
+                    "platform": "Temu",
+                    "task_type": "议价审核",
+                    "status": daily_ops_tasks.STATUS_PENDING_REVIEW,
+                    "store": "10",
+                    "owner": "小琴",
+                    "product_name": "待审核商品",
+                    "owner_submitted_at": "2026-06-22 09:00:00",
+                    "created_at": "2026-06-22 08:00:00",
+                    "updated_at": "2026-06-22 09:00:00",
+                    "history": [],
+                },
+                {
+                    "id": "approved",
+                    "platform": "Temu",
+                    "task_type": "爆旺冲突",
+                    "status": daily_ops_tasks.STATUS_APPROVED,
+                    "store": "11",
+                    "owner": "洁琳",
+                    "product_name": "已通过商品",
+                    "created_at": "2026-06-22 08:00:00",
+                    "updated_at": "2026-06-22 10:00:00",
+                    "history": [],
+                },
+            ]}, ensure_ascii=False), encoding="utf-8")
+
+            rows = {
+                row["id"]: row
+                for row in daily_ops_tasks.OperationTaskStore(task_db).list_tasks(now=datetime(2026, 6, 22, 12, 0, 0))
+            }
+            self.assertEqual(rows["unassigned"]["next_handler"], "管理员")
+            self.assertEqual(rows["unassigned"]["next_action"], "指派负责人")
+            self.assertEqual(rows["owner-overdue"]["next_handler"], "管理员")
+            self.assertEqual(rows["owner-overdue"]["next_action"], "跟进超时店长处理")
+            self.assertEqual(rows["owner-normal"]["next_handler"], "店长")
+            self.assertEqual(rows["owner-normal"]["next_action"], "填写处理结果")
+            self.assertEqual(rows["review"]["next_handler"], "管理员")
+            self.assertEqual(rows["review"]["next_action"], "审核通过或驳回")
+            self.assertEqual(rows["approved"]["next_handler"], "管理员")
+            self.assertEqual(rows["approved"]["next_action"], "标记完成或归档")
+
+            export_path = daily_ops_tasks.OperationTaskStore(task_db).export_tasks(root / "导出.xlsx", now=datetime(2026, 6, 22, 12, 0, 0))
+            workbook = load_workbook(export_path, read_only=True, data_only=True)
+            try:
+                ws = workbook["任务台账"]
+                headers = [cell.value for cell in ws[1]]
+                self.assertIn("下一步处理人", headers)
+                self.assertIn("下一步动作", headers)
+                next_handler_col = headers.index("下一步处理人") + 1
+                next_action_col = headers.index("下一步动作") + 1
+                product_rows = {ws.cell(row=row, column=headers.index("货品名称") + 1).value: row for row in range(2, ws.max_row + 1)}
+                self.assertEqual(ws.cell(row=product_rows["未分配商品"], column=next_handler_col).value, "管理员")
+                self.assertEqual(ws.cell(row=product_rows["未分配商品"], column=next_action_col).value, "指派负责人")
+                self.assertEqual(ws.cell(row=product_rows["待审核商品"], column=next_action_col).value, "审核通过或驳回")
+            finally:
+                workbook.close()
+
     def test_task_summary_breaks_status_counts_down_by_owner(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

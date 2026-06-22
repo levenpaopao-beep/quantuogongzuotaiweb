@@ -284,6 +284,7 @@ function renderTaskCenter() {
   rows.innerHTML = state.tasks.map((task) => `
     <div class="task-row">
       <div><span class="status-pill ${taskBadge(task.status)}">${task.status || ""}</span></div>
+      <div>${task.next_handler || "-"}<br><span class="file-meta">${task.next_action || ""}</span></div>
       <div>${task.platform || ""}<br><span class="file-meta">${task.task_type || ""}</span><br><span class="file-meta">${taskSourceText(task)}</span></div>
       <div>${task.store || ""}<br><span class="file-meta">${task.owner || ""}</span></div>
       <div class="task-product"><strong>${task.product_name || task.merchant_code || task.skc || task.spu || ""}</strong><span>${[task.merchant_code, task.skc, task.spu].filter(Boolean).join(" ")}</span></div>

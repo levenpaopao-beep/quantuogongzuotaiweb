@@ -2027,7 +2027,7 @@ HTML_PAGE = r"""<!doctype html>
         <div class="status" id="taskStatusLine"></div>
         <div style="overflow:auto; max-height:620px;">
           <table>
-            <thead><tr><th>状态</th><th>类型</th><th>店铺/负责人</th><th>商品</th><th>系统建议</th><th>店长填写</th><th>管理员审核</th><th>操作</th></tr></thead>
+            <thead><tr><th>状态</th><th>下一步</th><th>类型</th><th>店铺/负责人</th><th>商品</th><th>系统建议</th><th>店长填写</th><th>管理员审核</th><th>操作</th></tr></thead>
             <tbody id="taskRows"></tbody>
           </table>
         </div>
@@ -2536,7 +2536,7 @@ async function loadTasks(showMessage=true){
   const tbody = document.getElementById('taskRows');
   if(!tbody) return;
   const st = document.getElementById('taskStatusLine');
-  if(!operatorToken){ renderTaskSummary(); tbody.innerHTML = '<tr><td colspan="8" class="muted">请先登录身份。</td></tr>'; return; }
+  if(!operatorToken){ renderTaskSummary(); tbody.innerHTML = '<tr><td colspan="9" class="muted">请先登录身份。</td></tr>'; return; }
   if(showMessage) st.textContent = '正在读取任务...';
   try {
     const res = await api('/api/tasks?' + taskQuery().toString());
@@ -2590,11 +2590,12 @@ function taskActionButtons(task){
 function renderTaskRows(){
   const tbody = document.getElementById('taskRows'); if(!tbody) return;
   if(!taskState.tasks.length){
-    tbody.innerHTML = '<tr><td colspan="8" class="muted">暂无任务。生成爆旺、低分、滞销或议价报表后，系统会自动写入任务台账。</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="muted">暂无任务。生成爆旺、低分、滞销或议价报表后，系统会自动写入任务台账。</td></tr>';
     return;
   }
   tbody.innerHTML = taskState.tasks.map(task => `<tr>
     <td><span class="badge ${task.status === '待管理员审核' ? 'warn' : task.status === '已通过' ? 'ok' : task.status === '已驳回' ? 'bad' : ''}">${esc(task.status)}</span></td>
+    <td>${esc(task.next_handler || '-')}<br><span class="muted">${esc(task.next_action || '')}</span></td>
     <td>${esc(task.platform)}<br>${esc(task.task_type)}<br><span class="muted">${esc(taskSourceText(task))}</span></td>
     <td>${esc(task.store)}<br><span class="muted">${esc(task.owner)}</span></td>
     <td class="task-product"><strong>${esc(task.product_name || task.merchant_code || task.skc || task.spu)}</strong><br><span class="muted">${esc(task.merchant_code)} ${esc(task.skc)} ${esc(task.spu)}</span></td>

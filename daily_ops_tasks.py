@@ -22,6 +22,8 @@ TASK_COLUMNS = [
     ("platform", "平台"),
     ("task_type", "任务类型"),
     ("status", "任务状态"),
+    ("next_handler", "下一步处理人"),
+    ("next_action", "下一步动作"),
     ("store", "店铺"),
     ("owner", "负责人"),
     ("merchant_code", "商家编码"),
@@ -126,9 +128,33 @@ def task_identity(row):
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 
-def public_task(row):
+def task_next_step(row, now=None):
+    status = norm(row.get("status"))
+    if status == STATUS_PENDING_OWNER:
+        if not norm(row.get("owner")):
+            return "管理员", "指派负责人"
+        if task_overdue(row, now):
+            return "管理员", "跟进超时店长处理"
+        return "店长", "填写处理结果"
+    if status == STATUS_PENDING_REVIEW:
+        if task_overdue(row, now):
+            return "管理员", "处理超时审核"
+        return "管理员", "审核通过或驳回"
+    if status == STATUS_REJECTED:
+        return "店长", "按驳回原因重新处理"
+    if status == STATUS_APPROVED:
+        return "管理员", "标记完成或归档"
+    if status == STATUS_DONE:
+        return "无需处理", "已完成"
+    return "管理员", "确认任务状态"
+
+
+def public_task(row, now=None):
     item = dict(row)
     item.setdefault("history", [])
+    next_handler, next_action = task_next_step(item, now=now)
+    item["next_handler"] = next_handler
+    item["next_action"] = next_action
     return item
 
 
@@ -178,7 +204,7 @@ class OperationTaskStore:
     def list_tasks(self, role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", now=None):
         role = norm(role) or "admin"
         user = norm(user)
-        rows = [public_task(row) for row in self.load()["tasks"]]
+        rows = [public_task(row, now=now) for row in self.load()["tasks"]]
         if role != "admin":
             if not user:
                 return []
@@ -508,6 +534,7 @@ class OperationTaskStore:
             export_row = dict(row)
             export_row["is_overdue"] = "是" if task_overdue(row, now) else "否"
             export_row["overdue_days"] = task_age_days(row, now)
+            export_row["next_handler"], export_row["next_action"] = task_next_step(row, now=now)
             ws.append([export_row.get(key, "") for key, _label in TASK_COLUMNS])
         style_task_sheet(ws)
         log_ws = workbook.create_sheet("操作记录")

@@ -469,7 +469,7 @@ p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 }
 .task-row {
   display: grid;
-  grid-template-columns: 110px 108px 116px minmax(220px, 1.15fr) minmax(180px, 1fr) minmax(150px, .8fr) minmax(150px, .8fr) 210px;
+  grid-template-columns: 104px 126px 108px 116px minmax(210px, 1.15fr) minmax(170px, 1fr) minmax(140px, .8fr) minmax(140px, .8fr) 210px;
   align-items: center;
   min-height: 74px;
   border-bottom: 1px solid var(--line-soft);
