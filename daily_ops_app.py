@@ -2311,13 +2311,15 @@ function authDownload(url){
 function renderOperator(){
   const el = document.getElementById('operatorIdentity');
   if(!el) return;
+  const taskRole = document.getElementById('taskRole');
   if(operatorSession){
     el.textContent = `当前身份：${operatorSession.role === 'admin' ? '管理员' : '店长'} · ${operatorSession.user}`;
-    document.getElementById('taskRole').value = operatorSession.role;
+    taskRole.value = operatorSession.role;
+    taskRole.disabled = operatorSession.role === 'owner';
     document.getElementById('taskUser').value = operatorSession.user;
-    if(operatorSession.role === 'owner') document.getElementById('taskRole').disabled = true;
   } else {
     el.textContent = '未登录：任务台账需要先登录';
+    if(taskRole) taskRole.disabled = false;
   }
   applyRoleVisibility();
   updateOwnerEntryLink();
