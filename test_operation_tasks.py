@@ -1733,6 +1733,19 @@ class OperationTaskStoreTest(unittest.TestCase):
                     result = daily_ops_cli.command(argv)
                 self.assertTrue(result["ok"])
 
+    def test_desktop_store_owner_directory_requires_admin_role(self):
+        owner_payload = {"role": "owner", "user": "小琴"}
+        admin_payload = {"role": "admin", "user": "管理员"}
+        with patch("sys.stdin", io.StringIO(json.dumps(owner_payload, ensure_ascii=False))), \
+             patch.object(daily_ops_desktop_adapter, "store_owners", return_value={"assignments": []}):
+            with self.assertRaises(PermissionError):
+                daily_ops_cli.command(["store-owners"])
+
+        with patch("sys.stdin", io.StringIO(json.dumps(admin_payload, ensure_ascii=False))), \
+             patch.object(daily_ops_desktop_adapter, "store_owners", return_value={"assignments": []}):
+            result = daily_ops_cli.command(["store-owners"])
+        self.assertTrue(result["ok"])
+
     def test_desktop_source_import_commands_enforce_operator_role(self):
         owner_payload = {"role": "owner", "user": "小琴"}
         admin_payload = {"role": "admin", "user": "管理员"}

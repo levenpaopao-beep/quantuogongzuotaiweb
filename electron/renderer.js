@@ -510,7 +510,7 @@ function parseStoreOwnerText() {
 }
 
 async function loadStoreOwners() {
-  const result = await api.storeOwners();
+  const result = await api.storeOwners(operatorPayload());
   state.storeOwners = result.assignments || [];
   renderStoreOwners();
 }
