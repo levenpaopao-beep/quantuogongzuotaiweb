@@ -558,6 +558,7 @@ class OperationTaskStoreTest(unittest.TestCase):
 
             self.assertEqual(done["status"], daily_ops_tasks.STATUS_DONE)
             self.assertEqual(done["history"][-1]["event"], "标记完成")
+            self.assertEqual(done["history"][-1]["action"], daily_ops_tasks.STATUS_DONE)
             self.assertEqual(done["history"][-1]["remark"], "后台已确认")
 
             with self.assertRaises(ValueError):

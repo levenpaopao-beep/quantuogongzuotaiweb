@@ -436,6 +436,7 @@ class OperationTaskStore:
             "time": timestamp,
             "actor": norm(actor),
             "event": "标记完成",
+            "action": STATUS_DONE,
             "remark": norm(remark),
         })
         self.save(payload)
