@@ -1853,11 +1853,11 @@ def handle_owners_api():
 
 def handle_store_owners_api(action, headers, payload=None):
     try:
-        if action == "GET":
-            return json_bytes({"ok": True, "assignments": load_store_owner_assignments(), "owners": operation_owner_directory()})
         operator = operator_from_token(token_from_headers(headers))
         if not can_review_tasks(operator):
             return json_bytes({"ok": False, "error": "只有管理员可以维护店铺负责人"}, status=403)
+        if action == "GET":
+            return json_bytes({"ok": True, "assignments": load_store_owner_assignments(), "owners": operation_owner_directory()})
         payload = payload or {}
         if action == "POST_SAVE":
             assignments = save_store_owner_assignments(payload.get("assignments", []))

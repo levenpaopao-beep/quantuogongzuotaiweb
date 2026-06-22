@@ -1059,6 +1059,22 @@ class OperationTaskStoreTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             owner_map = Path(tmp) / "store_owner_map.json"
             with patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_map):
+                status, _content_type, body = daily_ops_app.handle_store_owners_api("GET", {})
+                self.assertEqual(status, 401)
+                self.assertIn("请先登录", json.loads(body)["error"])
+
+                status, _content_type, body = daily_ops_app.handle_store_owners_api(
+                    "GET",
+                    {"X-Operator-Token": owner["token"]},
+                )
+                self.assertEqual(status, 403)
+
+                status, _content_type, body = daily_ops_app.handle_store_owners_api(
+                    "GET",
+                    {"X-Operator-Token": admin["token"]},
+                )
+                self.assertEqual(status, 200)
+
                 status, _content_type, body = daily_ops_app.handle_store_owners_api(
                     "POST_SAVE",
                     {"X-Operator-Token": owner["token"]},
