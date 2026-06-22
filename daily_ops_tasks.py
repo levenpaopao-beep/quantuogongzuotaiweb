@@ -42,6 +42,8 @@ TASK_COLUMNS = [
     ("source_file", "来源文件"),
     ("source_sheet", "来源页签"),
     ("source_row", "来源行"),
+    ("is_overdue", "是否超时"),
+    ("overdue_days", "超时天数"),
     ("created_at", "创建时间"),
     ("updated_at", "更新时间"),
 ]
@@ -91,6 +93,18 @@ def task_overdue(row, now=None):
         start = parse_time(row.get("owner_submitted_at")) or parse_time(row.get("updated_at"))
         return bool(start and (now - start).total_seconds() >= REVIEW_OVERDUE_DAYS * 86400)
     return False
+
+
+def task_age_days(row, now=None):
+    now = now or datetime.now()
+    status = norm(row.get("status"))
+    if status == STATUS_PENDING_REVIEW:
+        start = parse_time(row.get("owner_submitted_at")) or parse_time(row.get("updated_at"))
+    else:
+        start = parse_time(row.get("created_at")) or parse_time(row.get("updated_at"))
+    if not start:
+        return ""
+    return max(0, int((now - start).total_seconds() // 86400))
 
 
 def task_identity(row):
@@ -415,7 +429,7 @@ class OperationTaskStore:
         self.save(payload)
         return public_task(task)
 
-    def export_tasks(self, output_path, tasks=None, filters=None):
+    def export_tasks(self, output_path, tasks=None, filters=None, now=None):
         rows = list(tasks) if tasks is not None else self.list_tasks()
         filters = dict(filters or {})
         history_rows = sum(len(row.get("history") or []) for row in rows)
@@ -426,7 +440,10 @@ class OperationTaskStore:
         ws.title = "任务台账"
         ws.append([label for _key, label in TASK_COLUMNS])
         for row in rows:
-            ws.append([row.get(key, "") for key, _label in TASK_COLUMNS])
+            export_row = dict(row)
+            export_row["is_overdue"] = "是" if task_overdue(row, now) else "否"
+            export_row["overdue_days"] = task_age_days(row, now)
+            ws.append([export_row.get(key, "") for key, _label in TASK_COLUMNS])
         style_task_sheet(ws)
         log_ws = workbook.create_sheet("操作记录")
         log_ws.append([label for _key, label in TASK_HISTORY_COLUMNS])
