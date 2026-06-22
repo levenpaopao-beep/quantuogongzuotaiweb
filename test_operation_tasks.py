@@ -1450,7 +1450,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         root = Path(__file__).resolve().parent
         html = daily_ops_app.HTML_PAGE
         renderer = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
-        for text in ["showTaskHistory", "查看记录", "操作记录"]:
+        for text in ["showTaskHistory", "查看记录", "操作记录", "动作后状态", "动作后下一步"]:
             self.assertIn(text, html)
             self.assertIn(text, renderer)
 

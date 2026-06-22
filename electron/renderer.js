@@ -353,7 +353,10 @@ function showTaskHistory(id) {
     window.alert(`${title}\n暂无操作记录`);
     return;
   }
-  const lines = history.map((item) => `${item.time || ""} ${item.event || ""}\n操作人：${item.actor || "-"}\n动作：${item.action || "-"}\n备注：${item.remark || "-"}`);
+  const lines = history.map((item) => {
+    const nextAfter = [item.next_handler_after, item.next_action_after].filter(Boolean).join(" / ") || "-";
+    return `${item.time || ""} ${item.event || ""}\n操作人：${item.actor || "-"}\n动作：${item.action || "-"}\n备注：${item.remark || "-"}\n动作后状态：${item.status_after || "-"}\n动作后下一步：${nextAfter}`;
+  });
   window.alert(`${title}\n\n${lines.join("\n\n")}`);
 }
 
