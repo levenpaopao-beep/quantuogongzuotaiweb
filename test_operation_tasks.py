@@ -1972,6 +1972,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("请以店长身份登录", html)
         self.assertIn("taskRole.disabled = operatorSession.role === 'owner'", html)
         self.assertIn("taskRole.disabled = false", html)
+        self.assertIn("function clearOperatorSession", html)
+        self.assertIn("error.status = r.status", html)
+        self.assertIn("if(error.status === 401) clearOperatorSession()", html)
 
     def test_web_download_links_include_operator_token(self):
         html = daily_ops_app.HTML_PAGE

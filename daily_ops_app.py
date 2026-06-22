@@ -2299,7 +2299,12 @@ async function api(url, opts={}){
   if(operatorToken) next.headers['X-Operator-Token'] = operatorToken;
   const r = await fetch(url, next);
   const j = await r.json();
-  if(!r.ok || j.ok===false) throw new Error(j.error || '请求失败');
+  if(!r.ok || j.ok===false) {
+    const error = new Error(j.error || '请求失败');
+    error.status = r.status;
+    if(error.status === 401) clearOperatorSession();
+    throw error;
+  }
   return j;
 }
 function authDownload(url){
@@ -2323,6 +2328,13 @@ function renderOperator(){
   }
   applyRoleVisibility();
   updateOwnerEntryLink();
+}
+function clearOperatorSession(){
+  localStorage.removeItem('operatorSession');
+  localStorage.removeItem('operatorToken');
+  operatorSession = null;
+  operatorToken = '';
+  renderOperator();
 }
 function switchTab(tab){
   if(operatorSession?.role === 'owner' && tab !== 'tasks') tab = 'tasks';
@@ -2396,12 +2408,8 @@ async function logoutOperator(){
   } catch(e) {
     // 本地仍清掉身份，避免旧 token 继续留在共享浏览器里。
   }
-  localStorage.removeItem('operatorSession');
-  localStorage.removeItem('operatorToken');
-  operatorSession = null;
-  operatorToken = '';
+  clearOperatorSession();
   document.getElementById('loginPassword').value = '';
-  renderOperator();
   renderTaskSummary();
   const tbody = document.getElementById('taskRows');
   if(tbody) tbody.innerHTML = '<tr><td colspan="9" class="muted">请先登录身份。</td></tr>';
