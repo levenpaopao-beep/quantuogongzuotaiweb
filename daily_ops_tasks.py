@@ -209,6 +209,9 @@ def generated_task_remark(row):
         value = norm(row.get(key))
         if value:
             parts.append(f"{label}：{value}")
+    owner_source = norm(row.get("owner_source"))
+    if owner_source:
+        parts.append(f"负责人来源：{owner_source}")
     return "；".join(parts)
 
 

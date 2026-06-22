@@ -1185,6 +1185,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(status, 200)
                 self.assertEqual(len(payload["tasks"]), 1)
                 self.assertEqual(payload["tasks"][0]["owner"], "洁琳")
+                self.assertIn("店铺负责人配置", payload["tasks"][0]["history"][0]["remark"])
                 self.assertEqual(payload["summary"]["unassigned"], 0)
 
     def test_store_owner_mapping_api_requires_admin_to_save(self):

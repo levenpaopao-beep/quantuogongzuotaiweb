@@ -1734,6 +1734,7 @@ def apply_store_owner_mapping(rows):
             owner = configured_owner_for_store(item.get("platform", ""), item.get("store", ""))
             if owner:
                 item["owner"] = owner
+                item["owner_source"] = "店铺负责人配置"
         mapped.append(item)
     return mapped
 
