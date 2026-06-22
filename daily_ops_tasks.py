@@ -132,15 +132,21 @@ class OperationTaskStore:
         by_status = {}
         by_type = {}
         by_owner = {}
+        unassigned = 0
         for row in rows:
             by_status[norm(row.get("status"))] = by_status.get(norm(row.get("status")), 0) + 1
             by_type[norm(row.get("task_type"))] = by_type.get(norm(row.get("task_type")), 0) + 1
-            by_owner[norm(row.get("owner"))] = by_owner.get(norm(row.get("owner")), 0) + 1
+            owner = norm(row.get("owner"))
+            if owner:
+                by_owner[owner] = by_owner.get(owner, 0) + 1
+            else:
+                unassigned += 1
         return {
             "total": len(rows),
             "by_status": by_status,
             "by_type": by_type,
             "by_owner": by_owner,
+            "unassigned": unassigned,
         }
 
     def owner_directory(self):

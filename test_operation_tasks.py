@@ -128,6 +128,20 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(second_result["created"], 1)
             self.assertEqual(second_result["total"], 2)
 
+    def test_task_summary_counts_unassigned_tasks_for_admin_followup(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "7", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_file": "a.xlsx", "source_row": 1},
+                {"platform": "Shein", "task_type": "爆旺冲突", "store": "琪琪", "owner": "", "merchant_code": "B", "source_report": "r", "source_file": "b.xlsx", "source_row": 2},
+            ])
+
+            summary = store.summary()
+            self.assertEqual(summary["total"], 2)
+            self.assertEqual(summary["unassigned"], 1)
+            self.assertEqual(summary["by_owner"], {"小琴": 1})
+
     def test_task_status_flow_rejects_invalid_operations(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -290,6 +304,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertIn(text, html + js)
         for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "doneTask", "exportTasks"]:
             self.assertIn(text, js)
+        self.assertIn("未分配", html + js + daily_ops_app.HTML_PAGE)
         for text in ["task-summary", "task-table", "task-actions"]:
             self.assertIn(text, css)
 

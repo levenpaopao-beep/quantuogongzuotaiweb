@@ -2155,6 +2155,7 @@ function renderTaskSummary(){
     ['待店长处理', status['待店长处理'] || 0],
     ['待管理员审核', status['待管理员审核'] || 0],
     ['已通过', status['已通过'] || 0],
+    ['未分配', summary.unassigned || 0],
   ];
   wrap.innerHTML = cards.map(([label, value]) => `<div class="task-kpi"><span class="muted">${label}</span><strong>${value}</strong></div>`).join('');
 }
