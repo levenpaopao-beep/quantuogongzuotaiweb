@@ -101,6 +101,41 @@ class OperationTaskStoreTest(unittest.TestCase):
             finally:
                 workbook.close()
 
+    def test_task_status_flow_rejects_invalid_operations(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {
+                    "platform": "Temu",
+                    "task_type": "爆旺冲突",
+                    "store": "7",
+                    "owner": "小琴",
+                    "merchant_code": "A-001",
+                    "product_name": "红色球衣",
+                    "system_action": "立即下架",
+                    "source_report": "Temu爆旺款重复预警",
+                    "source_row": 2,
+                }
+            ])
+            task = store.list_tasks()[0]
+
+            with self.assertRaises(ValueError):
+                store.submit_owner_action(task["id"], actor="小琴", action="", remark="只写备注")
+
+            with self.assertRaises(ValueError):
+                store.review_task(task["id"], admin="管理员", decision="通过", remark="未提交就审核")
+
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已下架", remark="后台已处理")
+            reviewed = store.review_task(submitted["id"], admin="管理员", decision="通过", remark="同意")
+            self.assertEqual(reviewed["status"], daily_ops_tasks.STATUS_APPROVED)
+
+            with self.assertRaises(ValueError):
+                store.submit_owner_action(task["id"], actor="小琴", action="改为继续观察", remark="")
+
+            with self.assertRaises(ValueError):
+                store.review_task(task["id"], admin="管理员", decision="同意", remark="非法审核结果")
+
     def test_daily_ops_app_syncs_report_output_into_tasks(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -216,18 +216,27 @@ class OperationTaskStore:
 
     def submit_owner_action(self, task_id, actor, action, remark=""):
         payload, task = self.require_task(task_id)
+        action = norm(action)
+        if not action:
+            raise ValueError("店长处理动作不能为空")
+        if task.get("status") not in {STATUS_PENDING_OWNER, STATUS_REJECTED}:
+            raise ValueError("只有待店长处理或已驳回的任务可以由店长填写")
         timestamp = now_text()
-        task["owner_action"] = norm(action)
+        task["owner_action"] = action
         task["owner_remark"] = norm(remark)
         task["owner_submitted_by"] = norm(actor)
         task["owner_submitted_at"] = timestamp
         task["status"] = STATUS_PENDING_REVIEW
+        task["admin_decision"] = ""
+        task["admin_remark"] = ""
+        task["admin_reviewed_by"] = ""
+        task["admin_reviewed_at"] = ""
         task["updated_at"] = timestamp
         task.setdefault("history", []).append({
             "time": timestamp,
             "actor": norm(actor),
             "event": "店长提交",
-            "action": norm(action),
+            "action": action,
             "remark": norm(remark),
         })
         self.save(payload)
@@ -236,6 +245,10 @@ class OperationTaskStore:
     def review_task(self, task_id, admin, decision, remark=""):
         payload, task = self.require_task(task_id)
         decision = norm(decision)
+        if task.get("status") != STATUS_PENDING_REVIEW:
+            raise ValueError("只有待管理员审核的任务可以审核")
+        if decision not in {"通过", "驳回"}:
+            raise ValueError("管理员审核结果只能是通过或驳回")
         timestamp = now_text()
         task["admin_decision"] = decision
         task["admin_remark"] = norm(remark)
