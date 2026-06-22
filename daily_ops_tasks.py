@@ -591,6 +591,14 @@ class OperationTaskStore:
         summary_ws.append(["任务类型", "数量"])
         for task_type, count in sorted(summary.get("by_type", {}).items()):
             summary_ws.append([task_type or "未填写", count])
+        summary_ws.append(["", ""])
+        summary_ws.append(["下一步处理人", "数量"])
+        for handler, count in sorted(summary.get("by_next_handler", {}).items()):
+            summary_ws.append([f"下一步处理人：{handler or '未填写'}", count])
+        summary_ws.append(["", ""])
+        summary_ws.append(["下一步动作", "数量"])
+        for action, count in sorted(summary.get("by_next_action", {}).items()):
+            summary_ws.append([f"下一步动作：{action or '未填写'}", count])
         style_task_sheet(summary_ws)
         criteria_ws = workbook.create_sheet("导出口径")
         criteria_ws.append(["字段", "值"])

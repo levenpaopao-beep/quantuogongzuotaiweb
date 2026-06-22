@@ -131,6 +131,10 @@ class OperationTaskStoreTest(unittest.TestCase):
                 }
                 self.assertEqual(summary["任务总数"], 2)
                 self.assertIn("超时未处理", summary)
+                self.assertEqual(summary["下一步处理人：管理员"], 1)
+                self.assertEqual(summary["下一步处理人：店长"], 1)
+                self.assertEqual(summary["下一步动作：标记完成或归档"], 1)
+                self.assertEqual(summary["下一步动作：填写处理结果"], 1)
                 criteria_ws = workbook["导出口径"]
                 criteria = {
                     criteria_ws.cell(row=row, column=1).value: criteria_ws.cell(row=row, column=2).value
