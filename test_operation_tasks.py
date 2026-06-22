@@ -402,6 +402,48 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertTrue((output_dir / exported["file"]).exists())
                 self.assertEqual(exported["rows"], 1)
 
+    def test_report_task_mapping_keeps_review_details_for_manual_decision(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            low_score = root / "low.xlsx"
+            workbook = daily_ops_tasks.Workbook()
+            ws = workbook.active
+            ws.title = "低分明细"
+            ws.append(["店铺", "负责人", "SKC", "货品名称", "品质分", "是否已下架", "是否本周新增低分"])
+            ws.append(["7", "小琴", "SKC-L1", "低分彩虹雨衣", 2.8, "否", "是"])
+            workbook.save(low_score)
+
+            low_rows = daily_ops_tasks.rows_from_report_workbook("low_score_warning", "店铺低分产品预警", low_score)
+            self.assertEqual(len(low_rows), 1)
+            self.assertIn("品质分：2.8", low_rows[0]["task_detail"])
+            self.assertIn("是否已下架：否", low_rows[0]["task_detail"])
+
+            bargain = root / "bargain.xlsx"
+            workbook = daily_ops_tasks.Workbook()
+            ws = workbook.active
+            ws.title = "议价回复"
+            ws.append(["店铺", "负责人", "SKC", "货品名称", "建议价格", "是否通过"])
+            ws.append(["8", "洁琳", "SKC-B1", "议价猫窝", 19.9, "不同意"])
+            workbook.save(bargain)
+
+            bargain_rows = daily_ops_tasks.rows_from_report_workbook("temu_bargain", "Temu议价回复", bargain)
+            self.assertEqual(len(bargain_rows), 1)
+            self.assertIn("建议价格：19.9", bargain_rows[0]["task_detail"])
+            self.assertIn("是否通过：不同意", bargain_rows[0]["task_detail"])
+
+            slow = root / "slow.xlsx"
+            workbook = daily_ops_tasks.Workbook()
+            ws = workbook.active
+            ws.title = "滞销处理"
+            ws.append(["店铺", "负责人", "SPU", "货品名称", "预警类型", "建议动作"])
+            ws.append(["9", "小琴", "SPU-S1", "滞销狗窝", "新品滞销", "暂停补货"])
+            workbook.save(slow)
+
+            slow_rows = daily_ops_tasks.rows_from_report_workbook("temu_slow", "Temu滞销动销预警", slow)
+            self.assertEqual(len(slow_rows), 1)
+            self.assertIn("预警类型：新品滞销", slow_rows[0]["task_detail"])
+
     def test_store_owner_mapping_fills_report_tasks_without_owner_column(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         with TemporaryDirectory() as tmp:
@@ -527,7 +569,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("负责人待办", html)
         self.assertIn("renderOwnerTaskSummary", html)
         self.assertIn("owner_status", html)
-        for text in ["来源", "source_report", "source_file", "source_row"]:
+        for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
             self.assertIn(text, html)
 
     def test_electron_bridge_exposes_operation_task_workflow(self):
@@ -567,7 +609,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("负责人待办", html + js)
         for text in ["operator.role === \"owner\"", "店长只能填写自己负责的任务"]:
             self.assertIn(text, js)
-        for text in ["来源", "source_report", "source_file", "source_row"]:
+        for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
             self.assertIn(text, js)
         self.assertIn("未分配", html + js + daily_ops_app.HTML_PAGE)
         for text in ["task-summary", "task-table", "task-actions"]:

@@ -27,6 +27,7 @@ TASK_COLUMNS = [
     ("spu", "SPU"),
     ("product_name", "货品名称"),
     ("system_action", "系统建议动作"),
+    ("task_detail", "任务详情"),
     ("owner_action", "店长处理动作"),
     ("owner_remark", "店长备注"),
     ("owner_submitted_by", "店长提交人"),
@@ -201,6 +202,7 @@ class OperationTaskStore:
                     "spu",
                     "product_name",
                     "system_action",
+                    "task_detail",
                     "source_report",
                     "source_file",
                     "source_sheet",
@@ -224,6 +226,7 @@ class OperationTaskStore:
                     "spu": row.get("spu", ""),
                     "product_name": row.get("product_name", ""),
                     "system_action": row.get("system_action", ""),
+                    "task_detail": row.get("task_detail", ""),
                     "owner_action": "",
                     "owner_remark": "",
                     "owner_submitted_by": "",
@@ -476,6 +479,19 @@ def row_value(row, headers, *names):
     return ""
 
 
+def report_task_detail(report_id, row, headers):
+    parts = []
+    seen = set()
+    for name in REPORT_DETAIL_FIELDS.get(report_id, []):
+        if name in seen:
+            continue
+        seen.add(name)
+        value = norm(row_value(row, headers, name))
+        if value:
+            parts.append(f"{name}：{value}")
+    return "；".join(parts)
+
+
 REPORT_TASK_TYPE = {
     "temu_hot": "爆旺冲突",
     "shein_hot": "爆旺冲突",
@@ -490,6 +506,14 @@ REPORT_PLATFORM = {
     "temu_slow": "Temu",
     "temu_bargain": "Temu",
     "shein_hot": "Shein",
+}
+
+REPORT_DETAIL_FIELDS = {
+    "temu_hot": ["冲突类型", "爆旺款skc", "爆旺skc", "申报价", "7天销量", "30天销量", "库存", "平台仓备货"],
+    "shein_hot": ["冲突类型", "爆旺款skc", "爆旺skc", "申报价", "7天销量", "30天销量", "库存", "平台仓备货"],
+    "low_score_warning": ["品质分", "是否已下架", "是否下架", "是否本周新增低分", "低分原因"],
+    "temu_slow": ["预警类型", "上架天数", "7天销量", "30天销量", "库存", "建议动作"],
+    "temu_bargain": ["建议价格", "是否通过", "申报价", "成本价", "批发价"],
 }
 
 
@@ -542,6 +566,7 @@ def map_report_row(report_id, report_name, file_name, sheet_name, row_number, ro
     spu = row_value(row, headers, "SPU", "spu", "爆旺skc")
     product_name = row_value(row, headers, "货品名称", "ERP货品名称", "品名", "名称")
     system_action = row_value(row, headers, "处理意见", "建议动作", "操作", "是否通过")
+    task_detail = report_task_detail(report_id, row, headers)
     if not any(norm(value) for value in [store, owner, merchant_code, skc, spu, product_name, system_action]):
         return None
     return {
@@ -554,6 +579,7 @@ def map_report_row(report_id, report_name, file_name, sheet_name, row_number, ro
         "spu": spu,
         "product_name": product_name,
         "system_action": system_action,
+        "task_detail": task_detail,
         "source_report": report_name,
         "source_file": file_name,
         "source_sheet": sheet_name,

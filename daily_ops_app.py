@@ -2513,7 +2513,7 @@ function renderTaskRows(){
     <td>${esc(task.platform)}<br>${esc(task.task_type)}<br><span class="muted">${esc(taskSourceText(task))}</span></td>
     <td>${esc(task.store)}<br><span class="muted">${esc(task.owner)}</span></td>
     <td class="task-product"><strong>${esc(task.product_name || task.merchant_code || task.skc || task.spu)}</strong><br><span class="muted">${esc(task.merchant_code)} ${esc(task.skc)} ${esc(task.spu)}</span></td>
-    <td>${esc(task.system_action)}</td>
+    <td>${esc(task.system_action)}<br><span class="muted">${esc(task.task_detail || '')}</span></td>
     <td>${esc(task.owner_action || '-')}<br><span class="muted">${esc(task.owner_remark || '')}</span></td>
     <td>${esc(task.admin_decision || '-')}<br><span class="muted">${esc(task.admin_remark || '')}</span></td>
     <td><div class="task-actions">${taskActionButtons(task)}</div></td>
