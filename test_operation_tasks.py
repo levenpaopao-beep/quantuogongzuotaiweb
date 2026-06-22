@@ -5,6 +5,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from urllib.parse import urlparse
 from unittest.mock import patch
 
 from openpyxl import load_workbook
@@ -1316,6 +1317,27 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("applyEntryParams", html)
         self.assertIn("URLSearchParams(window.location.search)", html)
         self.assertIn("role=owner", html)
+
+    def test_web_download_links_include_operator_token(self):
+        html = daily_ops_app.HTML_PAGE
+        self.assertIn("function authDownload", html)
+        self.assertIn("searchParams.set('token', operatorToken)", html)
+        self.assertIn('href="${authDownload(f.download)}"', html)
+        self.assertIn('href="${authDownload(res.download)}"', html)
+
+    def test_download_requires_logged_in_operator(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "outputs"
+            output_dir.mkdir()
+            (output_dir / "台账.xlsx").write_bytes(b"demo")
+            handler = daily_ops_app.DailyOpsHandler.__new__(daily_ops_app.DailyOpsHandler)
+            handler.headers = {}
+
+            with patch.object(daily_ops_app, "OUTPUT_DIR", output_dir):
+                with self.assertRaises(PermissionError):
+                    handler.handle_download(urlparse("/download?path=%E5%8F%B0%E8%B4%A6.xlsx"))
 
     def test_owner_directory_api_is_available_before_login(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()

@@ -2136,6 +2136,12 @@ async function api(url, opts={}){
   if(!r.ok || j.ok===false) throw new Error(j.error || '请求失败');
   return j;
 }
+function authDownload(url){
+  if(!operatorToken) return url;
+  const next = new URL(url, window.location.origin);
+  next.searchParams.set('token', operatorToken);
+  return next.pathname + next.search;
+}
 function renderOperator(){
   const el = document.getElementById('operatorIdentity');
   if(!el) return;
@@ -2373,7 +2379,7 @@ function renderReportOutputItems(id){
       <div class="report-output-name" title="${esc(f.name)}">${esc(f.name)}</div>
       <div class="report-output-time">${esc(shortModified(f.modified))} · ${fmtSize(f.size)}</div>
     </div>
-    <a class="download-link" href="${f.download}">下载</a>
+    <a class="download-link" href="${authDownload(f.download)}">下载</a>
   </div>`).join('');
 }
 function updateReportOutputCapacity(){
@@ -2394,7 +2400,7 @@ async function runReport(id){
   try {
     const version = document.getElementById('ver_'+id).value || 'V1';
     const res = await api('/api/reports/run', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({report:id, version})});
-    reportRunMessages[id] = `<span class="ok">生成完成：</span><a href="${res.result.download}">${esc(res.result.file)}</a><div class="muted">${esc(taskSyncSummary(res.result.task_sync))}</div>`;
+    reportRunMessages[id] = `<span class="ok">生成完成：</span><a href="${authDownload(res.result.download)}">${esc(res.result.file)}</a><div class="muted">${esc(taskSyncSummary(res.result.task_sync))}</div>`;
     st.innerHTML = reportRunMessages[id];
     await refreshStatus();
   } catch(e) { st.innerHTML = `<span class="bad">${e.message}</span>`; }
@@ -2485,7 +2491,7 @@ async function runWeeklyReports(){
     results.forEach(r => {
       const item = document.createElement('div'); item.className = 'result-item';
       if(r.status === 'ok'){
-        item.innerHTML = `<span class="ok">${esc(r.file)}</span><div class="muted">${esc(appStatus.reports[r.report]?.name || r.report)}</div><div class="muted">${esc(taskSyncSummary(r.task_sync))}</div><a href="${r.download}">下载</a>`;
+        item.innerHTML = `<span class="ok">${esc(r.file)}</span><div class="muted">${esc(appStatus.reports[r.report]?.name || r.report)}</div><div class="muted">${esc(taskSyncSummary(r.task_sync))}</div><a href="${authDownload(r.download)}">下载</a>`;
       } else {
         item.innerHTML = `<span class="bad">${esc(r.name || r.report)} 生成失败</span><div class="muted">${esc(r.error)}</div>`;
       }
@@ -2627,7 +2633,7 @@ async function doneTask(id){
 async function exportTasks(){
   const payload = Object.fromEntries(taskQuery().entries());
   const res = await api('/api/tasks/export', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-  document.getElementById('taskStatusLine').innerHTML = `<span class="ok">已导出 ${res.rows} 条：</span><a href="${res.download}">${esc(res.file)}</a>`;
+  document.getElementById('taskStatusLine').innerHTML = `<span class="ok">已导出 ${res.rows} 条：</span><a href="${authDownload(res.download)}">${esc(res.file)}</a>`;
   await refreshStatus();
 }
 async function createBackup(){
@@ -2672,7 +2678,7 @@ async function exportSearch(){
   if(!q){ st.textContent='请输入关键词'; return; }
   try {
     const res = await api('/api/search/export', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({q, limit:500})});
-    st.innerHTML = `<span class="ok">已导出 ${res.rows} 条：</span><a href="${res.download}">${res.file}</a>`;
+    st.innerHTML = `<span class="ok">已导出 ${res.rows} 条：</span><a href="${authDownload(res.download)}">${res.file}</a>`;
     await refreshStatus();
   } catch(e){ st.innerHTML=`<span class="bad">${e.message}</span>`; }
 }
@@ -2680,7 +2686,7 @@ function renderOutputs(){
   const body = document.getElementById('outputRows'); body.innerHTML='';
   appStatus.outputs.forEach(f => {
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${esc(f.name)}</td><td>${fmtSize(f.size)}</td><td>${f.modified}</td><td><a href="${f.download}">下载</a></td>`;
+    tr.innerHTML=`<td>${esc(f.name)}</td><td>${fmtSize(f.size)}</td><td>${f.modified}</td><td><a href="${authDownload(f.download)}">下载</a></td>`;
     body.appendChild(tr);
   });
 }
@@ -2745,6 +2751,8 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 self.handle_download(parsed)
             else:
                 self.send_json({"ok": False, "error": "接口不存在"}, 404)
+        except PermissionError as exc:
+            self.send_json({"ok": False, "error": str(exc)}, 401)
         except OSError as exc:
             if self.client_disconnected(exc):
                 return
@@ -2875,6 +2883,8 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
 
     def handle_download(self, parsed):
         params = parse_qs(parsed.query)
+        token = token_from_headers(getattr(self, "headers", {})) or params.get("token", [""])[0]
+        operator_from_token(token)
         name = unquote(params.get("path", [""])[0])
         path = (OUTPUT_DIR / Path(name).name).resolve()
         if OUTPUT_DIR.resolve() not in path.parents and path != OUTPUT_DIR.resolve():
