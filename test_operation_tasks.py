@@ -421,6 +421,33 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(updated["system_action"], "继续下架重复铺货")
             self.assertEqual(updated["history"][-1]["event"], "任务指派")
 
+    def test_unassigned_task_must_be_assigned_before_owner_submit(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {
+                    "platform": "Shein",
+                    "task_type": "爆旺冲突",
+                    "store": "琪琪",
+                    "owner": "",
+                    "merchant_code": "B-001",
+                    "product_name": "宠物背带",
+                    "system_action": "下架重复铺货",
+                    "source_report": "Shein爆旺款重复预警",
+                    "source_row": 2,
+                }
+            ])
+            task = store.list_tasks()[0]
+
+            with self.assertRaises(ValueError):
+                store.submit_owner_action(task["id"], actor="洁琳", action="已下架", remark="后台已处理")
+
+            assigned = store.assign_task(task["id"], actor="管理员", owner="洁琳", remark="补负责人")
+            submitted = store.submit_owner_action(assigned["id"], actor="洁琳", action="已下架", remark="后台已处理")
+            self.assertEqual(submitted["status"], daily_ops_tasks.STATUS_PENDING_REVIEW)
+            self.assertEqual(submitted["owner"], "洁琳")
+
     def test_task_status_flow_rejects_invalid_operations(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -759,6 +786,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("只看超时", html)
         self.assertIn("taskUnassigned", html)
         self.assertIn("只看未分配", html)
+        self.assertIn("先指派负责人", html)
         self.assertIn("驳回原因", html)
         self.assertIn("必须填写原因", html)
         self.assertIn("完成确认说明", html)
@@ -807,6 +835,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("只看超时", html)
         self.assertIn("taskUnassigned", html)
         self.assertIn("只看未分配", html)
+        self.assertIn("先指派负责人", js)
         self.assertIn("驳回原因", js)
         self.assertIn("必须填写原因", js)
         self.assertIn("完成确认说明", js)

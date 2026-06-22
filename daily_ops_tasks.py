@@ -329,6 +329,8 @@ class OperationTaskStore:
         action = norm(action)
         if not action:
             raise ValueError("店长处理动作不能为空")
+        if not norm(task.get("owner")):
+            raise ValueError("未分配负责人任务不能填写处理结果，请先指派负责人")
         if task.get("status") not in {STATUS_PENDING_OWNER, STATUS_REJECTED}:
             raise ValueError("只有待店长处理或已驳回的任务可以由店长填写")
         timestamp = now_text()

@@ -266,7 +266,7 @@ function taskSourceText(task) {
 function taskActionButtons(task) {
   const operator = currentOperator();
   const historyButton = `<button class="tool-button" data-action="history" data-id="${task.id}">查看记录</button>`;
-  const submitButton = `<button class="tool-button" data-action="submit" data-id="${task.id}">店长填写</button>`;
+  const submitButton = task.owner ? `<button class="tool-button" data-action="submit" data-id="${task.id}">店长填写</button>` : '<span class="file-meta">先指派负责人</span>';
   if (operator.role === "owner") {
     return `${historyButton}${submitButton}<span class="file-meta">店长只能填写自己负责的任务</span>`;
   }

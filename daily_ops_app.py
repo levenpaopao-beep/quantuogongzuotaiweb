@@ -2541,7 +2541,7 @@ function taskSourceText(task){
 }
 function taskActionButtons(task){
   const historyButton = `<button class="secondary" onclick="showTaskHistory('${task.id}')">查看记录</button>`;
-  const submitButton = `<button class="secondary" onclick="submitTask('${task.id}')">店长填写</button>`;
+  const submitButton = task.owner ? `<button class="secondary" onclick="submitTask('${task.id}')">店长填写</button>` : '<span class="muted">先指派负责人</span>';
   if(operatorSession && operatorSession.role === 'owner'){
     return `${historyButton}${submitButton}<span class="muted">店长只能填写自己负责的任务</span>`;
   }
