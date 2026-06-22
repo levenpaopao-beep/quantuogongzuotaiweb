@@ -511,6 +511,21 @@ class OperationTaskStoreTest(unittest.TestCase):
             session = daily_ops_app.login_operator("admin", "管理员", "")
             self.assertEqual(session["role"], "admin")
 
+    def test_owner_password_can_be_required_for_lan_store_manager_login(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        with patch.dict(os.environ, {"DAILY_OPS_HOST": "0.0.0.0", "DAILY_OPS_ADMIN_PASSWORD": "admin-pass", "DAILY_OPS_OWNER_PASSWORD": "owner-pass"}, clear=True):
+            with self.assertRaises(PermissionError):
+                daily_ops_app.login_operator("owner", "小琴", "")
+            with self.assertRaises(PermissionError):
+                daily_ops_app.login_operator("owner", "小琴", "wrong")
+            session = daily_ops_app.login_operator("owner", "小琴", "owner-pass")
+            self.assertEqual(session["role"], "owner")
+            self.assertEqual(session["user"], "小琴")
+
+        with patch.dict(os.environ, {"DAILY_OPS_HOST": "0.0.0.0", "DAILY_OPS_ADMIN_PASSWORD": "admin-pass"}, clear=True):
+            session = daily_ops_app.login_operator("owner", "小琴", "")
+            self.assertEqual(session["role"], "owner")
+
     def test_http_task_handlers_require_session_and_scope_owner(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         owner = daily_ops_app.login_operator("owner", "小琴", "")

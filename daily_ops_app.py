@@ -253,11 +253,14 @@ def login_operator(role, user, password=""):
     if not user:
         raise ValueError("请填写姓名")
     admin_password = os.environ.get("DAILY_OPS_ADMIN_PASSWORD", "")
+    owner_password = os.environ.get("DAILY_OPS_OWNER_PASSWORD", "")
     if role == "admin":
         if configured_host() in {"0.0.0.0", "::"} and not admin_password:
             raise PermissionError("局域网模式必须先设置 DAILY_OPS_ADMIN_PASSWORD")
         if admin_password and password != admin_password:
             raise PermissionError("管理员密码不正确")
+    elif owner_password and password != owner_password:
+        raise PermissionError("店长访问密码不正确")
     token = secrets.token_urlsafe(24)
     session = {"token": token, "role": role, "user": user, "login_at": now_text()}
     OPERATOR_SESSIONS[token] = session
@@ -1873,7 +1876,7 @@ HTML_PAGE = r"""<!doctype html>
       <select id="loginRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
       <input id="loginUser" placeholder="登录身份" list="ownerOptions">
       <datalist id="ownerOptions"></datalist>
-      <input id="loginPassword" placeholder="管理员密码，可空" type="password">
+      <input id="loginPassword" placeholder="管理员/店长访问密码，可空" type="password">
       <button class="primary" onclick="loginOperator()">登录身份</button>
       <div class="identity" id="operatorIdentity">未登录：任务台账需要先登录</div>
     </div>
