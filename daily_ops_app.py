@@ -1936,6 +1936,8 @@ def handle_tasks_api(action, headers, payload):
         return json_bytes({"ok": False, "error": str(exc)}, status=401)
     except KeyError as exc:
         return json_bytes({"ok": False, "error": str(exc)}, status=404)
+    except ValueError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=400)
     except Exception as exc:
         return json_bytes({"ok": False, "error": str(exc)}, status=500)
 

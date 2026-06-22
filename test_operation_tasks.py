@@ -1625,7 +1625,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                     admin_headers,
                     {"id": task["id"], "owner": "洁琳", "remark": "完成后不应再改负责人"},
                 )
-                self.assertEqual(status, 500)
+                self.assertEqual(status, 400)
                 self.assertIn("已完成任务不能重新指派", json.loads(body)["error"])
 
     def test_http_batch_review_requires_admin_and_updates_all_selected_tasks(self):
