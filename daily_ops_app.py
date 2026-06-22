@@ -2825,49 +2825,65 @@ function showTaskHistory(id){
   const lines = history.map(item => `${item.time || ''} ${item.event || ''}\n操作人：${item.actor || '-'}\n动作：${item.action || '-'}\n备注：${item.remark || '-'}`);
   alert(`${title}\n\n${lines.join('\n\n')}`);
 }
+function showTaskError(e){
+  const st = document.getElementById('taskStatusLine');
+  if(st) st.innerHTML = `<span class="bad">${esc(e.message || '任务操作失败')}</span>`;
+}
 async function submitTask(id){
-  const actor = document.getElementById('taskUser').value.trim() || prompt('填写人') || '';
-  if(!actor) return;
-  const action = prompt('处理动作，例如：已下架、申请退货、继续观察、同意议价');
-  if(!action) return;
-  const remark = prompt('备注') || '';
-  await api('/api/tasks/submit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, actor, action, remark})});
-  await loadTasks();
+  try {
+    const actor = document.getElementById('taskUser').value.trim() || prompt('填写人') || '';
+    if(!actor) return;
+    const action = prompt('处理动作，例如：已下架、申请退货、继续观察、同意议价');
+    if(!action) return;
+    const remark = prompt('备注') || '';
+    await api('/api/tasks/submit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, actor, action, remark})});
+    await loadTasks();
+  } catch(e){ showTaskError(e); }
 }
 async function assignTask(id){
-  const owner = prompt('指派给负责人');
-  if(!owner) return;
-  const remark = prompt('指派备注') || '';
-  await api('/api/tasks/assign', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, owner, remark})});
-  await loadTasks();
+  try {
+    const owner = prompt('指派给负责人');
+    if(!owner) return;
+    const remark = prompt('指派备注') || '';
+    await api('/api/tasks/assign', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, owner, remark})});
+    await loadTasks();
+  } catch(e){ showTaskError(e); }
 }
 async function reviewTask(id, decision){
-  const admin = document.getElementById('taskUser').value.trim() || prompt('管理员') || '管理员';
-  const remark = prompt(decision === '驳回' ? '管理员审核：驳回原因（必填）' : `管理员审核：${decision}`) || '';
-  if(decision === '驳回' && !remark.trim()){ document.getElementById('taskStatusLine').textContent = '驳回任务必须填写原因'; return; }
-  await api('/api/tasks/review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, admin, decision, remark})});
-  await loadTasks();
+  try {
+    const admin = document.getElementById('taskUser').value.trim() || prompt('管理员') || '管理员';
+    const remark = prompt(decision === '驳回' ? '管理员审核：驳回原因（必填）' : `管理员审核：${decision}`) || '';
+    if(decision === '驳回' && !remark.trim()){ document.getElementById('taskStatusLine').textContent = '驳回任务必须填写原因'; return; }
+    await api('/api/tasks/review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, admin, decision, remark})});
+    await loadTasks();
+  } catch(e){ showTaskError(e); }
 }
 async function batchReviewTasks(decision){
-  const ids = (taskState.tasks || []).filter(task => task.status === '待管理员审核').map(task => task.id);
-  if(!ids.length){ document.getElementById('taskStatusLine').textContent = '当前筛选没有待管理员审核任务'; return; }
-  const remark = prompt(decision === '驳回' ? '批量驳回原因（必填）' : `批量${decision}备注`) || '';
-  if(decision === '驳回' && !remark.trim()){ document.getElementById('taskStatusLine').textContent = '批量驳回任务必须填写原因'; return; }
-  const res = await api('/api/tasks/batch-review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids, decision, remark})});
-  document.getElementById('taskStatusLine').textContent = `已批量${decision} ${res.count || 0} 条任务`;
-  await loadTasks(false);
+  try {
+    const ids = (taskState.tasks || []).filter(task => task.status === '待管理员审核').map(task => task.id);
+    if(!ids.length){ document.getElementById('taskStatusLine').textContent = '当前筛选没有待管理员审核任务'; return; }
+    const remark = prompt(decision === '驳回' ? '批量驳回原因（必填）' : `批量${decision}备注`) || '';
+    if(decision === '驳回' && !remark.trim()){ document.getElementById('taskStatusLine').textContent = '批量驳回任务必须填写原因'; return; }
+    const res = await api('/api/tasks/batch-review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids, decision, remark})});
+    document.getElementById('taskStatusLine').textContent = `已批量${decision} ${res.count || 0} 条任务`;
+    await loadTasks(false);
+  } catch(e){ showTaskError(e); }
 }
 async function doneTask(id){
-  const remark = prompt('完成确认说明（必填）') || '';
-  if(!remark.trim()){ document.getElementById('taskStatusLine').textContent = '标记完成必须填写确认说明'; return; }
-  await api('/api/tasks/done', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, remark})});
-  await loadTasks();
+  try {
+    const remark = prompt('完成确认说明（必填）') || '';
+    if(!remark.trim()){ document.getElementById('taskStatusLine').textContent = '标记完成必须填写确认说明'; return; }
+    await api('/api/tasks/done', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, remark})});
+    await loadTasks();
+  } catch(e){ showTaskError(e); }
 }
 async function exportTasks(){
-  const payload = Object.fromEntries(taskQuery().entries());
-  const res = await api('/api/tasks/export', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-  document.getElementById('taskStatusLine').innerHTML = `<span class="ok">已导出 ${res.rows} 条：</span><a href="${authDownload(res.download)}">${esc(res.file)}</a>`;
-  await refreshStatus();
+  try {
+    const payload = Object.fromEntries(taskQuery().entries());
+    const res = await api('/api/tasks/export', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    document.getElementById('taskStatusLine').innerHTML = `<span class="ok">已导出 ${res.rows} 条：</span><a href="${authDownload(res.download)}">${esc(res.file)}</a>`;
+    await refreshStatus();
+  } catch(e){ showTaskError(e); }
 }
 async function createBackup(){
   const st = document.getElementById('backupStatus');

@@ -1975,6 +1975,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("function clearOperatorSession", html)
         self.assertIn("error.status = r.status", html)
         self.assertIn("if(error.status === 401) clearOperatorSession()", html)
+        self.assertIn("function showTaskError", html)
+        self.assertGreaterEqual(html.count("showTaskError(e)"), 6)
 
     def test_web_download_links_include_operator_token(self):
         html = daily_ops_app.HTML_PAGE
