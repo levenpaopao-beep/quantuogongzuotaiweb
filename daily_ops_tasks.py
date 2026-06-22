@@ -150,7 +150,7 @@ class OperationTaskStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def list_tasks(self, role="admin", user="", status="", task_type="", store="", platform=""):
+    def list_tasks(self, role="admin", user="", status="", task_type="", store="", platform="", overdue="", now=None):
         role = norm(role) or "admin"
         user = norm(user)
         rows = [public_task(row) for row in self.load()["tasks"]]
@@ -164,6 +164,8 @@ class OperationTaskStore:
             rows = [row for row in rows if norm(row.get("store")) == norm(store)]
         if platform:
             rows = [row for row in rows if norm(row.get("platform")) == norm(platform)]
+        if norm(overdue) in {"1", "true", "是", "超时"}:
+            rows = [row for row in rows if task_overdue(row, now)]
         return sorted(rows, key=lambda row: (row.get("status") != STATUS_PENDING_REVIEW, row.get("updated_at", "")), reverse=True)
 
     def summary(self, rows=None, now=None):
@@ -481,7 +483,7 @@ class OperationTaskStore:
         style_task_sheet(owner_ws)
         criteria_ws = workbook.create_sheet("导出口径")
         criteria_ws.append(["字段", "值"])
-        for key in ["role", "user", "status", "task_type", "store", "platform"]:
+        for key in ["role", "user", "status", "task_type", "store", "platform", "overdue"]:
             criteria_ws.append([key, norm(filters.get(key, ""))])
         criteria_ws.append(["rows", len(rows)])
         criteria_ws.append(["history_rows", history_rows])

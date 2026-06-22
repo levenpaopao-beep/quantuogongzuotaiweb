@@ -71,8 +71,8 @@ def export_search(query, limit=500):
     return app.export_search(query, limit)
 
 
-def operation_tasks(role="admin", user="", status="", task_type="", store="", platform=""):
-    rows = app.list_operation_tasks(role, user, status, task_type, store, platform)
+def operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue=""):
+    rows = app.list_operation_tasks(role, user, status, task_type, store, platform, overdue)
     return {"summary": app.summarize_operation_tasks(rows), "tasks": rows}
 
 
@@ -96,8 +96,8 @@ def mark_operation_task_done(task_id, actor, remark=""):
     return app.mark_operation_task_done(task_id, actor, remark)
 
 
-def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform=""):
-    return app.export_operation_tasks(role, user, status, task_type, store, platform)
+def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue=""):
+    return app.export_operation_tasks(role, user, status, task_type, store, platform, overdue)
 
 
 def store_owners():

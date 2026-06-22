@@ -212,6 +212,7 @@ function taskFilters() {
     task_type: $("#taskType")?.value || "",
     store: $("#taskStore")?.value.trim() || "",
     platform: "",
+    overdue: $("#taskOverdue")?.checked ? "1" : "",
   };
 }
 

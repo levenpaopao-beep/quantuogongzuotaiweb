@@ -112,6 +112,7 @@ ipcMain.handle("api:tasks", (_event, filters) => {
     payload.task_type || "",
     payload.store || "",
     payload.platform || "",
+    payload.overdue || "",
   ]);
 });
 ipcMain.handle("api:submit-task", (_event, payload) => runPython("submit-task", [], JSON.stringify(payload || {})));

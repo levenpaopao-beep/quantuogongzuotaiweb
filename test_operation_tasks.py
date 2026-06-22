@@ -306,6 +306,39 @@ class OperationTaskStoreTest(unittest.TestCase):
             finally:
                 workbook.close()
 
+    def test_task_listing_can_filter_only_overdue_tasks(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            task_db.write_text(json.dumps({
+                "tasks": [
+                    {
+                        "id": "owner-old",
+                        "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                        "owner": "小琴",
+                        "product_name": "红色球衣",
+                        "created_at": "2026-06-18 09:00:00",
+                        "updated_at": "2026-06-18 09:00:00",
+                    },
+                    {
+                        "id": "fresh",
+                        "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                        "owner": "小琴",
+                        "product_name": "蓝色球衣",
+                        "created_at": "2026-06-21 09:00:00",
+                        "updated_at": "2026-06-21 09:00:00",
+                    },
+                ]
+            }, ensure_ascii=False), encoding="utf-8")
+
+            rows = daily_ops_tasks.OperationTaskStore(task_db).list_tasks(
+                role="owner",
+                user="小琴",
+                overdue="1",
+                now=datetime(2026, 6, 22, 12, 0, 0),
+            )
+            self.assertEqual([row["product_name"] for row in rows], ["红色球衣"])
+
     def test_admin_can_assign_unassigned_task_to_owner(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -697,6 +730,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("owner_status", html)
         self.assertIn("超时未处理", html)
         self.assertIn("overdue", html)
+        self.assertIn("taskOverdue", html)
+        self.assertIn("只看超时", html)
         for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
             self.assertIn(text, html)
 
@@ -737,6 +772,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("负责人待办", html + js)
         self.assertIn("超时未处理", js)
         self.assertIn("overdue", js)
+        self.assertIn("taskOverdue", html)
+        self.assertIn("只看超时", html)
         for text in ["operator.role === \"owner\"", "店长只能填写自己负责的任务"]:
             self.assertIn(text, js)
         for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
@@ -952,6 +989,65 @@ class OperationTaskStoreTest(unittest.TestCase):
                 payload = json.loads(body)
                 self.assertEqual(payload["count"], 2)
                 self.assertEqual([row["status"] for row in payload["tasks"]], [daily_ops_tasks.STATUS_APPROVED, daily_ops_tasks.STATUS_APPROVED])
+
+    def test_http_task_export_can_filter_overdue_tasks(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+        admin_headers = {"X-Operator-Token": admin["token"]}
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            output_dir = root / "outputs"
+            task_db.write_text(json.dumps({
+                "tasks": [
+                    {
+                        "id": "owner-old",
+                        "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                        "owner": "小琴",
+                        "product_name": "红色球衣",
+                        "created_at": "2026-06-18 09:00:00",
+                        "updated_at": "2026-06-18 09:00:00",
+                    },
+                    {
+                        "id": "fresh",
+                        "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                        "owner": "洁琳",
+                        "product_name": "蓝色球衣",
+                        "created_at": "2026-06-21 09:00:00",
+                        "updated_at": "2026-06-21 09:00:00",
+                    },
+                ]
+            }, ensure_ascii=False), encoding="utf-8")
+
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
+                 patch.object(daily_ops_app, "OUTPUT_DIR", output_dir), \
+                 patch.object(daily_ops_tasks, "datetime") as fake_datetime:
+                fake_datetime.now.return_value = datetime(2026, 6, 22, 12, 0, 0)
+                fake_datetime.strptime.side_effect = datetime.strptime
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "POST_EXPORT",
+                    admin_headers,
+                    {"overdue": "1"},
+                )
+            self.assertEqual(status, 200)
+            payload = json.loads(body)
+            self.assertEqual(payload["rows"], 1)
+
+            workbook = load_workbook(output_dir / payload["file"], read_only=True, data_only=True)
+            try:
+                ws = workbook["任务台账"]
+                headers = [cell.value for cell in ws[1]]
+                product_col = headers.index("货品名称") + 1
+                self.assertEqual(ws.cell(row=2, column=product_col).value, "红色球衣")
+                criteria_ws = workbook["导出口径"]
+                criteria = {
+                    criteria_ws.cell(row=row, column=1).value: criteria_ws.cell(row=row, column=2).value
+                    for row in range(2, criteria_ws.max_row + 1)
+                }
+                self.assertEqual(criteria["overdue"], "1")
+            finally:
+                workbook.close()
 
     def test_admin_workflow_apis_require_admin_session(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
