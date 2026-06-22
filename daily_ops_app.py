@@ -2763,13 +2763,21 @@ function taskSourceText(task){
 function canSubmitOwnerTask(task){
   return task.owner && (task.status === '待店长处理' || task.status === '已驳回');
 }
+function canReviewTask(task){
+  return task.status === '待管理员审核';
+}
+function canMarkDoneTask(task){
+  return task.status === '已通过';
+}
 function taskActionButtons(task){
   const historyButton = `<button class="secondary" onclick="showTaskHistory('${task.id}')">查看记录</button>`;
   const submitButton = !task.owner ? '<span class="muted">先指派负责人</span>' : canSubmitOwnerTask(task) ? `<button class="secondary" onclick="submitTask('${task.id}')">店长填写</button>` : '<span class="muted">无需店长填写</span>';
   if(operatorSession && operatorSession.role === 'owner'){
     return `${historyButton}${submitButton}<span class="muted">店长只能填写自己负责的任务</span>`;
   }
-  return `${historyButton}<button class="secondary" onclick="assignTask('${task.id}')">指派负责人</button>${submitButton}<button class="primary" onclick="reviewTask('${task.id}','通过')">通过</button><button class="secondary" onclick="doneTask('${task.id}')">标记完成</button><button class="danger" onclick="reviewTask('${task.id}','驳回')">驳回</button>`;
+  const reviewButtons = canReviewTask(task) ? `<button class="primary" onclick="reviewTask('${task.id}','通过')">通过</button><button class="danger" onclick="reviewTask('${task.id}','驳回')">驳回</button>` : '<span class="muted">无需审核</span>';
+  const doneButton = canMarkDoneTask(task) ? `<button class="secondary" onclick="doneTask('${task.id}')">标记完成</button>` : '';
+  return `${historyButton}<button class="secondary" onclick="assignTask('${task.id}')">指派负责人</button>${submitButton}${reviewButtons}${doneButton}`;
 }
 function renderTaskRows(){
   const tbody = document.getElementById('taskRows'); if(!tbody) return;

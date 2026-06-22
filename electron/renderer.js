@@ -283,6 +283,14 @@ function canSubmitOwnerTask(task) {
   return task.owner && (task.status === "待店长处理" || task.status === "已驳回");
 }
 
+function canReviewTask(task) {
+  return task.status === "待管理员审核";
+}
+
+function canMarkDoneTask(task) {
+  return task.status === "已通过";
+}
+
 function taskActionButtons(task) {
   const operator = currentOperator();
   const historyButton = `<button class="tool-button" data-action="history" data-id="${task.id}">查看记录</button>`;
@@ -290,7 +298,9 @@ function taskActionButtons(task) {
   if (operator.role === "owner") {
     return `${historyButton}${submitButton}<span class="file-meta">店长只能填写自己负责的任务</span>`;
   }
-  return `${historyButton}<button class="tool-button" data-action="assign" data-id="${task.id}">指派负责人</button>${submitButton}<button class="tool-button primary-mini" data-action="approve" data-id="${task.id}">管理员审核</button><button class="tool-button" data-action="done" data-id="${task.id}">标记完成</button><button class="tool-button danger-mini" data-action="reject" data-id="${task.id}">驳回</button>`;
+  const reviewButtons = canReviewTask(task) ? `<button class="tool-button primary-mini" data-action="approve" data-id="${task.id}">管理员审核</button><button class="tool-button danger-mini" data-action="reject" data-id="${task.id}">驳回</button>` : '<span class="file-meta">无需审核</span>';
+  const doneButton = canMarkDoneTask(task) ? `<button class="tool-button" data-action="done" data-id="${task.id}">标记完成</button>` : "";
+  return `${historyButton}<button class="tool-button" data-action="assign" data-id="${task.id}">指派负责人</button>${submitButton}${reviewButtons}${doneButton}`;
 }
 
 function renderTaskCenter() {
