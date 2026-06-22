@@ -201,6 +201,27 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(summary["unassigned"], 1)
             self.assertEqual(summary["by_owner"], {"小琴": 1})
 
+    def test_open_only_filter_hides_completed_tasks_but_keeps_active_followups(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "7", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_file": "a.xlsx", "source_row": 1},
+                {"platform": "Temu", "task_type": "低分预警", "store": "8", "owner": "小琴", "merchant_code": "B", "source_report": "r", "source_file": "b.xlsx", "source_row": 2},
+            ])
+
+            rows = store.list_tasks(role="owner", user="小琴")
+            done_task = store.submit_owner_action(rows[0]["id"], actor="小琴", action="已处理", remark="")
+            done_task = store.review_task(done_task["id"], admin="管理员", decision="通过", remark="同意")
+            store.mark_done(done_task["id"], actor="管理员", remark="后台已确认")
+            active_task = store.submit_owner_action(rows[1]["id"], actor="小琴", action="继续观察", remark="")
+            store.review_task(active_task["id"], admin="管理员", decision="通过", remark="同意")
+
+            open_rows = store.list_tasks(role="owner", user="小琴", open_only="1")
+            self.assertEqual([row["status"] for row in open_rows], [daily_ops_tasks.STATUS_APPROVED])
+            self.assertEqual(open_rows[0]["merchant_code"], "B")
+            self.assertEqual(store.summary(open_rows)["total"], 1)
+
     def test_tasks_expose_next_handler_and_action_for_workflow_routing(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1178,6 +1199,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("overdue", html)
         self.assertIn("taskOverdue", html)
         self.assertIn("只看超时", html)
+        self.assertIn("taskOpenOnly", html)
+        self.assertIn("只看未完成", html)
+        self.assertIn("open_only", html)
         self.assertIn("taskUnassigned", html)
         self.assertIn("只看未分配", html)
         self.assertIn("taskPlatform", html)
@@ -1234,6 +1258,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("overdue", js)
         self.assertIn("taskOverdue", html)
         self.assertIn("只看超时", html)
+        self.assertIn("taskOpenOnly", html)
+        self.assertIn("只看未完成", html)
+        self.assertIn("open_only", js)
         self.assertIn("taskUnassigned", html)
         self.assertIn("只看未分配", html)
         self.assertIn("taskPlatform", html)
@@ -1616,12 +1643,16 @@ class OperationTaskStoreTest(unittest.TestCase):
             "task_type": ["低分预警"],
             "store": ["7"],
             "platform": ["Temu"],
+            "next_handler": ["管理员"],
+            "open_only": ["1"],
             "overdue": ["1"],
             "unassigned": ["1"],
             "reworked": ["1"],
         })
 
         self.assertEqual(payload["platform"], "Temu")
+        self.assertEqual(payload["next_handler"], "管理员")
+        self.assertEqual(payload["open_only"], "1")
         self.assertEqual(payload["overdue"], "1")
         self.assertEqual(payload["unassigned"], "1")
         self.assertEqual(payload["reworked"], "1")

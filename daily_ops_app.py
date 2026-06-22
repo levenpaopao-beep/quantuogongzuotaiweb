@@ -355,6 +355,8 @@ def task_query_payload(params):
         "task_type": params.get("task_type", [""])[0],
         "store": params.get("store", [""])[0],
         "platform": params.get("platform", [""])[0],
+        "next_handler": params.get("next_handler", [""])[0],
+        "open_only": params.get("open_only", [""])[0],
         "overdue": params.get("overdue", [""])[0],
         "unassigned": params.get("unassigned", [""])[0],
         "reworked": params.get("reworked", [""])[0],
@@ -1784,7 +1786,7 @@ def operation_owner_directory():
     return sorted(owners.values(), key=lambda row: (-row["task_count"], row["owner"]))
 
 
-def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked=""):
+def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", open_only=""):
     return operation_task_store().list_tasks(
         role=role,
         user=user,
@@ -1796,6 +1798,7 @@ def list_operation_tasks(role="admin", user="", status="", task_type="", store="
         unassigned=unassigned,
         next_handler=next_handler,
         reworked=reworked,
+        open_only=open_only,
     )
 
 
@@ -1831,11 +1834,13 @@ def operation_task_export_title(filters):
         parts.append("未分配")
     if norm(filters.get("reworked")) in {"1", "true", "是", "返工"}:
         parts.append("返工")
+    if norm(filters.get("open_only")) in {"1", "true", "是", "未完成", "待办"}:
+        parts.append("未完成")
     return "-".join(parts)
 
 
-def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked=""):
-    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned, next_handler=next_handler, reworked=reworked)
+def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", open_only=""):
+    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned, next_handler=next_handler, reworked=reworked, open_only=open_only)
     history_rows = sum(len(row.get("history") or []) for row in rows)
     filters = {
         "role": role,
@@ -1848,6 +1853,7 @@ def export_operation_tasks(role="admin", user="", status="", task_type="", store
         "unassigned": unassigned,
         "next_handler": next_handler,
         "reworked": reworked,
+        "open_only": open_only,
     }
     out = output_path(operation_task_export_title(filters), "V1")
     operation_task_store().export_tasks(out, rows, filters=filters)
@@ -1877,6 +1883,7 @@ def handle_tasks_api(action, headers, payload):
                 unassigned=payload.get("unassigned", ""),
                 next_handler=payload.get("next_handler", ""),
                 reworked=payload.get("reworked", ""),
+                open_only=payload.get("open_only", ""),
             )
             return json_bytes({"ok": True, "operator": operator, "summary": summarize_operation_tasks(rows), "tasks": rows})
         if action == "POST_SUBMIT":
@@ -1920,6 +1927,7 @@ def handle_tasks_api(action, headers, payload):
                 unassigned=payload.get("unassigned", ""),
                 next_handler=payload.get("next_handler", ""),
                 reworked=payload.get("reworked", ""),
+                open_only=payload.get("open_only", ""),
             )
             grant_download(token, result.get("file", ""))
             return json_bytes({"ok": True, **result})
@@ -2157,6 +2165,7 @@ HTML_PAGE = r"""<!doctype html>
           <select id="taskType"><option value="">全部类型</option><option>价格异常</option><option>库存异常</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
           <input id="taskStore" placeholder="店铺">
           <select id="taskNextHandler"><option value="">全部下一步</option><option>管理员</option><option>店长</option><option>无需处理</option></select>
+          <label><input id="taskOpenOnly" type="checkbox"> 只看未完成</label>
           <label><input id="taskOverdue" type="checkbox"> 只看超时</label>
           <label><input id="taskUnassigned" type="checkbox"> 只看未分配</label>
           <label><input id="taskReworked" type="checkbox"> 只看返工</label>
@@ -2688,6 +2697,7 @@ function taskQuery(){
   params.set('task_type', document.getElementById('taskType')?.value || '');
   params.set('store', document.getElementById('taskStore')?.value.trim() || '');
   params.set('next_handler', document.getElementById('taskNextHandler')?.value || '');
+  params.set('open_only', document.getElementById('taskOpenOnly')?.checked ? '1' : '');
   params.set('overdue', document.getElementById('taskOverdue')?.checked ? '1' : '');
   params.set('unassigned', document.getElementById('taskUnassigned')?.checked ? '1' : '');
   params.set('reworked', document.getElementById('taskReworked')?.checked ? '1' : '');
