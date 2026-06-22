@@ -446,6 +446,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("标记完成", html)
         self.assertIn("指派负责人", html)
         self.assertIn("店铺负责人配置", html)
+        for text in ["来源", "source_report", "source_file", "source_row"]:
+            self.assertIn(text, html)
 
     def test_electron_bridge_exposes_operation_task_workflow(self):
         root = Path(__file__).resolve().parent
@@ -479,6 +481,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "批量通过", "批量驳回", "标记完成", "指派负责人", "店铺负责人配置", "导出任务"]:
             self.assertIn(text, html + js)
         for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "batchReviewTasks", "doneTask", "assignTask", "loadStoreOwners", "saveStoreOwners", "exportTasks"]:
+            self.assertIn(text, js)
+        for text in ["来源", "source_report", "source_file", "source_row"]:
             self.assertIn(text, js)
         self.assertIn("未分配", html + js + daily_ops_app.HTML_PAGE)
         for text in ["task-summary", "task-table", "task-actions"]:

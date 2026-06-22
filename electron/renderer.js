@@ -236,6 +236,12 @@ function taskBadge(status) {
   return "";
 }
 
+function taskSourceText(task) {
+  const source = [task.source_report, task.source_file].filter(Boolean).join(" / ");
+  const row = task.source_row ? ` #${task.source_row}` : "";
+  return `来源：${source || "-"}${row}`;
+}
+
 function renderTaskCenter() {
   renderTaskSummary();
   const rows = $("#taskRows");
@@ -247,7 +253,7 @@ function renderTaskCenter() {
   rows.innerHTML = state.tasks.map((task) => `
     <div class="task-row">
       <div><span class="status-pill ${taskBadge(task.status)}">${task.status || ""}</span></div>
-      <div>${task.platform || ""}<br><span class="file-meta">${task.task_type || ""}</span></div>
+      <div>${task.platform || ""}<br><span class="file-meta">${task.task_type || ""}</span><br><span class="file-meta">${taskSourceText(task)}</span></div>
       <div>${task.store || ""}<br><span class="file-meta">${task.owner || ""}</span></div>
       <div class="task-product"><strong>${task.product_name || task.merchant_code || task.skc || task.spu || ""}</strong><span>${[task.merchant_code, task.skc, task.spu].filter(Boolean).join(" ")}</span></div>
       <div>${task.system_action || ""}</div>

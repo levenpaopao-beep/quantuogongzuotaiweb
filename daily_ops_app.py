@@ -2381,6 +2381,11 @@ function renderTaskSummary(){
   ];
   wrap.innerHTML = cards.map(([label, value]) => `<div class="task-kpi"><span class="muted">${label}</span><strong>${value}</strong></div>`).join('');
 }
+function taskSourceText(task){
+  const source = [task.source_report, task.source_file].filter(Boolean).join(' / ');
+  const row = task.source_row ? ` #${task.source_row}` : '';
+  return `来源：${source || '-'}${row}`;
+}
 function renderTaskRows(){
   const tbody = document.getElementById('taskRows'); if(!tbody) return;
   if(!taskState.tasks.length){
@@ -2389,7 +2394,7 @@ function renderTaskRows(){
   }
   tbody.innerHTML = taskState.tasks.map(task => `<tr>
     <td><span class="badge ${task.status === '待管理员审核' ? 'warn' : task.status === '已通过' ? 'ok' : task.status === '已驳回' ? 'bad' : ''}">${esc(task.status)}</span></td>
-    <td>${esc(task.platform)}<br>${esc(task.task_type)}</td>
+    <td>${esc(task.platform)}<br>${esc(task.task_type)}<br><span class="muted">${esc(taskSourceText(task))}</span></td>
     <td>${esc(task.store)}<br><span class="muted">${esc(task.owner)}</span></td>
     <td class="task-product"><strong>${esc(task.product_name || task.merchant_code || task.skc || task.spu)}</strong><br><span class="muted">${esc(task.merchant_code)} ${esc(task.skc)} ${esc(task.spu)}</span></td>
     <td>${esc(task.system_action)}</td>
