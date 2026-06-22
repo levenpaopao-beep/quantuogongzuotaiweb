@@ -59,6 +59,9 @@ TASK_HISTORY_COLUMNS = [
     ("task_id", "任务ID"),
     ("platform", "平台"),
     ("task_type", "任务类型"),
+    ("status", "当前状态"),
+    ("next_handler", "下一步处理人"),
+    ("next_action", "下一步动作"),
     ("store", "店铺"),
     ("owner", "负责人"),
     ("product_name", "货品名称"),
@@ -585,11 +588,15 @@ class OperationTaskStore:
         log_ws = workbook.create_sheet("操作记录")
         log_ws.append([label for _key, label in TASK_HISTORY_COLUMNS])
         for row in rows:
+            next_handler, next_action = task_next_step(row, now=now)
             for item in row.get("history") or []:
                 log_ws.append([
                     row.get("id", ""),
                     row.get("platform", ""),
                     row.get("task_type", ""),
+                    row.get("status", ""),
+                    next_handler,
+                    next_action,
                     row.get("store", ""),
                     row.get("owner", ""),
                     row.get("product_name", ""),

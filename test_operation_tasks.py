@@ -114,10 +114,21 @@ class OperationTaskStoreTest(unittest.TestCase):
                 log_headers = [cell.value for cell in log_ws[1]]
                 self.assertIn("事件", log_headers)
                 self.assertIn("操作人", log_headers)
+                self.assertIn("当前状态", log_headers)
+                self.assertIn("下一步处理人", log_headers)
+                self.assertIn("下一步动作", log_headers)
                 events = [log_ws.cell(row=row, column=log_headers.index("事件") + 1).value for row in range(2, log_ws.max_row + 1)]
                 self.assertIn("系统生成", events)
                 self.assertIn("店长提交", events)
                 self.assertIn("管理员审核", events)
+                log_rows_by_event = {
+                    log_ws.cell(row=row, column=log_headers.index("事件") + 1).value: row
+                    for row in range(2, log_ws.max_row + 1)
+                }
+                review_row = log_rows_by_event["管理员审核"]
+                self.assertEqual(log_ws.cell(row=review_row, column=log_headers.index("当前状态") + 1).value, daily_ops_tasks.STATUS_APPROVED)
+                self.assertEqual(log_ws.cell(row=review_row, column=log_headers.index("下一步处理人") + 1).value, "管理员")
+                self.assertEqual(log_ws.cell(row=review_row, column=log_headers.index("下一步动作") + 1).value, "标记完成或归档")
                 owner_ws = workbook["负责人汇总"]
                 owner_headers = [cell.value for cell in owner_ws[1]]
                 self.assertEqual(owner_headers, ["负责人", "任务总数", "待店长处理", "待管理员审核", "超时未处理", "返工任务", "已通过", "已驳回", "已完成"])
