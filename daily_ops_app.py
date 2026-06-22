@@ -2170,8 +2170,8 @@ HTML_PAGE = r"""<!doctype html>
           <label><input id="taskUnassigned" type="checkbox"> 只看未分配</label>
           <label><input id="taskReworked" type="checkbox"> 只看返工</label>
           <button class="primary" onclick="loadTasks()">查询</button>
-          <button class="primary" onclick="batchReviewTasks('通过')">批量通过</button>
-          <button class="danger" onclick="batchReviewTasks('驳回')">批量驳回</button>
+          <button class="primary" data-admin-only="task-review" onclick="batchReviewTasks('通过')">批量通过</button>
+          <button class="danger" data-admin-only="task-review" onclick="batchReviewTasks('驳回')">批量驳回</button>
           <button class="secondary" onclick="exportTasks()">导出</button>
         </div>
         <div class="status" id="taskStatusLine"></div>

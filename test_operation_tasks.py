@@ -1260,6 +1260,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("operatorSession.role === 'owner'", html)
         self.assertIn("店长只能填写自己负责的任务", html)
         self.assertIn("data-admin-only", html)
+        self.assertIn("data-admin-only=\"task-review\"", html)
         self.assertIn("applyRoleVisibility", html)
         self.assertIn("switchTab('tasks')", html)
         self.assertIn("item.stores || []", html)
