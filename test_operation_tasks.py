@@ -1260,6 +1260,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("canSubmitOwnerTask", html)
         self.assertIn("canReviewTask", html)
         self.assertIn("canMarkDoneTask", html)
+        self.assertIn("canAssignTask", html)
         self.assertIn("待店长处理", html)
         self.assertIn("已驳回", html)
         self.assertIn("operatorSession.role === 'owner'", html)
@@ -1332,6 +1333,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("canSubmitOwnerTask", js)
         self.assertIn("canReviewTask", js)
         self.assertIn("canMarkDoneTask", js)
+        self.assertIn("canAssignTask", js)
         self.assertIn('task.status === "待店长处理"', js)
         self.assertIn('task.status === "已驳回"', js)
         self.assertIn('task.status === "待管理员审核"', js)
@@ -1568,6 +1570,31 @@ class OperationTaskStoreTest(unittest.TestCase):
                 owner_payload = json.loads(body)
                 self.assertEqual(len(owner_payload["tasks"]), 1)
                 self.assertEqual(owner_payload["summary"]["unassigned"], 0)
+
+    def test_completed_task_cannot_be_reassigned(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+        admin_headers = {"X-Operator-Token": admin["token"]}
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "1", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_file": "a.xlsx", "source_row": 1},
+            ])
+            task = store.list_tasks()[0]
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已处理", remark="")
+            approved = store.review_task(submitted["id"], admin="管理员", decision="通过", remark="同意")
+            store.mark_done(approved["id"], actor="管理员", remark="后台已确认")
+
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "POST_ASSIGN",
+                    admin_headers,
+                    {"id": task["id"], "owner": "洁琳", "remark": "完成后不应再改负责人"},
+                )
+                self.assertEqual(status, 500)
+                self.assertIn("已完成任务不能重新指派", json.loads(body)["error"])
 
     def test_http_batch_review_requires_admin_and_updates_all_selected_tasks(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()

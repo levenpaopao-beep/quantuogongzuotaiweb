@@ -436,6 +436,8 @@ class OperationTaskStore:
         owner = norm(owner)
         if not owner:
             raise ValueError("负责人不能为空")
+        if norm(task.get("status")) == STATUS_DONE:
+            raise ValueError("已完成任务不能重新指派")
         timestamp = now_text()
         previous_owner = norm(task.get("owner"))
         task["owner"] = owner

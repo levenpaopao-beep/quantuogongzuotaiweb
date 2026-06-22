@@ -291,6 +291,10 @@ function canMarkDoneTask(task) {
   return task.status === "已通过";
 }
 
+function canAssignTask(task) {
+  return task.status !== "已完成";
+}
+
 function taskActionButtons(task) {
   const operator = currentOperator();
   const historyButton = `<button class="tool-button" data-action="history" data-id="${task.id}">查看记录</button>`;
@@ -300,7 +304,8 @@ function taskActionButtons(task) {
   }
   const reviewButtons = canReviewTask(task) ? `<button class="tool-button primary-mini" data-action="approve" data-id="${task.id}">管理员审核</button><button class="tool-button danger-mini" data-action="reject" data-id="${task.id}">驳回</button>` : '<span class="file-meta">无需审核</span>';
   const doneButton = canMarkDoneTask(task) ? `<button class="tool-button" data-action="done" data-id="${task.id}">标记完成</button>` : "";
-  return `${historyButton}<button class="tool-button" data-action="assign" data-id="${task.id}">指派负责人</button>${submitButton}${reviewButtons}${doneButton}`;
+  const assignButton = canAssignTask(task) ? `<button class="tool-button" data-action="assign" data-id="${task.id}">指派负责人</button>` : "";
+  return `${historyButton}${assignButton}${submitButton}${reviewButtons}${doneButton}`;
 }
 
 function renderTaskCenter() {
