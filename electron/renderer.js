@@ -357,14 +357,18 @@ function showTaskError(error) {
 }
 
 async function loadTasks(showToastOnDone = true) {
-  const line = $("#taskStatusLine");
-  if (line) line.textContent = "正在读取任务...";
-  const result = await api.tasks(taskFilters());
-  state.taskSummary = result.summary || {};
-  state.tasks = result.tasks || [];
-  renderTaskCenter();
-  if (line) line.textContent = `当前筛选 ${state.tasks.length} 条任务`;
-  if (showToastOnDone) showToast("任务已刷新");
+  try {
+    const line = $("#taskStatusLine");
+    if (line) line.textContent = "正在读取任务...";
+    const result = await api.tasks(taskFilters());
+    state.taskSummary = result.summary || {};
+    state.tasks = result.tasks || [];
+    renderTaskCenter();
+    if (line) line.textContent = `当前筛选 ${state.tasks.length} 条任务`;
+    if (showToastOnDone) showToast("任务已刷新");
+  } catch (error) {
+    showTaskError(error);
+  }
 }
 
 async function submitTask(id) {
