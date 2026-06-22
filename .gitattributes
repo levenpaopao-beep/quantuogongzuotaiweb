@@ -1,0 +1,6 @@
+*.bat text eol=crlf
+*.command text eol=lf
+*.md text
+*.py text
+*.mjs text
+*.txt text

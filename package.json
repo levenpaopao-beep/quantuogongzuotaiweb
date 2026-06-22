@@ -1,0 +1,14 @@
+{
+  "name": "daily-ops-workbench",
+  "productName": "PETCIRCLE 运营工作台",
+  "version": "2.1.0",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "lucide-static": "^0.468.0"
+  }
+}

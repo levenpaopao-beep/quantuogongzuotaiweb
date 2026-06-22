@@ -1,0 +1,39 @@
+{
+  "hot_item": {
+    "temu_basis": "Temu爆旺款以最新上传的Temu爆旺款表为准。",
+    "shein_new_days_lt": 30,
+    "shein_new_7d_daily_gte": 10,
+    "shein_old_days_gte": 30,
+    "shein_old_30d_daily_gt": 20,
+    "keywords": [
+      "高销款",
+      "爆",
+      "旺"
+    ]
+  },
+  "sort": {
+    "group_order": [
+      "SPU",
+      "SKC",
+      "商家编码"
+    ],
+    "size_order": [
+      "XXS",
+      "XS",
+      "S",
+      "M",
+      "L",
+      "XL",
+      "XXL",
+      "XXXL"
+    ]
+  },
+  "slow_moving": {
+    "new_product_days_lt": 28,
+    "new_slow_min_days": 30,
+    "new_slow_max_days": 60,
+    "old_slow_min_days": 180,
+    "group_by": "店铺+SPU",
+    "sales30_total_equals": 0
+  }
+}
