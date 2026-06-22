@@ -2600,7 +2600,8 @@ async function batchReviewTasks(decision){
   await loadTasks(false);
 }
 async function doneTask(id){
-  const remark = prompt('完成备注') || '';
+  const remark = prompt('完成确认说明（必填）') || '';
+  if(!remark.trim()){ document.getElementById('taskStatusLine').textContent = '标记完成必须填写确认说明'; return; }
   await api('/api/tasks/done', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, remark})});
   await loadTasks();
 }

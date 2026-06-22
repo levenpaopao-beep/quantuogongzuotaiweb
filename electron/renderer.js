@@ -375,7 +375,11 @@ async function batchReviewTasks(decision) {
 
 async function doneTask(id) {
   const actor = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
-  const remark = window.prompt("完成备注") || "";
+  const remark = window.prompt("完成确认说明（必填）") || "";
+  if (!remark.trim()) {
+    showToast("标记完成必须填写确认说明");
+    return;
+  }
   await api.doneTask({ id, actor, remark });
   await loadTasks(false);
   showToast("任务已标记完成");

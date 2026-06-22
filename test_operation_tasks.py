@@ -504,6 +504,8 @@ class OperationTaskStoreTest(unittest.TestCase):
 
             submitted = store.submit_owner_action(task["id"], actor="小琴", action="已处理", remark="")
             reviewed = store.review_task(submitted["id"], admin="管理员", decision="通过", remark="同意")
+            with self.assertRaises(ValueError):
+                store.mark_done(reviewed["id"], actor="管理员", remark="")
             done = store.mark_done(reviewed["id"], actor="管理员", remark="后台已确认")
 
             self.assertEqual(done["status"], daily_ops_tasks.STATUS_DONE)
@@ -736,6 +738,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("只看超时", html)
         self.assertIn("驳回原因", html)
         self.assertIn("必须填写原因", html)
+        self.assertIn("完成确认说明", html)
+        self.assertIn("标记完成必须填写确认说明", html)
         for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
             self.assertIn(text, html)
 
@@ -780,6 +784,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("只看超时", html)
         self.assertIn("驳回原因", js)
         self.assertIn("必须填写原因", js)
+        self.assertIn("完成确认说明", js)
+        self.assertIn("标记完成必须填写确认说明", js)
         for text in ["operator.role === \"owner\"", "店长只能填写自己负责的任务"]:
             self.assertIn(text, js)
         for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
