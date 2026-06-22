@@ -14,6 +14,8 @@ STATUS_PENDING_REVIEW = "待管理员审核"
 STATUS_APPROVED = "已通过"
 STATUS_REJECTED = "已驳回"
 STATUS_DONE = "已完成"
+OWNER_OVERDUE_DAYS = 3
+REVIEW_OVERDUE_DAYS = 1
 
 TASK_COLUMNS = [
     ("id", "任务ID"),
@@ -67,6 +69,28 @@ def norm(value):
     if value is None:
         return ""
     return str(value).strip()
+
+
+def parse_time(value):
+    text = norm(value)
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def task_overdue(row, now=None):
+    now = now or datetime.now()
+    status = norm(row.get("status"))
+    if status == STATUS_PENDING_OWNER:
+        start = parse_time(row.get("created_at")) or parse_time(row.get("updated_at"))
+        return bool(start and (now - start).total_seconds() >= OWNER_OVERDUE_DAYS * 86400)
+    if status == STATUS_PENDING_REVIEW:
+        start = parse_time(row.get("owner_submitted_at")) or parse_time(row.get("updated_at"))
+        return bool(start and (now - start).total_seconds() >= REVIEW_OVERDUE_DAYS * 86400)
+    return False
 
 
 def task_identity(row):
@@ -128,12 +152,13 @@ class OperationTaskStore:
             rows = [row for row in rows if norm(row.get("platform")) == norm(platform)]
         return sorted(rows, key=lambda row: (row.get("status") != STATUS_PENDING_REVIEW, row.get("updated_at", "")), reverse=True)
 
-    def summary(self, rows=None):
+    def summary(self, rows=None, now=None):
         rows = list(rows) if rows is not None else self.load()["tasks"]
         by_status = {}
         by_type = {}
         by_owner = {}
         owner_status = {}
+        overdue = {"total": 0, "by_status": {}}
         unassigned = 0
         for row in rows:
             status = norm(row.get("status"))
@@ -148,12 +173,18 @@ class OperationTaskStore:
             item = owner_status.setdefault(owner, {"owner": owner, "total": 0, "by_status": {}})
             item["total"] += 1
             item["by_status"][status] = item["by_status"].get(status, 0) + 1
+            item.setdefault("overdue", 0)
+            if task_overdue(row, now):
+                overdue["total"] += 1
+                overdue["by_status"][status] = overdue["by_status"].get(status, 0) + 1
+                item["overdue"] += 1
         return {
             "total": len(rows),
             "by_status": by_status,
             "by_type": by_type,
             "by_owner": by_owner,
             "owner_status": owner_status,
+            "overdue": overdue,
             "unassigned": unassigned,
         }
 

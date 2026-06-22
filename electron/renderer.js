@@ -220,10 +220,12 @@ function renderTaskSummary() {
   if (!wrap) return;
   const summary = state.taskSummary || {};
   const status = summary.by_status || {};
+  const overdue = summary.overdue || {};
   const cards = [
     ["全部任务", summary.total || 0],
     ["待店长处理", status["待店长处理"] || 0],
     ["待管理员审核", status["待管理员审核"] || 0],
+    ["超时未处理", overdue.total || 0],
     ["已通过", status["已通过"] || 0],
     ["未分配", summary.unassigned || 0],
   ];
@@ -242,7 +244,7 @@ function renderOwnerTaskSummary() {
   }
   wrap.innerHTML = rows.map((item) => {
     const status = item.by_status || {};
-    return `<div class="task-kpi"><span>负责人待办：${item.owner || ""}</span><strong>${item.total || 0}</strong><p>待店长 ${status["待店长处理"] || 0} / 待审核 ${status["待管理员审核"] || 0} / 已完成 ${status["已完成"] || 0}</p></div>`;
+    return `<div class="task-kpi"><span>负责人待办：${item.owner || ""}</span><strong>${item.total || 0}</strong><p>待店长 ${status["待店长处理"] || 0} / 待审核 ${status["待管理员审核"] || 0} / 超时 ${item.overdue || 0} / 已完成 ${status["已完成"] || 0}</p></div>`;
   }).join("");
 }
 

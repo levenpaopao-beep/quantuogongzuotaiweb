@@ -2,6 +2,7 @@ import unittest
 import os
 import json
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -179,6 +180,43 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(summary["owner_status"]["洁琳"]["by_status"]["待店长处理"], 1)
             self.assertEqual(summary["owner_status"]["未分配"]["total"], 1)
             self.assertEqual(summary["owner_status"]["未分配"]["by_status"]["待店长处理"], 1)
+
+    def test_task_summary_counts_overdue_owner_and_review_work(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            task_db.write_text(json.dumps({
+                "tasks": [
+                    {
+                        "id": "owner-old",
+                        "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                        "owner": "小琴",
+                        "created_at": "2026-06-18 09:00:00",
+                        "updated_at": "2026-06-18 09:00:00",
+                    },
+                    {
+                        "id": "review-old",
+                        "status": daily_ops_tasks.STATUS_PENDING_REVIEW,
+                        "owner": "小琴",
+                        "owner_submitted_at": "2026-06-20 08:00:00",
+                        "updated_at": "2026-06-20 08:00:00",
+                    },
+                    {
+                        "id": "owner-fresh",
+                        "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                        "owner": "洁琳",
+                        "created_at": "2026-06-21 09:00:00",
+                        "updated_at": "2026-06-21 09:00:00",
+                    },
+                ]
+            }, ensure_ascii=False), encoding="utf-8")
+
+            summary = daily_ops_tasks.OperationTaskStore(task_db).summary(now=datetime(2026, 6, 22, 12, 0, 0))
+            self.assertEqual(summary["overdue"]["total"], 2)
+            self.assertEqual(summary["overdue"]["by_status"][daily_ops_tasks.STATUS_PENDING_OWNER], 1)
+            self.assertEqual(summary["overdue"]["by_status"][daily_ops_tasks.STATUS_PENDING_REVIEW], 1)
+            self.assertEqual(summary["owner_status"]["小琴"]["overdue"], 2)
+            self.assertEqual(summary["owner_status"]["洁琳"]["overdue"], 0)
 
     def test_admin_can_assign_unassigned_task_to_owner(self):
         with TemporaryDirectory() as tmp:
@@ -569,6 +607,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("负责人待办", html)
         self.assertIn("renderOwnerTaskSummary", html)
         self.assertIn("owner_status", html)
+        self.assertIn("超时未处理", html)
+        self.assertIn("overdue", html)
         for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
             self.assertIn(text, html)
 
@@ -607,6 +647,8 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertIn(text, js)
         self.assertIn("owner_status", js)
         self.assertIn("负责人待办", html + js)
+        self.assertIn("超时未处理", js)
+        self.assertIn("overdue", js)
         for text in ["operator.role === \"owner\"", "店长只能填写自己负责的任务"]:
             self.assertIn(text, js)
         for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
