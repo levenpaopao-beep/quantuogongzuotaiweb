@@ -785,6 +785,11 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("operatorToken", html)
         self.assertIn("登录身份", html)
         self.assertIn("ownerOptions", html)
+        self.assertIn("店长入口", html)
+        self.assertIn("ownerEntryLink", html)
+        self.assertIn("applyEntryParams", html)
+        self.assertIn("URLSearchParams(window.location.search)", html)
+        self.assertIn("role=owner", html)
 
     def test_owner_directory_api_is_available_before_login(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()

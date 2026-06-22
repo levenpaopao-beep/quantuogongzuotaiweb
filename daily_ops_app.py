@@ -1843,10 +1843,12 @@ HTML_PAGE = r"""<!doctype html>
     .task-actions button { padding:7px 9px; }
     .login-bar { background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:12px; display:grid; grid-template-columns:120px 160px 160px auto 1fr; gap:8px; align-items:center; }
     .login-bar .identity { color:var(--muted); font-size:13px; }
+    .owner-entry { background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:12px; display:grid; grid-template-columns:auto minmax(260px,1fr) auto auto; gap:8px; align-items:center; }
+    .owner-entry input { width:100%; }
     .backup-tools { margin-top:14px; display:grid; gap:10px; }
     .backup-tools .row input { min-width:360px; flex:1; }
     @media (max-width:1180px) { .cards, .source-grid { grid-template-columns:repeat(2,minmax(240px,1fr)); } }
-    @media (max-width:760px) { .app { grid-template-columns:1fr; } aside { position:static; } .cards, .source-grid, .task-summary, .task-filters { grid-template-columns:1fr; } main { padding:16px; } header, .weekly-hero { align-items:flex-start; flex-direction:column; gap:12px; } .report-card { height:380px; } .weekly-source-card { height:350px; } }
+    @media (max-width:760px) { .app { grid-template-columns:1fr; } aside { position:static; } .cards, .source-grid, .task-summary, .task-filters, .owner-entry { grid-template-columns:1fr; } main { padding:16px; } header, .weekly-hero { align-items:flex-start; flex-direction:column; gap:12px; } .report-card { height:380px; } .weekly-source-card { height:350px; } }
   </style>
 </head>
 <body>
@@ -1879,6 +1881,12 @@ HTML_PAGE = r"""<!doctype html>
       <input id="loginPassword" placeholder="管理员/店长访问密码，可空" type="password">
       <button class="primary" onclick="loginOperator()">登录身份</button>
       <div class="identity" id="operatorIdentity">未登录：任务台账需要先登录</div>
+    </div>
+    <div class="owner-entry">
+      <strong>店长入口</strong>
+      <input id="ownerEntryLink" readonly placeholder="选择或填写负责人后生成店长入口链接，格式包含 role=owner&user=负责人">
+      <button class="secondary" onclick="updateOwnerEntryLink()">生成入口</button>
+      <button class="secondary" onclick="copyOwnerEntryLink()">复制入口</button>
     </div>
 
     <section id="tasks" class="section active">
@@ -2039,6 +2047,43 @@ function renderOperator(){
   } else {
     el.textContent = '未登录：任务台账需要先登录';
   }
+  updateOwnerEntryLink();
+}
+function ownerEntryUrl(owner){
+  const url = new URL(window.location.href);
+  url.searchParams.set('role', 'owner');
+  url.searchParams.set('user', owner);
+  return url.toString();
+}
+function updateOwnerEntryLink(){
+  const input = document.getElementById('ownerEntryLink');
+  if(!input) return;
+  const owner = document.getElementById('taskUser')?.value.trim() || document.getElementById('loginUser')?.value.trim() || '';
+  input.value = owner ? ownerEntryUrl(owner) : '';
+}
+async function copyOwnerEntryLink(){
+  updateOwnerEntryLink();
+  const link = document.getElementById('ownerEntryLink')?.value || '';
+  const el = document.getElementById('operatorIdentity');
+  if(!link){ if(el) el.textContent = '请先填写负责人姓名，再生成店长入口'; return; }
+  if(navigator.clipboard) await navigator.clipboard.writeText(link);
+  if(el) el.textContent = '店长入口已复制';
+}
+function applyEntryParams(){
+  const params = new URLSearchParams(window.location.search);
+  const role = params.get('role');
+  const user = params.get('user');
+  if(role !== 'owner' || !user) return;
+  localStorage.removeItem('operatorSession');
+  localStorage.removeItem('operatorToken');
+  operatorSession = null;
+  operatorToken = '';
+  document.getElementById('loginRole').value = 'owner';
+  document.getElementById('loginUser').value = user;
+  document.getElementById('taskRole').value = 'owner';
+  document.getElementById('taskRole').disabled = true;
+  document.getElementById('taskUser').value = user;
+  updateOwnerEntryLink();
 }
 async function loginOperator(){
   const payload = {
@@ -2096,6 +2141,7 @@ async function saveStoreOwners(){
     const res = await api('/api/store-owners', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({assignments})});
     renderStoreOwners(res.assignments || []);
     await loadOwnerOptions();
+    updateOwnerEntryLink();
     if(st) st.innerHTML = `<span class="ok">负责人配置已保存：</span>${res.assignments?.length || 0} 条。后续生成任务会自动使用。`;
   } catch(e){
     if(st) st.innerHTML = `<span class="bad">${e.message}</span>`;
@@ -2508,6 +2554,7 @@ function renderOutputs(){
   });
 }
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+applyEntryParams();
 refreshStatus();
 </script>
 </body>
