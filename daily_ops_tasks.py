@@ -104,9 +104,6 @@ def task_overdue(row, now=None):
     if status == STATUS_PENDING_REVIEW:
         start = parse_time(row.get("owner_submitted_at")) or parse_time(row.get("updated_at"))
         return bool(start and (now - start).total_seconds() >= REVIEW_OVERDUE_DAYS * 86400)
-    if status == STATUS_REJECTED:
-        start = parse_time(row.get("admin_reviewed_at")) or parse_time(row.get("updated_at"))
-        return bool(start and (now - start).total_seconds() >= OWNER_OVERDUE_DAYS * 86400)
     return False
 
 
@@ -152,8 +149,6 @@ def task_next_step(row, now=None):
             return "管理员", "处理超时审核"
         return "管理员", "审核通过或驳回"
     if status == STATUS_REJECTED:
-        if task_overdue(row, now):
-            return "管理员", "跟进驳回返工超时"
         return "店长", "按驳回原因重新处理"
     if status == STATUS_APPROVED:
         return "管理员", "标记完成或归档"
@@ -237,7 +232,7 @@ class OperationTaskStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def list_tasks(self, role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", open_only="", now=None):
+    def list_tasks(self, role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", now=None):
         role = norm(role) or "admin"
         user = norm(user)
         rows = [public_task(row, now=now) for row in self.load()["tasks"]]
@@ -261,8 +256,6 @@ class OperationTaskStore:
             rows = [row for row in rows if norm(row.get("next_handler")) == norm(next_handler)]
         if norm(reworked) in {"1", "true", "是", "返工"}:
             rows = [row for row in rows if int(row.get("rejection_count") or 0) > 0]
-        if norm(open_only) in {"1", "true", "是", "未完成", "待办"}:
-            rows = [row for row in rows if norm(row.get("status")) != STATUS_DONE]
         return sorted(rows, key=lambda row: (row.get("status") != STATUS_PENDING_REVIEW, row.get("updated_at", "")), reverse=True)
 
     def summary(self, rows=None, now=None):
@@ -661,7 +654,7 @@ class OperationTaskStore:
         style_task_sheet(summary_ws)
         criteria_ws = workbook.create_sheet("导出口径")
         criteria_ws.append(["字段", "值"])
-        for key in ["role", "user", "status", "task_type", "store", "platform", "overdue", "unassigned", "next_handler", "reworked", "open_only"]:
+        for key in ["role", "user", "status", "task_type", "store", "platform", "overdue", "unassigned", "next_handler", "reworked"]:
             criteria_ws.append([key, norm(filters.get(key, ""))])
         criteria_ws.append(["rows", len(rows)])
         criteria_ws.append(["history_rows", history_rows])

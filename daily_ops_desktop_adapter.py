@@ -71,8 +71,8 @@ def export_search(query, limit=500):
     return app.export_search(query, limit)
 
 
-def operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", open_only=""):
-    rows = app.list_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked, open_only)
+def operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked=""):
+    rows = app.list_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked)
     return {"summary": app.summarize_operation_tasks(rows), "tasks": rows}
 
 
@@ -96,8 +96,8 @@ def mark_operation_task_done(task_id, actor, remark=""):
     return app.mark_operation_task_done(task_id, actor, remark)
 
 
-def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", open_only=""):
-    return app.export_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked, open_only)
+def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked=""):
+    return app.export_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked)
 
 
 def store_owners():

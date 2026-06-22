@@ -214,7 +214,6 @@ function taskFilters() {
     store: $("#taskStore")?.value.trim() || "",
     platform: $("#taskPlatform")?.value || "",
     next_handler: $("#taskNextHandler")?.value || "",
-    open_only: $("#taskOpenOnly")?.checked ? "1" : "",
     overdue: $("#taskOverdue")?.checked ? "1" : "",
     unassigned: $("#taskUnassigned")?.checked ? "1" : "",
     reworked: $("#taskReworked")?.checked ? "1" : "",
