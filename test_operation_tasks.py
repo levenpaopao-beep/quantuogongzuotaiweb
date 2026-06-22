@@ -1519,6 +1519,29 @@ class OperationTaskStoreTest(unittest.TestCase):
             session = daily_ops_app.login_operator("owner", "小琴", "")
             self.assertEqual(session["role"], "owner")
 
+    def test_owner_login_must_match_existing_owner_directory_when_available(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            owner_map = root / "store_owner_map.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "7", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+            ])
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
+                 patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_map):
+                with self.assertRaises(PermissionError):
+                    daily_ops_app.login_operator("owner", "洁琳", "")
+                session = daily_ops_app.login_operator("owner", "小琴", "")
+                self.assertEqual(session["user"], "小琴")
+
+            empty_task_db = root / "empty_tasks.json"
+            with patch.object(daily_ops_app, "TASK_DB_PATH", empty_task_db), \
+                 patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_map):
+                session = daily_ops_app.login_operator("owner", "临时店长", "")
+                self.assertEqual(session["user"], "临时店长")
+
     def test_http_task_handlers_require_session_and_scope_owner(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         owner = daily_ops_app.login_operator("owner", "小琴", "")

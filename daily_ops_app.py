@@ -261,8 +261,12 @@ def login_operator(role, user, password=""):
             raise PermissionError("局域网模式必须先设置 DAILY_OPS_ADMIN_PASSWORD")
         if admin_password and password != admin_password:
             raise PermissionError("管理员密码不正确")
-    elif owner_password and password != owner_password:
-        raise PermissionError("店长访问密码不正确")
+    else:
+        if owner_password and password != owner_password:
+            raise PermissionError("店长访问密码不正确")
+        owners = {norm(row.get("owner")) for row in operation_owner_directory() if norm(row.get("owner"))}
+        if owners and user not in owners:
+            raise PermissionError("店长姓名不在负责人名单中，请联系管理员配置店铺负责人")
     token = secrets.token_urlsafe(24)
     session = {"token": token, "role": role, "user": user, "login_at": now_text()}
     OPERATOR_SESSIONS[token] = session
