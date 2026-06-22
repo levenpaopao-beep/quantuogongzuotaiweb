@@ -1889,10 +1889,11 @@ def handle_tasks_api(action, headers, payload):
             return json_bytes({"ok": True, "operator": operator, "summary": summarize_operation_tasks(rows), "tasks": rows})
         if action == "POST_SUBMIT":
             task_id = payload.get("id", "")
-            if operator.get("role") == "owner":
-                task = operation_task_store().require_task(task_id)[1]
-                if norm(task.get("owner")) != norm(operator.get("user")):
-                    return json_bytes({"ok": False, "error": "不能处理其他负责人的任务"}, status=403)
+            if operator.get("role") != "owner":
+                return json_bytes({"ok": False, "error": "只有店长可以填写处理结果"}, status=403)
+            task = operation_task_store().require_task(task_id)[1]
+            if norm(task.get("owner")) != norm(operator.get("user")):
+                return json_bytes({"ok": False, "error": "不能处理其他负责人的任务"}, status=403)
             task = submit_operation_task(task_id, operator.get("user", ""), payload.get("action", ""), payload.get("remark", ""))
             return json_bytes({"ok": True, "task": task})
         if action == "POST_ASSIGN":

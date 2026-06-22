@@ -1571,6 +1571,43 @@ class OperationTaskStoreTest(unittest.TestCase):
                 done_payload = json.loads(body)
                 self.assertEqual(done_payload["task"]["status"], daily_ops_tasks.STATUS_DONE)
 
+    def test_admin_cannot_submit_owner_action(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+        admin_headers = {"X-Operator-Token": admin["token"]}
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "1", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+            ])
+            task_id = store.list_tasks()[0]["id"]
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "POST_SUBMIT",
+                    admin_headers,
+                    {"id": task_id, "action": "管理员代填", "remark": "不应允许"},
+                )
+            self.assertEqual(status, 403)
+            self.assertIn("只有店长可以填写处理结果", json.loads(body)["error"])
+
+    def test_desktop_admin_cannot_submit_owner_action(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "1", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+            ])
+            task_id = store.list_tasks()[0]["id"]
+            admin_payload = {"role": "admin", "user": "管理员", "id": task_id, "action": "管理员代填", "remark": "不应允许"}
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
+                 patch("sys.stdin", io.StringIO(json.dumps(admin_payload, ensure_ascii=False))):
+                with self.assertRaises(PermissionError) as ctx:
+                    daily_ops_cli.command(["submit-task"])
+            self.assertIn("只有店长可以填写处理结果", str(ctx.exception))
+
     def test_http_task_assign_requires_admin_and_updates_owner_scope(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         owner = daily_ops_app.login_operator("owner", "小琴", "")
