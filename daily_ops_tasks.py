@@ -104,6 +104,9 @@ def task_overdue(row, now=None):
     if status == STATUS_PENDING_REVIEW:
         start = parse_time(row.get("owner_submitted_at")) or parse_time(row.get("updated_at"))
         return bool(start and (now - start).total_seconds() >= REVIEW_OVERDUE_DAYS * 86400)
+    if status == STATUS_REJECTED:
+        start = parse_time(row.get("admin_reviewed_at")) or parse_time(row.get("updated_at"))
+        return bool(start and (now - start).total_seconds() >= OWNER_OVERDUE_DAYS * 86400)
     return False
 
 
@@ -149,6 +152,8 @@ def task_next_step(row, now=None):
             return "管理员", "处理超时审核"
         return "管理员", "审核通过或驳回"
     if status == STATUS_REJECTED:
+        if task_overdue(row, now):
+            return "管理员", "跟进驳回返工超时"
         return "店长", "按驳回原因重新处理"
     if status == STATUS_APPROVED:
         return "管理员", "标记完成或归档"

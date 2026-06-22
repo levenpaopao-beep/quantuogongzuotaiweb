@@ -404,6 +404,38 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(summary["owner_status"]["小琴"]["overdue"], 2)
             self.assertEqual(summary["owner_status"]["洁琳"]["overdue"], 0)
 
+    def test_rejected_tasks_become_overdue_when_owner_does_not_rework(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            task_db.write_text(json.dumps({
+                "tasks": [
+                    {
+                        "id": "rejected-old",
+                        "platform": "Temu",
+                        "task_type": "议价审核",
+                        "status": daily_ops_tasks.STATUS_REJECTED,
+                        "store": "7",
+                        "owner": "小琴",
+                        "product_name": "驳回未返工商品",
+                        "created_at": "2026-06-18 09:00:00",
+                        "updated_at": "2026-06-19 09:00:00",
+                        "admin_reviewed_at": "2026-06-19 09:00:00",
+                        "history": [
+                            {"event": "管理员审核", "action": "驳回", "remark": "缺截图"},
+                        ],
+                    },
+                ]
+            }, ensure_ascii=False), encoding="utf-8")
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            now = datetime(2026, 6, 22, 12, 0, 0)
+
+            row = store.list_tasks(now=now)[0]
+            self.assertTrue(daily_ops_tasks.task_overdue(row, now))
+            self.assertEqual(row["next_handler"], "管理员")
+            self.assertEqual(row["next_action"], "跟进驳回返工超时")
+            self.assertEqual(store.summary([row], now=now)["overdue"]["total"], 1)
+
     def test_task_export_marks_overdue_tasks_for_followup(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
