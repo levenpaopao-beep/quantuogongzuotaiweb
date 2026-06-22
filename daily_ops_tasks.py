@@ -464,8 +464,8 @@ class OperationTaskStore:
                 ])
         style_task_sheet(log_ws)
         owner_ws = workbook.create_sheet("负责人汇总")
-        owner_ws.append(["负责人", "任务总数", STATUS_PENDING_OWNER, STATUS_PENDING_REVIEW, STATUS_APPROVED, STATUS_REJECTED, STATUS_DONE])
-        owner_rows = sorted(self.summary(rows).get("owner_status", {}).values(), key=lambda item: (-item.get("total", 0), item.get("owner", "")))
+        owner_ws.append(["负责人", "任务总数", STATUS_PENDING_OWNER, STATUS_PENDING_REVIEW, "超时未处理", STATUS_APPROVED, STATUS_REJECTED, STATUS_DONE])
+        owner_rows = sorted(self.summary(rows, now=now).get("owner_status", {}).values(), key=lambda item: (-item.get("total", 0), item.get("owner", "")))
         for item in owner_rows:
             status = item.get("by_status", {})
             owner_ws.append([
@@ -473,6 +473,7 @@ class OperationTaskStore:
                 item.get("total", 0),
                 status.get(STATUS_PENDING_OWNER, 0),
                 status.get(STATUS_PENDING_REVIEW, 0),
+                item.get("overdue", 0),
                 status.get(STATUS_APPROVED, 0),
                 status.get(STATUS_REJECTED, 0),
                 status.get(STATUS_DONE, 0),

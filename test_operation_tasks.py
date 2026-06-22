@@ -104,10 +104,10 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertIn("管理员审核", events)
                 owner_ws = workbook["负责人汇总"]
                 owner_headers = [cell.value for cell in owner_ws[1]]
-                self.assertEqual(owner_headers, ["负责人", "任务总数", "待店长处理", "待管理员审核", "已通过", "已驳回", "已完成"])
+                self.assertEqual(owner_headers, ["负责人", "任务总数", "待店长处理", "待管理员审核", "超时未处理", "已通过", "已驳回", "已完成"])
                 owner_rows = {owner_ws.cell(row=row, column=1).value: row for row in range(2, owner_ws.max_row + 1)}
                 self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=2).value, 1)
-                self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=5).value, 1)
+                self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=6).value, 1)
                 criteria_ws = workbook["导出口径"]
                 criteria = {
                     criteria_ws.cell(row=row, column=1).value: criteria_ws.cell(row=row, column=2).value
@@ -261,6 +261,48 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(ws.cell(row=rows["红色球衣"], column=overdue_days_col).value, 4)
                 self.assertEqual(ws.cell(row=rows["蓝色球衣"], column=overdue_col).value, "否")
                 self.assertEqual(ws.cell(row=rows["蓝色球衣"], column=overdue_days_col).value, 1)
+            finally:
+                workbook.close()
+
+    def test_task_export_owner_summary_includes_overdue_counts(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            task_db.write_text(json.dumps({
+                "tasks": [
+                    {
+                        "id": "owner-old",
+                        "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                        "owner": "小琴",
+                        "created_at": "2026-06-18 09:00:00",
+                        "updated_at": "2026-06-18 09:00:00",
+                    },
+                    {
+                        "id": "review-old",
+                        "status": daily_ops_tasks.STATUS_PENDING_REVIEW,
+                        "owner": "小琴",
+                        "owner_submitted_at": "2026-06-20 08:00:00",
+                        "updated_at": "2026-06-20 08:00:00",
+                    },
+                    {
+                        "id": "fresh",
+                        "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                        "owner": "洁琳",
+                        "created_at": "2026-06-21 09:00:00",
+                        "updated_at": "2026-06-21 09:00:00",
+                    },
+                ]
+            }, ensure_ascii=False), encoding="utf-8")
+
+            export_path = daily_ops_tasks.OperationTaskStore(task_db).export_tasks(root / "导出.xlsx", now=datetime(2026, 6, 22, 12, 0, 0))
+            workbook = load_workbook(export_path, read_only=True, data_only=True)
+            try:
+                owner_ws = workbook["负责人汇总"]
+                headers = [cell.value for cell in owner_ws[1]]
+                overdue_col = headers.index("超时未处理") + 1
+                owner_rows = {owner_ws.cell(row=row, column=1).value: row for row in range(2, owner_ws.max_row + 1)}
+                self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=overdue_col).value, 2)
+                self.assertEqual(owner_ws.cell(row=owner_rows["洁琳"], column=overdue_col).value, 0)
             finally:
                 workbook.close()
 
