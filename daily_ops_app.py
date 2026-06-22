@@ -2474,6 +2474,14 @@ function taskSourceText(task){
   const row = task.source_row ? ` #${task.source_row}` : '';
   return `来源：${source || '-'}${row}`;
 }
+function taskActionButtons(task){
+  const historyButton = `<button class="secondary" onclick="showTaskHistory('${task.id}')">查看记录</button>`;
+  const submitButton = `<button class="secondary" onclick="submitTask('${task.id}')">店长填写</button>`;
+  if(operatorSession && operatorSession.role === 'owner'){
+    return `${historyButton}${submitButton}<span class="muted">店长只能填写自己负责的任务</span>`;
+  }
+  return `${historyButton}<button class="secondary" onclick="assignTask('${task.id}')">指派负责人</button>${submitButton}<button class="primary" onclick="reviewTask('${task.id}','通过')">通过</button><button class="secondary" onclick="doneTask('${task.id}')">标记完成</button><button class="danger" onclick="reviewTask('${task.id}','驳回')">驳回</button>`;
+}
 function renderTaskRows(){
   const tbody = document.getElementById('taskRows'); if(!tbody) return;
   if(!taskState.tasks.length){
@@ -2488,7 +2496,7 @@ function renderTaskRows(){
     <td>${esc(task.system_action)}</td>
     <td>${esc(task.owner_action || '-')}<br><span class="muted">${esc(task.owner_remark || '')}</span></td>
     <td>${esc(task.admin_decision || '-')}<br><span class="muted">${esc(task.admin_remark || '')}</span></td>
-    <td><div class="task-actions"><button class="secondary" onclick="showTaskHistory('${task.id}')">查看记录</button><button class="secondary" onclick="assignTask('${task.id}')">指派负责人</button><button class="secondary" onclick="submitTask('${task.id}')">店长填写</button><button class="primary" onclick="reviewTask('${task.id}','通过')">通过</button><button class="secondary" onclick="doneTask('${task.id}')">标记完成</button><button class="danger" onclick="reviewTask('${task.id}','驳回')">驳回</button></div></td>
+    <td><div class="task-actions">${taskActionButtons(task)}</div></td>
   </tr>`).join('');
 }
 function showTaskHistory(id){

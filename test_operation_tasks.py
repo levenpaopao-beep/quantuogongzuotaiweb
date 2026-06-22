@@ -483,6 +483,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("店铺负责人配置", html)
         self.assertIn("assigned_existing", html)
         self.assertIn("补齐", html)
+        self.assertIn("taskActionButtons", html)
+        self.assertIn("operatorSession.role === 'owner'", html)
+        self.assertIn("店长只能填写自己负责的任务", html)
         for text in ["来源", "source_report", "source_file", "source_row"]:
             self.assertIn(text, html)
 
