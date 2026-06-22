@@ -699,6 +699,47 @@ class OperationTaskStoreTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 store.review_task(task["id"], admin="管理员", decision="同意", remark="非法审核结果")
 
+    def test_rejected_tasks_keep_rework_context_after_owner_resubmits(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {
+                    "platform": "Temu",
+                    "task_type": "议价审核",
+                    "store": "7",
+                    "owner": "小琴",
+                    "merchant_code": "A-001",
+                    "product_name": "红色球衣",
+                    "system_action": "确认是否接受议价",
+                    "source_report": "Temu议价审核表",
+                    "source_row": 2,
+                }
+            ])
+            task = store.list_tasks()[0]
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="同意议价", remark="已处理")
+            rejected = store.review_task(submitted["id"], admin="管理员", decision="驳回", remark="缺少后台截图")
+            self.assertEqual(rejected["rejection_count"], 1)
+            self.assertEqual(rejected["last_rejection_reason"], "缺少后台截图")
+            self.assertEqual(rejected["next_action"], "按驳回原因重新处理")
+
+            resubmitted = store.submit_owner_action(rejected["id"], actor="小琴", action="补截图后同意议价", remark="已补充")
+            self.assertEqual(resubmitted["status"], daily_ops_tasks.STATUS_PENDING_REVIEW)
+            self.assertEqual(resubmitted["rejection_count"], 1)
+            self.assertEqual(resubmitted["last_rejection_reason"], "缺少后台截图")
+
+            export_path = store.export_tasks(root / "导出.xlsx")
+            workbook = load_workbook(export_path, read_only=True, data_only=True)
+            try:
+                ws = workbook["任务台账"]
+                headers = [cell.value for cell in ws[1]]
+                rejection_count_col = headers.index("驳回次数") + 1
+                last_reason_col = headers.index("最近驳回原因") + 1
+                self.assertEqual(ws.cell(row=2, column=rejection_count_col).value, 1)
+                self.assertEqual(ws.cell(row=2, column=last_reason_col).value, "缺少后台截图")
+            finally:
+                workbook.close()
+
     def test_admin_can_batch_review_pending_tasks_atomically(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -38,6 +38,8 @@ TASK_COLUMNS = [
     ("owner_submitted_at", "店长提交时间"),
     ("admin_decision", "管理员审核结果"),
     ("admin_remark", "管理员备注"),
+    ("rejection_count", "驳回次数"),
+    ("last_rejection_reason", "最近驳回原因"),
     ("admin_reviewed_by", "管理员审核人"),
     ("admin_reviewed_at", "管理员审核时间"),
     ("source_report", "来源报表"),
@@ -149,12 +151,25 @@ def task_next_step(row, now=None):
     return "管理员", "确认任务状态"
 
 
+def task_rejection_info(row):
+    rejection_count = 0
+    last_reason = ""
+    for item in row.get("history") or []:
+        if norm(item.get("event")) in {"管理员审核", "管理员批量审核"} and norm(item.get("action")) == "驳回":
+            rejection_count += 1
+            last_reason = norm(item.get("remark")) or last_reason
+    return rejection_count, last_reason
+
+
 def public_task(row, now=None):
     item = dict(row)
     item.setdefault("history", [])
     next_handler, next_action = task_next_step(item, now=now)
+    rejection_count, last_rejection_reason = task_rejection_info(item)
     item["next_handler"] = next_handler
     item["next_action"] = next_action
+    item["rejection_count"] = rejection_count
+    item["last_rejection_reason"] = last_rejection_reason
     return item
 
 
@@ -544,6 +559,7 @@ class OperationTaskStore:
             export_row["is_overdue"] = "是" if task_overdue(row, now) else "否"
             export_row["overdue_days"] = task_age_days(row, now)
             export_row["next_handler"], export_row["next_action"] = task_next_step(row, now=now)
+            export_row["rejection_count"], export_row["last_rejection_reason"] = task_rejection_info(row)
             ws.append([export_row.get(key, "") for key, _label in TASK_COLUMNS])
         style_task_sheet(ws)
         log_ws = workbook.create_sheet("操作记录")
