@@ -115,6 +115,7 @@ ipcMain.handle("api:tasks", (_event, filters) => {
   ]);
 });
 ipcMain.handle("api:submit-task", (_event, payload) => runPython("submit-task", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:assign-task", (_event, payload) => runPython("assign-task", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:review-task", (_event, payload) => runPython("review-task", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:done-task", (_event, payload) => runPython("done-task", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:export-tasks", (_event, payload) => runPython("export-tasks", [], JSON.stringify(payload || {})));

@@ -1469,6 +1469,10 @@ def submit_operation_task(task_id, actor, action, remark=""):
     return operation_task_store().submit_owner_action(task_id, actor, action, remark)
 
 
+def assign_operation_task(task_id, actor, owner, remark=""):
+    return operation_task_store().assign_task(task_id, actor, owner, remark)
+
+
 def review_operation_task(task_id, admin, decision, remark=""):
     return operation_task_store().review_task(task_id, admin, decision, remark)
 
@@ -1512,6 +1516,11 @@ def handle_tasks_api(action, headers, payload):
                 if norm(task.get("owner")) != norm(operator.get("user")):
                     return json_bytes({"ok": False, "error": "不能处理其他负责人的任务"}, status=403)
             task = submit_operation_task(task_id, operator.get("user", ""), payload.get("action", ""), payload.get("remark", ""))
+            return json_bytes({"ok": True, "task": task})
+        if action == "POST_ASSIGN":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以指派任务"}, status=403)
+            task = assign_operation_task(payload.get("id", ""), operator.get("user", "管理员"), payload.get("owner", ""), payload.get("remark", ""))
             return json_bytes({"ok": True, "task": task})
         if action == "POST_REVIEW":
             if not can_review_tasks(operator):
@@ -2173,7 +2182,7 @@ function renderTaskRows(){
     <td>${esc(task.system_action)}</td>
     <td>${esc(task.owner_action || '-')}<br><span class="muted">${esc(task.owner_remark || '')}</span></td>
     <td>${esc(task.admin_decision || '-')}<br><span class="muted">${esc(task.admin_remark || '')}</span></td>
-    <td><div class="task-actions"><button class="secondary" onclick="showTaskHistory('${task.id}')">查看记录</button><button class="secondary" onclick="submitTask('${task.id}')">店长填写</button><button class="primary" onclick="reviewTask('${task.id}','通过')">通过</button><button class="secondary" onclick="doneTask('${task.id}')">标记完成</button><button class="danger" onclick="reviewTask('${task.id}','驳回')">驳回</button></div></td>
+    <td><div class="task-actions"><button class="secondary" onclick="showTaskHistory('${task.id}')">查看记录</button><button class="secondary" onclick="assignTask('${task.id}')">指派负责人</button><button class="secondary" onclick="submitTask('${task.id}')">店长填写</button><button class="primary" onclick="reviewTask('${task.id}','通过')">通过</button><button class="secondary" onclick="doneTask('${task.id}')">标记完成</button><button class="danger" onclick="reviewTask('${task.id}','驳回')">驳回</button></div></td>
   </tr>`).join('');
 }
 function showTaskHistory(id){
@@ -2192,6 +2201,13 @@ async function submitTask(id){
   if(!action) return;
   const remark = prompt('备注') || '';
   await api('/api/tasks/submit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, actor, action, remark})});
+  await loadTasks();
+}
+async function assignTask(id){
+  const owner = prompt('指派给负责人');
+  if(!owner) return;
+  const remark = prompt('指派备注') || '';
+  await api('/api/tasks/assign', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, owner, remark})});
   await loadTasks();
 }
 async function reviewTask(id, decision){
@@ -2389,6 +2405,9 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/tasks/submit":
                 cancel_scheduled_shutdown()
                 self.send_payload(*handle_tasks_api("POST_SUBMIT", self.headers, self.read_json()))
+            elif parsed.path == "/api/tasks/assign":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_tasks_api("POST_ASSIGN", self.headers, self.read_json()))
             elif parsed.path == "/api/tasks/review":
                 cancel_scheduled_shutdown()
                 self.send_payload(*handle_tasks_api("POST_REVIEW", self.headers, self.read_json()))

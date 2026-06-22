@@ -142,6 +142,38 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(summary["unassigned"], 1)
             self.assertEqual(summary["by_owner"], {"小琴": 1})
 
+    def test_admin_can_assign_unassigned_task_to_owner(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {
+                    "platform": "Temu",
+                    "task_type": "低分预警",
+                    "store": "7",
+                    "owner": "",
+                    "merchant_code": "A-001",
+                    "product_name": "红色球衣",
+                    "system_action": "补充负责人后处理",
+                    "source_report": "店铺低分产品预警",
+                    "source_file": "low.xlsx",
+                    "source_row": 2,
+                }
+            ])
+            task = store.list_tasks()[0]
+
+            with self.assertRaises(ValueError):
+                store.assign_task(task["id"], actor="管理员", owner="", remark="")
+
+            assigned = store.assign_task(task["id"], actor="管理员", owner="小琴", remark="按店铺负责人补齐")
+            self.assertEqual(assigned["owner"], "小琴")
+            self.assertEqual(assigned["history"][-1]["event"], "任务指派")
+            self.assertEqual(assigned["history"][-1]["action"], "指派给 小琴")
+
+            owner_rows = store.list_tasks(role="owner", user="小琴")
+            self.assertEqual(len(owner_rows), 1)
+            self.assertEqual(store.summary()["unassigned"], 0)
+
     def test_task_status_flow_rejects_invalid_operations(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -266,18 +298,20 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("/api/tasks/submit", html)
         self.assertIn("/api/tasks/review", html)
         self.assertIn("/api/tasks/done", html)
+        self.assertIn("/api/tasks/assign", html)
         self.assertIn("/api/tasks/export", html)
         self.assertIn("任务台账", html)
         self.assertIn("管理员审核", html)
         self.assertIn("标记完成", html)
+        self.assertIn("指派负责人", html)
 
     def test_electron_bridge_exposes_operation_task_workflow(self):
         root = Path(__file__).resolve().parent
         preload = (root / "electron" / "preload.js").read_text(encoding="utf-8")
         main = (root / "electron" / "main.js").read_text(encoding="utf-8")
-        for text in ["tasks", "submitTask", "reviewTask", "doneTask", "exportTasks"]:
+        for text in ["tasks", "submitTask", "reviewTask", "doneTask", "assignTask", "exportTasks"]:
             self.assertIn(text, preload)
-        for text in ["api:tasks", "api:submit-task", "api:review-task", "api:done-task", "api:export-tasks"]:
+        for text in ["api:tasks", "api:submit-task", "api:review-task", "api:done-task", "api:assign-task", "api:export-tasks"]:
             self.assertIn(text, main)
 
     def test_desktop_adapter_scopes_task_summary_like_task_rows(self):
@@ -300,9 +334,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         html = (root / "electron" / "renderer.html").read_text(encoding="utf-8")
         js = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
         css = (root / "electron" / "renderer.css").read_text(encoding="utf-8")
-        for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "标记完成", "导出任务"]:
+        for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "标记完成", "指派负责人", "导出任务"]:
             self.assertIn(text, html + js)
-        for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "doneTask", "exportTasks"]:
+        for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "doneTask", "assignTask", "exportTasks"]:
             self.assertIn(text, js)
         self.assertIn("未分配", html + js + daily_ops_app.HTML_PAGE)
         for text in ["task-summary", "task-table", "task-actions"]:
@@ -428,6 +462,43 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(status, 200)
                 done_payload = json.loads(body)
                 self.assertEqual(done_payload["task"]["status"], daily_ops_tasks.STATUS_DONE)
+
+    def test_http_task_assign_requires_admin_and_updates_owner_scope(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        owner = daily_ops_app.login_operator("owner", "小琴", "")
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+        owner_headers = {"X-Operator-Token": owner["token"]}
+        admin_headers = {"X-Operator-Token": admin["token"]}
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "1", "owner": "", "merchant_code": "A", "source_report": "r", "source_file": "a.xlsx", "source_row": 1},
+            ])
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+                task_id = store.list_tasks()[0]["id"]
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "POST_ASSIGN",
+                    owner_headers,
+                    {"id": task_id, "owner": "小琴", "remark": "店长不能指派"},
+                )
+                self.assertEqual(status, 403)
+
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "POST_ASSIGN",
+                    admin_headers,
+                    {"id": task_id, "owner": "小琴", "remark": "补齐负责人"},
+                )
+                self.assertEqual(status, 200)
+                payload = json.loads(body)
+                self.assertEqual(payload["task"]["owner"], "小琴")
+
+                status, _content_type, body = daily_ops_app.handle_tasks_api("GET", owner_headers, {})
+                owner_payload = json.loads(body)
+                self.assertEqual(len(owner_payload["tasks"]), 1)
+                self.assertEqual(owner_payload["summary"]["unassigned"], 0)
 
     def test_admin_workflow_apis_require_admin_session(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()

@@ -250,9 +250,10 @@ function renderTaskCenter() {
       <div>${task.system_action || ""}</div>
       <div>${task.owner_action || "-"}<br><span class="file-meta">${task.owner_remark || ""}</span></div>
       <div>${task.admin_decision || "-"}<br><span class="file-meta">${task.admin_remark || ""}</span></div>
-      <div class="task-actions"><button class="tool-button" data-action="history" data-id="${task.id}">查看记录</button><button class="tool-button" data-action="submit" data-id="${task.id}">店长填写</button><button class="tool-button primary-mini" data-action="approve" data-id="${task.id}">管理员审核</button><button class="tool-button" data-action="done" data-id="${task.id}">标记完成</button><button class="tool-button danger-mini" data-action="reject" data-id="${task.id}">驳回</button></div>
+      <div class="task-actions"><button class="tool-button" data-action="history" data-id="${task.id}">查看记录</button><button class="tool-button" data-action="assign" data-id="${task.id}">指派负责人</button><button class="tool-button" data-action="submit" data-id="${task.id}">店长填写</button><button class="tool-button primary-mini" data-action="approve" data-id="${task.id}">管理员审核</button><button class="tool-button" data-action="done" data-id="${task.id}">标记完成</button><button class="tool-button danger-mini" data-action="reject" data-id="${task.id}">驳回</button></div>
     </div>`).join("");
   rows.querySelectorAll('[data-action="history"]').forEach((button) => button.addEventListener("click", () => showTaskHistory(button.dataset.id)));
+  rows.querySelectorAll('[data-action="assign"]').forEach((button) => button.addEventListener("click", () => assignTask(button.dataset.id)));
   rows.querySelectorAll('[data-action="submit"]').forEach((button) => button.addEventListener("click", () => submitTask(button.dataset.id)));
   rows.querySelectorAll('[data-action="approve"]').forEach((button) => button.addEventListener("click", () => reviewTask(button.dataset.id, "通过")));
   rows.querySelectorAll('[data-action="done"]').forEach((button) => button.addEventListener("click", () => doneTask(button.dataset.id)));
@@ -292,6 +293,16 @@ async function submitTask(id) {
   await api.submitTask({ id, actor, action, remark });
   await loadTasks(false);
   showToast("店长填写已提交");
+}
+
+async function assignTask(id) {
+  const actor = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
+  const owner = window.prompt("指派给负责人");
+  if (!owner) return;
+  const remark = window.prompt("指派备注") || "";
+  await api.assignTask({ id, actor, owner, remark });
+  await loadTasks(false);
+  showToast("任务负责人已指派");
 }
 
 async function reviewTask(id, decision) {

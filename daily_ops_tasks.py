@@ -245,6 +245,25 @@ class OperationTaskStore:
                 return payload, row
         raise KeyError("任务不存在")
 
+    def assign_task(self, task_id, actor, owner, remark=""):
+        payload, task = self.require_task(task_id)
+        owner = norm(owner)
+        if not owner:
+            raise ValueError("负责人不能为空")
+        timestamp = now_text()
+        previous_owner = norm(task.get("owner"))
+        task["owner"] = owner
+        task["updated_at"] = timestamp
+        task.setdefault("history", []).append({
+            "time": timestamp,
+            "actor": norm(actor),
+            "event": "任务指派",
+            "action": f"指派给 {owner}",
+            "remark": norm(remark) or (f"原负责人：{previous_owner}" if previous_owner else ""),
+        })
+        self.save(payload)
+        return public_task(task)
+
     def submit_owner_action(self, task_id, actor, action, remark=""):
         payload, task = self.require_task(task_id)
         action = norm(action)

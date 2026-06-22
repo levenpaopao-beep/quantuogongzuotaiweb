@@ -80,6 +80,10 @@ def submit_operation_task(task_id, actor, action, remark=""):
     return app.submit_operation_task(task_id, actor, action, remark)
 
 
+def assign_operation_task(task_id, actor, owner, remark=""):
+    return app.assign_operation_task(task_id, actor, owner, remark)
+
+
 def review_operation_task(task_id, admin, decision, remark=""):
     return app.review_operation_task(task_id, admin, decision, remark)
 

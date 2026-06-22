@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("dailyOps", {
   search: (query, limit) => ipcRenderer.invoke("api:search", query, limit),
   tasks: (filters) => ipcRenderer.invoke("api:tasks", filters || {}),
   submitTask: (payload) => ipcRenderer.invoke("api:submit-task", payload || {}),
+  assignTask: (payload) => ipcRenderer.invoke("api:assign-task", payload || {}),
   reviewTask: (payload) => ipcRenderer.invoke("api:review-task", payload || {}),
   doneTask: (payload) => ipcRenderer.invoke("api:done-task", payload || {}),
   exportTasks: (payload) => ipcRenderer.invoke("api:export-tasks", payload || {}),
