@@ -1223,11 +1223,15 @@ def run_weekly_reports():
         ("shein_hot", "V2"),
     ]
     results = []
+    task_sync_total = {"created": 0, "updated": 0, "imported_rows": 0}
     for report_id, version in weekly:
         try:
             result = run_report(report_id, version)
             result["status"] = "ok"
             result["report"] = report_id
+            task_sync = result.get("task_sync") or {}
+            for key in task_sync_total:
+                task_sync_total[key] += int(task_sync.get(key) or 0)
         except Exception as exc:
             result = {
                 "status": "failed",
@@ -1236,7 +1240,13 @@ def run_weekly_reports():
                 "error": str(exc),
             }
         results.append(result)
-    return {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "results": results}
+    ok_count = sum(1 for item in results if item.get("status") == "ok")
+    return {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "summary": {"total": len(results), "ok": ok_count, "failed": len(results) - ok_count},
+        "task_sync": task_sync_total,
+        "results": results,
+    }
 
 
 def norm(value):
@@ -2448,7 +2458,7 @@ async function runWeeklyReports(){
     const res = await api('/api/weekly/run', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({})});
     const results = res.result.results || [];
     const okCount = results.filter(r => r.status === 'ok').length;
-    st.innerHTML = `<span class="ok">生成完成：</span>${okCount}/${results.length} 份成功`;
+    st.innerHTML = `<span class="ok">生成完成：</span>${okCount}/${results.length} 份成功；${esc(taskSyncSummary(res.result.task_sync))}`;
     results.forEach(r => {
       const item = document.createElement('div'); item.className = 'result-item';
       if(r.status === 'ok'){

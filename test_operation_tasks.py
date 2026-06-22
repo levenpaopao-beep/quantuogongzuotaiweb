@@ -1053,6 +1053,28 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("result.task_sync", html)
         self.assertIn("result.task_sync", renderer)
 
+    def test_weekly_report_generation_returns_total_task_sync_summary(self):
+        def fake_run_report(report_id, _version):
+            if report_id == "temu_inventory":
+                raise ValueError("缺少库存表")
+            return {
+                "file": f"{report_id}.xlsx",
+                "download": f"/download?path={report_id}.xlsx",
+                "task_sync": {
+                    "created": 2 if report_id == "temu_hot" else 0,
+                    "updated": 1 if report_id == "temu_slow" else 0,
+                    "imported_rows": 3 if report_id in {"temu_hot", "temu_slow"} else 0,
+                },
+            }
+
+        with patch.object(daily_ops_app, "run_report", fake_run_report):
+            result = daily_ops_app.run_weekly_reports()
+
+        self.assertEqual(result["summary"]["total"], 8)
+        self.assertEqual(result["summary"]["ok"], 7)
+        self.assertEqual(result["summary"]["failed"], 1)
+        self.assertEqual(result["task_sync"], {"created": 2, "updated": 1, "imported_rows": 6})
+
     def test_status_summarizes_existing_tasks_by_report(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

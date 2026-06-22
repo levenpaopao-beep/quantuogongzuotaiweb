@@ -598,8 +598,7 @@ function bindEvents() {
       if (item.status === "ok") state.reportTaskSync[item.report] = item.task_sync || {};
     });
     await refreshAll();
-    const taskLines = (result.results || []).filter((item) => item.status === "ok").map((item) => taskSyncSummary(item.task_sync));
-    showToast(`本周报表已生成；${taskLines[0] || "新增任务 0 条，更新任务 0 条，导入明细 0 行"}`);
+    showToast(`本周报表已生成；${taskSyncSummary(result.task_sync)}`);
   });
   $("#saveRulesBtn").addEventListener("click", async () => {
     state.rules = collectRules();
