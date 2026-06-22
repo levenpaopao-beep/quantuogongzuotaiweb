@@ -348,6 +348,8 @@ class OperationTaskStore:
             row_id = task_identity(row)
             if row_id in existing:
                 task = existing[row_id]
+                if norm(task.get("status")) == STATUS_DONE:
+                    continue
                 changed_labels = []
                 for key in [
                     "platform",

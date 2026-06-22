@@ -749,6 +749,38 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(updated["history"][-1]["event"], "系统更新")
             self.assertIn("系统建议动作", updated["history"][-1]["remark"])
 
+    def test_reimport_does_not_modify_completed_task_archive(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            source = {
+                "platform": "Temu",
+                "task_type": "低分预警",
+                "store": "7",
+                "owner": "小琴",
+                "merchant_code": "A-001",
+                "product_name": "红色球衣",
+                "system_action": "低分仍在售，需处理",
+                "source_report": "店铺低分产品预警",
+                "source_file": "low.xlsx",
+                "source_sheet": "低分明细",
+                "source_row": 2,
+            }
+            store.upsert_generated_tasks([source])
+            task = store.list_tasks()[0]
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已下架", remark="")
+            approved = store.review_task(submitted["id"], admin="管理员", decision="通过", remark="同意")
+            done = store.mark_done(approved["id"], actor="管理员", remark="后台已确认")
+            history_count = len(done["history"])
+
+            result = store.upsert_generated_tasks([{**source, "system_action": "导入后仍低分"}])
+
+            self.assertEqual(result["updated"], 0)
+            archived = store.list_tasks()[0]
+            self.assertEqual(archived["status"], daily_ops_tasks.STATUS_DONE)
+            self.assertEqual(archived["system_action"], "低分仍在售，需处理")
+            self.assertEqual(len(archived["history"]), history_count)
+
     def test_unassigned_task_must_be_assigned_before_owner_submit(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
