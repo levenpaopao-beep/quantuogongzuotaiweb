@@ -2588,7 +2588,7 @@ function renderOwnerTaskSummary(){
   if(!rows.length){ wrap.innerHTML = ''; return; }
   wrap.innerHTML = rows.map(item => {
     const status = item.by_status || {};
-    return `<div class="task-kpi"><span class="muted">负责人待办：${esc(item.owner)}</span><strong>${item.total || 0}</strong><div class="muted">待店长 ${status['待店长处理'] || 0} / 待审核 ${status['待管理员审核'] || 0} / 超时 ${item.overdue || 0} / 已完成 ${status['已完成'] || 0}</div></div>`;
+    return `<div class="task-kpi"><span class="muted">负责人待办：${esc(item.owner)}</span><strong>${item.total || 0}</strong><div class="muted">待店长 ${status['待店长处理'] || 0} / 待审核 ${status['待管理员审核'] || 0} / 超时 ${item.overdue || 0} / 返工 ${item.reworked || 0} / 已完成 ${status['已完成'] || 0}</div></div>`;
   }).join('');
 }
 function taskSourceText(task){

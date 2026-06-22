@@ -120,10 +120,10 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertIn("管理员审核", events)
                 owner_ws = workbook["负责人汇总"]
                 owner_headers = [cell.value for cell in owner_ws[1]]
-                self.assertEqual(owner_headers, ["负责人", "任务总数", "待店长处理", "待管理员审核", "超时未处理", "已通过", "已驳回", "已完成"])
+                self.assertEqual(owner_headers, ["负责人", "任务总数", "待店长处理", "待管理员审核", "超时未处理", "返工任务", "已通过", "已驳回", "已完成"])
                 owner_rows = {owner_ws.cell(row=row, column=1).value: row for row in range(2, owner_ws.max_row + 1)}
                 self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=2).value, 1)
-                self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=6).value, 1)
+                self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=7).value, 1)
                 summary_ws = workbook["状态汇总"]
                 summary = {
                     summary_ws.cell(row=row, column=1).value: summary_ws.cell(row=row, column=2).value
@@ -311,13 +311,17 @@ class OperationTaskStoreTest(unittest.TestCase):
             xiaoqin_rows = store.list_tasks(role="owner", user="小琴")
             store.submit_owner_action(xiaoqin_rows[0]["id"], actor="小琴", action="已处理", remark="")
             store.submit_owner_action(xiaoqin_rows[1]["id"], actor="小琴", action="已处理", remark="")
+            store.review_task(xiaoqin_rows[0]["id"], admin="管理员", decision="驳回", remark="缺截图")
+            store.submit_owner_action(xiaoqin_rows[0]["id"], actor="小琴", action="已补图", remark="")
             store.review_task(xiaoqin_rows[0]["id"], admin="管理员", decision="通过", remark="")
 
             summary = store.summary()
             self.assertEqual(summary["owner_status"]["小琴"]["total"], 2)
             self.assertEqual(summary["owner_status"]["小琴"]["by_status"]["待管理员审核"], 1)
             self.assertEqual(summary["owner_status"]["小琴"]["by_status"]["已通过"], 1)
+            self.assertEqual(summary["owner_status"]["小琴"]["reworked"], 1)
             self.assertEqual(summary["owner_status"]["洁琳"]["by_status"]["待店长处理"], 1)
+            self.assertEqual(summary["owner_status"]["洁琳"]["reworked"], 0)
             self.assertEqual(summary["owner_status"]["未分配"]["total"], 1)
             self.assertEqual(summary["owner_status"]["未分配"]["by_status"]["待店长处理"], 1)
             self.assertEqual(summary["by_next_handler"], {"管理员": 3, "店长": 1})
@@ -345,6 +349,9 @@ class OperationTaskStoreTest(unittest.TestCase):
                         "owner": "小琴",
                         "owner_submitted_at": "2026-06-20 08:00:00",
                         "updated_at": "2026-06-20 08:00:00",
+                        "history": [
+                            {"event": "管理员审核", "action": "驳回", "remark": "缺截图"},
+                        ],
                     },
                     {
                         "id": "owner-fresh",
@@ -426,6 +433,9 @@ class OperationTaskStoreTest(unittest.TestCase):
                         "owner": "小琴",
                         "owner_submitted_at": "2026-06-20 08:00:00",
                         "updated_at": "2026-06-20 08:00:00",
+                        "history": [
+                            {"event": "管理员审核", "action": "驳回", "remark": "缺截图"},
+                        ],
                     },
                     {
                         "id": "fresh",
@@ -443,9 +453,12 @@ class OperationTaskStoreTest(unittest.TestCase):
                 owner_ws = workbook["负责人汇总"]
                 headers = [cell.value for cell in owner_ws[1]]
                 overdue_col = headers.index("超时未处理") + 1
+                reworked_col = headers.index("返工任务") + 1
                 owner_rows = {owner_ws.cell(row=row, column=1).value: row for row in range(2, owner_ws.max_row + 1)}
                 self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=overdue_col).value, 2)
+                self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=reworked_col).value, 1)
                 self.assertEqual(owner_ws.cell(row=owner_rows["洁琳"], column=overdue_col).value, 0)
+                self.assertEqual(owner_ws.cell(row=owner_rows["洁琳"], column=reworked_col).value, 0)
             finally:
                 workbook.close()
 

@@ -265,10 +265,12 @@ class OperationTaskStore:
             else:
                 owner = "未分配"
                 unassigned += 1
-            item = owner_status.setdefault(owner, {"owner": owner, "total": 0, "by_status": {}})
+            item = owner_status.setdefault(owner, {"owner": owner, "total": 0, "by_status": {}, "reworked": 0})
             item["total"] += 1
             item["by_status"][status] = item["by_status"].get(status, 0) + 1
             item.setdefault("overdue", 0)
+            if task_rejection_info(row)[0] > 0:
+                item["reworked"] += 1
             if task_overdue(row, now):
                 overdue["total"] += 1
                 overdue["by_status"][status] = overdue["by_status"].get(status, 0) + 1
@@ -583,7 +585,7 @@ class OperationTaskStore:
                 ])
         style_task_sheet(log_ws)
         owner_ws = workbook.create_sheet("负责人汇总")
-        owner_ws.append(["负责人", "任务总数", STATUS_PENDING_OWNER, STATUS_PENDING_REVIEW, "超时未处理", STATUS_APPROVED, STATUS_REJECTED, STATUS_DONE])
+        owner_ws.append(["负责人", "任务总数", STATUS_PENDING_OWNER, STATUS_PENDING_REVIEW, "超时未处理", "返工任务", STATUS_APPROVED, STATUS_REJECTED, STATUS_DONE])
         owner_rows = sorted(summary.get("owner_status", {}).values(), key=lambda item: (-item.get("total", 0), item.get("owner", "")))
         for item in owner_rows:
             status = item.get("by_status", {})
@@ -593,6 +595,7 @@ class OperationTaskStore:
                 status.get(STATUS_PENDING_OWNER, 0),
                 status.get(STATUS_PENDING_REVIEW, 0),
                 item.get("overdue", 0),
+                item.get("reworked", 0),
                 status.get(STATUS_APPROVED, 0),
                 status.get(STATUS_REJECTED, 0),
                 status.get(STATUS_DONE, 0),
