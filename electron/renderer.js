@@ -314,6 +314,19 @@ async function reviewTask(id, decision) {
   showToast(`管理员审核${decision}`);
 }
 
+async function batchReviewTasks(decision) {
+  const admin = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
+  const ids = state.tasks.filter((task) => task.status === "待管理员审核").map((task) => task.id);
+  if (!ids.length) {
+    showToast("当前筛选没有待管理员审核任务");
+    return;
+  }
+  const remark = window.prompt(`批量${decision}备注`) || "";
+  const result = await api.batchReviewTasks({ ids, admin, decision, remark });
+  await loadTasks(false);
+  showToast(`已批量${decision} ${result.count || 0} 条任务`);
+}
+
 async function doneTask(id) {
   const actor = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
   const remark = window.prompt("完成备注") || "";
@@ -533,6 +546,8 @@ function bindEvents() {
   $("#refreshBtn").addEventListener("click", refreshAll);
   $("#loadTasksBtn").addEventListener("click", () => loadTasks());
   $("#exportTasksBtn").addEventListener("click", exportTasks);
+  $("#batchApproveTasksBtn").addEventListener("click", () => batchReviewTasks("通过"));
+  $("#batchRejectTasksBtn").addEventListener("click", () => batchReviewTasks("驳回"));
   $("#saveOperatorBtn").addEventListener("click", saveOperator);
   $("#generateWeeklyBtn").addEventListener("click", async () => {
     showToast("开始生成所有就绪报表");

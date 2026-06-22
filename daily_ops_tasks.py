@@ -316,6 +316,47 @@ class OperationTaskStore:
         self.save(payload)
         return public_task(task)
 
+    def review_tasks(self, task_ids, admin, decision, remark=""):
+        ids = []
+        seen = set()
+        for task_id in task_ids or []:
+            task_id = norm(task_id)
+            if task_id and task_id not in seen:
+                ids.append(task_id)
+                seen.add(task_id)
+        if not ids:
+            raise ValueError("请选择要批量审核的任务")
+        decision = norm(decision)
+        if decision not in {"通过", "驳回"}:
+            raise ValueError("管理员审核结果只能是通过或驳回")
+        payload = self.load()
+        by_id = {row.get("id"): row for row in payload["tasks"]}
+        tasks = []
+        for task_id in ids:
+            task = by_id.get(task_id)
+            if not task:
+                raise KeyError("任务不存在")
+            if task.get("status") != STATUS_PENDING_REVIEW:
+                raise ValueError("只有待管理员审核的任务可以审核")
+            tasks.append(task)
+        timestamp = now_text()
+        for task in tasks:
+            task["admin_decision"] = decision
+            task["admin_remark"] = norm(remark)
+            task["admin_reviewed_by"] = norm(admin)
+            task["admin_reviewed_at"] = timestamp
+            task["status"] = STATUS_APPROVED if decision == "通过" else STATUS_REJECTED
+            task["updated_at"] = timestamp
+            task.setdefault("history", []).append({
+                "time": timestamp,
+                "actor": norm(admin),
+                "event": "管理员批量审核",
+                "action": decision,
+                "remark": norm(remark),
+            })
+        self.save(payload)
+        return {"count": len(tasks), "tasks": [public_task(task) for task in tasks]}
+
     def mark_done(self, task_id, actor, remark=""):
         payload, task = self.require_task(task_id)
         if task.get("status") != STATUS_APPROVED:

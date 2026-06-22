@@ -1581,6 +1581,10 @@ def review_operation_task(task_id, admin, decision, remark=""):
     return operation_task_store().review_task(task_id, admin, decision, remark)
 
 
+def review_operation_tasks(task_ids, admin, decision, remark=""):
+    return operation_task_store().review_tasks(task_ids, admin, decision, remark)
+
+
 def mark_operation_task_done(task_id, actor, remark=""):
     return operation_task_store().mark_done(task_id, actor, remark)
 
@@ -1631,6 +1635,11 @@ def handle_tasks_api(action, headers, payload):
                 return json_bytes({"ok": False, "error": "只有管理员可以审核"}, status=403)
             task = review_operation_task(payload.get("id", ""), operator.get("user", "管理员"), payload.get("decision", ""), payload.get("remark", ""))
             return json_bytes({"ok": True, "task": task})
+        if action == "POST_BATCH_REVIEW":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以批量审核"}, status=403)
+            result = review_operation_tasks(payload.get("ids", []), operator.get("user", "管理员"), payload.get("decision", ""), payload.get("remark", ""))
+            return json_bytes({"ok": True, **result})
         if action == "POST_DONE":
             if not can_review_tasks(operator):
                 return json_bytes({"ok": False, "error": "只有管理员可以标记完成"}, status=403)
@@ -1803,7 +1812,7 @@ HTML_PAGE = r"""<!doctype html>
     .task-summary { display:grid; grid-template-columns:repeat(4,minmax(140px,1fr)); gap:10px; margin-bottom:12px; }
     .task-kpi { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; }
     .task-kpi strong { display:block; font-size:22px; margin-top:4px; }
-    .task-filters { display:grid; grid-template-columns:120px 160px 160px 160px 1fr auto auto; gap:8px; align-items:center; margin-bottom:12px; }
+    .task-filters { display:grid; grid-template-columns:120px 160px 160px 160px minmax(120px,1fr) auto auto auto auto; gap:8px; align-items:center; margin-bottom:12px; }
     .task-product { min-width:220px; }
     .task-actions { display:flex; gap:6px; flex-wrap:wrap; }
     .task-actions button { padding:7px 9px; }
@@ -1858,6 +1867,8 @@ HTML_PAGE = r"""<!doctype html>
           <select id="taskType"><option value="">全部类型</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
           <input id="taskStore" placeholder="店铺">
           <button class="primary" onclick="loadTasks()">查询</button>
+          <button class="primary" onclick="batchReviewTasks('通过')">批量通过</button>
+          <button class="danger" onclick="batchReviewTasks('驳回')">批量驳回</button>
           <button class="secondary" onclick="exportTasks()">导出</button>
         </div>
         <div class="status" id="taskStatusLine"></div>
@@ -2385,6 +2396,14 @@ async function reviewTask(id, decision){
   await api('/api/tasks/review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, admin, decision, remark})});
   await loadTasks();
 }
+async function batchReviewTasks(decision){
+  const ids = (taskState.tasks || []).filter(task => task.status === '待管理员审核').map(task => task.id);
+  if(!ids.length){ document.getElementById('taskStatusLine').textContent = '当前筛选没有待管理员审核任务'; return; }
+  const remark = prompt(`批量${decision}备注`) || '';
+  const res = await api('/api/tasks/batch-review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids, decision, remark})});
+  document.getElementById('taskStatusLine').textContent = `已批量${decision} ${res.count || 0} 条任务`;
+  await loadTasks(false);
+}
 async function doneTask(id){
   const remark = prompt('完成备注') || '';
   await api('/api/tasks/done', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, remark})});
@@ -2585,6 +2604,9 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/tasks/review":
                 cancel_scheduled_shutdown()
                 self.send_payload(*handle_tasks_api("POST_REVIEW", self.headers, self.read_json()))
+            elif parsed.path == "/api/tasks/batch-review":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_tasks_api("POST_BATCH_REVIEW", self.headers, self.read_json()))
             elif parsed.path == "/api/tasks/done":
                 cancel_scheduled_shutdown()
                 self.send_payload(*handle_tasks_api("POST_DONE", self.headers, self.read_json()))

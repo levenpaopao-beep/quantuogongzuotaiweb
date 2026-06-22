@@ -130,6 +130,7 @@ button { cursor: pointer; }
   padding: 8px 12px;
 }
 .icon-action:hover, .ghost-button:hover { border-color: #b7c3d6; background: #fff; }
+.danger-action { color: #b42318; border-color: #ffc4c4; background: #fff1f1; }
 
 .page { display: none; }
 .page-active { display: block; }

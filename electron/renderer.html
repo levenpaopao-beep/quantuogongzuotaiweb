@@ -107,7 +107,11 @@
                 <h2>任务台账</h2>
                 <p id="taskStatusLine">读取店长处理和管理员审核状态</p>
               </div>
-              <button class="primary-button" id="exportTasksBtn">导出任务</button>
+              <div class="download-actions">
+                <button class="primary-button" id="batchApproveTasksBtn">批量通过</button>
+                <button class="ghost-button danger-action" id="batchRejectTasksBtn">批量驳回</button>
+                <button class="primary-button" id="exportTasksBtn">导出任务</button>
+              </div>
             </div>
             <div class="operator-strip">
               <select id="operatorRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
