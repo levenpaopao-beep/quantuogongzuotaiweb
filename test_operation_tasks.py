@@ -816,6 +816,30 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("result.task_sync", html)
         self.assertIn("result.task_sync", renderer)
 
+    def test_status_summarizes_existing_tasks_by_report(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "operation_tasks.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "7", "owner": "小琴", "merchant_code": "A", "source_report": "Temu爆旺款重复预警", "source_row": 1},
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "8", "owner": "洁琳", "merchant_code": "B", "source_report": "Temu爆旺款重复预警", "source_row": 2},
+                {"platform": "Shein", "task_type": "爆旺冲突", "store": "琪琪", "owner": "洁琳", "merchant_code": "C", "source_report": "Shein爆旺款重复预警", "source_row": 3},
+            ])
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+                status = daily_ops_app.data_status()
+                self.assertEqual(status["report_tasks"]["temu_hot"]["total"], 2)
+                self.assertEqual(status["report_tasks"]["temu_hot"]["by_status"][daily_ops_tasks.STATUS_PENDING_OWNER], 2)
+                self.assertEqual(status["report_tasks"]["shein_hot"]["total"], 1)
+
+    def test_report_queue_surfaces_persisted_task_counts(self):
+        root = Path(__file__).resolve().parent
+        html = daily_ops_app.HTML_PAGE
+        renderer = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
+        for text in ["reportTaskSummary", "已生成任务", "report_tasks"]:
+            self.assertIn(text, html)
+            self.assertIn(text, renderer)
+
 
 if __name__ == "__main__":
     unittest.main()

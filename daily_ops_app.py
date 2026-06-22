@@ -893,6 +893,7 @@ def data_status():
         "outputs": recent_outputs(80),
         "database": {"exists": db_ok, "tables": db_tables, "rows": db_rows, "path": str(DB_PATH)},
         "tasks": operation_task_summary(),
+        "report_tasks": report_task_summary(),
         "reports": REPORTS,
         "rules": load_rules(),
         "upload_targets": {key: label for key, (label, _folder) in UPLOAD_TARGETS.items()},
@@ -1538,6 +1539,27 @@ def operation_task_summary():
     return operation_task_store().summary()
 
 
+def report_id_for_task(row):
+    source_report = norm(row.get("source_report"))
+    for report_id, report in REPORTS.items():
+        if source_report == report.get("name"):
+            return report_id
+    return ""
+
+
+def report_task_summary():
+    result = {report_id: {"total": 0, "by_status": {}} for report_id in REPORTS}
+    for row in operation_task_store().list_tasks():
+        report_id = report_id_for_task(row)
+        if not report_id:
+            continue
+        item = result.setdefault(report_id, {"total": 0, "by_status": {}})
+        item["total"] += 1
+        status = norm(row.get("status"))
+        item["by_status"][status] = item["by_status"].get(status, 0) + 1
+    return result
+
+
 def summarize_operation_tasks(rows):
     return operation_task_store().summary(rows)
 
@@ -2159,6 +2181,7 @@ function renderReports(){
         <div class="report-title-row"><h3>${esc(r.name)}</h3><div class="report-index">${index + 1}</div></div>
         <div class="muted report-desc">${esc(r.description)}</div>
         <div class="muted report-sources" title="${esc(r.sources)}">所需数据源：${esc(r.sources)}</div>
+        <div class="muted">${esc(reportTaskSummary(id))}</div>
       </div>
       <div class="report-body">
         <div class="report-actions"><input id="ver_${id}" value="V1"><button class="primary" onclick="runReport('${id}')">生成表格</button></div>
@@ -2175,6 +2198,13 @@ function renderReports(){
 }
 function reportOutputs(id){
   return (appStatus.outputs || []).filter(f => f.report === id);
+}
+function reportTaskSummary(id){
+  const item = appStatus?.report_tasks?.[id] || {};
+  const status = item.by_status || {};
+  const pendingReview = status['待管理员审核'] || 0;
+  const unhandled = status['待店长处理'] || 0;
+  return `已生成任务 ${item.total || 0} 条，待店长 ${unhandled} 条，待审核 ${pendingReview} 条`;
 }
 function shortModified(value){
   const text = String(value || '');

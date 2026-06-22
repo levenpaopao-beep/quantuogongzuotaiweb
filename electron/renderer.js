@@ -10,6 +10,7 @@ const state = {
   tasks: [],
   taskSummary: {},
   reportTaskSync: {},
+  reportTasks: {},
   storeOwners: [],
 };
 
@@ -144,12 +145,13 @@ function renderReportQueue() {
     const latest = latestOutputForReport(reportId);
     const hasOutput = Boolean(latest);
     const taskSync = state.reportTaskSync[reportId];
+    const taskLine = taskSync ? taskSyncSummary(taskSync) : reportTaskSummary(reportId);
     const item = document.createElement("div");
     item.className = `queue-item ${hasOutput ? "queue-item-done" : "queue-item-todo"}`;
     item.innerHTML = `
       <div>${index + 1}</div>
       <div class="queue-icon">${hasOutput ? "✓" : "!"}</div>
-      <div><div class="queue-title">${report.name}</div><div class="queue-subtitle">${hasOutput ? latest.modified : "等待生成"}</div>${taskSync ? `<div class="queue-task-sync">${taskSyncSummary(taskSync)}</div>` : ""}</div>
+      <div><div class="queue-title">${report.name}</div><div class="queue-subtitle">${hasOutput ? latest.modified : "等待生成"}</div><div class="queue-task-sync">${taskLine}</div></div>
       <div class="queue-status">${hasOutput ? "已完成" : "未完成"}</div>
       <div>›</div>
     `;
@@ -172,7 +174,7 @@ function renderReportCards() {
     card.innerHTML = `
       <h3>${report.name}</h3>
       <p>${report.description || ""}</p>
-      <div class="report-latest">${latest ? `最近生成：${latest.name}<br>${latest.modified} · ${formatSize(latest.size)}` : "暂无已生成表格"}</div>
+      <div class="report-latest">${latest ? `最近生成：${latest.name}<br>${latest.modified} · ${formatSize(latest.size)}` : "暂无已生成表格"}<br>${reportTaskSummary(reportId)}</div>
       <div class="download-actions">
         <button class="primary-button" data-action="generate">生成表格</button>
         ${latest ? `<button class="ghost-button download-report" data-action="open">打开表格</button><button class="ghost-button" data-action="folder">打开所在文件夹</button>` : ""}
@@ -422,12 +424,19 @@ function taskSyncSummary(sync) {
   return `新增任务 ${summary.created || 0} 条，更新任务 ${summary.updated || 0} 条，导入明细 ${summary.imported_rows || 0} 行`;
 }
 
+function reportTaskSummary(reportId) {
+  const item = state.reportTasks?.[reportId] || {};
+  const status = item.by_status || {};
+  return `已生成任务 ${item.total || 0} 条，待店长 ${status["待店长处理"] || 0} 条，待审核 ${status["待管理员审核"] || 0} 条`;
+}
+
 async function refreshAll() {
   try {
     state.status = await api.status();
     state.reports = state.status.reports || await api.reports();
     state.outputs = state.status.outputs || await api.outputs(80);
     state.rules = state.status.rules || await api.loadRules();
+    state.reportTasks = state.status.report_tasks || {};
     renderSources(state.status.source_groups || []);
     renderReportQueue();
     renderReportCards();
