@@ -55,6 +55,11 @@ class OperationTaskStoreTest(unittest.TestCase):
             result = store.upsert_generated_tasks(rows)
             self.assertEqual(result["created"], 2)
             self.assertEqual(result["updated"], 0)
+            generated = store.list_tasks(role="owner", user="小琴")[0]
+            self.assertEqual(generated["history"][0]["event"], "系统生成")
+            self.assertEqual(generated["history"][0]["actor"], "系统")
+            self.assertEqual(generated["history"][0]["action"], "生成待处理任务")
+            self.assertIn("Temu爆旺款重复预警", generated["history"][0]["remark"])
 
             repeat = store.upsert_generated_tasks(rows)
             self.assertEqual(repeat["created"], 0)
@@ -91,7 +96,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             )
             self.assertEqual(reviewed["status"], daily_ops_tasks.STATUS_APPROVED)
             self.assertEqual(reviewed["admin_decision"], "通过")
-            self.assertEqual(len(reviewed["history"]), 2)
+            self.assertEqual(len(reviewed["history"]), 3)
 
             export_path = store.export_tasks(root / "导出.xlsx", filters={"role": "owner", "user": "小琴", "status": "已通过"}, now=datetime(2026, 6, 22, 12, 0, 0))
             workbook = load_workbook(export_path, read_only=True, data_only=True)
@@ -110,6 +115,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertIn("事件", log_headers)
                 self.assertIn("操作人", log_headers)
                 events = [log_ws.cell(row=row, column=log_headers.index("事件") + 1).value for row in range(2, log_ws.max_row + 1)]
+                self.assertIn("系统生成", events)
                 self.assertIn("店长提交", events)
                 self.assertIn("管理员审核", events)
                 owner_ws = workbook["负责人汇总"]
@@ -159,7 +165,7 @@ class OperationTaskStoreTest(unittest.TestCase):
 
             self.assertEqual(store.upsert_generated_tasks([first_week])["created"], 1)
             self.assertEqual(store.upsert_generated_tasks([first_week])["updated"], 1)
-            self.assertEqual(store.list_tasks()[0]["history"], [])
+            self.assertEqual([item["event"] for item in store.list_tasks()[0]["history"]], ["系统生成"])
             second_result = store.upsert_generated_tasks([second_week])
             self.assertEqual(second_result["created"], 1)
             self.assertEqual(second_result["total"], 2)
@@ -1419,14 +1425,14 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(status, 200)
                 exported = json.loads(body)
                 self.assertEqual(exported["rows"], 1)
-                self.assertEqual(exported["history_rows"], 2)
+                self.assertEqual(exported["history_rows"], 3)
 
                 exported_path = output_dir / exported["file"]
                 exported_book = load_workbook(exported_path, read_only=True, data_only=True)
                 try:
                     self.assertEqual(exported_book.sheetnames, ["任务台账", "操作记录", "负责人汇总", "状态汇总", "导出口径"])
                     self.assertEqual(exported_book["任务台账"].max_row, 2)
-                    self.assertEqual(exported_book["操作记录"].max_row, 3)
+                    self.assertEqual(exported_book["操作记录"].max_row, 4)
                     self.assertEqual(exported_book["负责人汇总"].max_row, 2)
                     self.assertEqual(exported_book["状态汇总"].cell(row=2, column=1).value, "任务总数")
                     self.assertEqual(exported_book["状态汇总"].cell(row=2, column=2).value, 1)
@@ -1438,7 +1444,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                     self.assertEqual(criteria["role"], "owner")
                     self.assertEqual(criteria["user"], "小琴")
                     self.assertEqual(criteria["rows"], 1)
-                    self.assertEqual(criteria["history_rows"], 2)
+                    self.assertEqual(criteria["history_rows"], 3)
                 finally:
                     exported_book.close()
 

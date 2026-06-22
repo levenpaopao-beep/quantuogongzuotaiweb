@@ -141,6 +141,20 @@ def can_update_generated_owner(task):
     return True
 
 
+def generated_task_remark(row):
+    parts = []
+    for key, label in [
+        ("source_report", "来源报表"),
+        ("source_file", "来源文件"),
+        ("source_sheet", "来源页签"),
+        ("source_row", "来源行"),
+    ]:
+        value = norm(row.get(key))
+        if value:
+            parts.append(f"{label}：{value}")
+    return "；".join(parts)
+
+
 class OperationTaskStore:
     def __init__(self, path):
         self.path = Path(path)
@@ -315,7 +329,13 @@ class OperationTaskStore:
                     "source_file": row.get("source_file", ""),
                     "source_sheet": row.get("source_sheet", ""),
                     "source_row": row.get("source_row", ""),
-                    "history": [],
+                    "history": [{
+                        "time": timestamp,
+                        "actor": "系统",
+                        "event": "系统生成",
+                        "action": "生成待处理任务",
+                        "remark": generated_task_remark(row),
+                    }],
                     "created_at": timestamp,
                     "updated_at": timestamp,
                 }
