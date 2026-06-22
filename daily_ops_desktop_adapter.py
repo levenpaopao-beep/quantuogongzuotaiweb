@@ -72,7 +72,8 @@ def export_search(query, limit=500):
 
 
 def operation_tasks(role="admin", user="", status="", task_type="", store="", platform=""):
-    return {"summary": app.operation_task_summary(), "tasks": app.list_operation_tasks(role, user, status, task_type, store, platform)}
+    rows = app.list_operation_tasks(role, user, status, task_type, store, platform)
+    return {"summary": app.summarize_operation_tasks(rows), "tasks": rows}
 
 
 def submit_operation_task(task_id, actor, action, remark=""):

@@ -10,6 +10,7 @@ from openpyxl import load_workbook
 
 import daily_ops_tasks
 import daily_ops_app
+import daily_ops_desktop_adapter
 
 
 class OperationTaskStoreTest(unittest.TestCase):
@@ -238,6 +239,21 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertIn(text, preload)
         for text in ["api:tasks", "api:submit-task", "api:review-task", "api:done-task", "api:export-tasks"]:
             self.assertIn(text, main)
+
+    def test_desktop_adapter_scopes_task_summary_like_task_rows(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "1", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "低分预警", "store": "2", "owner": "洁琳", "merchant_code": "B", "source_report": "r", "source_row": 2},
+            ])
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+                payload = daily_ops_desktop_adapter.operation_tasks(role="owner", user="小琴")
+                self.assertEqual(len(payload["tasks"]), 1)
+                self.assertEqual(payload["summary"]["total"], 1)
+                self.assertEqual(payload["summary"]["by_owner"], {"小琴": 1})
 
     def test_electron_renderer_exposes_operation_task_center(self):
         root = Path(__file__).resolve().parent
