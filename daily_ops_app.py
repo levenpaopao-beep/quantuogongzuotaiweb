@@ -1650,7 +1650,7 @@ def operation_owner_directory():
     return sorted(owners.values(), key=lambda row: (-row["task_count"], row["owner"]))
 
 
-def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue=""):
+def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned=""):
     return operation_task_store().list_tasks(
         role=role,
         user=user,
@@ -1659,6 +1659,7 @@ def list_operation_tasks(role="admin", user="", status="", task_type="", store="
         store=store,
         platform=platform,
         overdue=overdue,
+        unassigned=unassigned,
     )
 
 
@@ -1682,8 +1683,8 @@ def mark_operation_task_done(task_id, actor, remark=""):
     return operation_task_store().mark_done(task_id, actor, remark)
 
 
-def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue=""):
-    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue)
+def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned=""):
+    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned)
     history_rows = sum(len(row.get("history") or []) for row in rows)
     out = output_path("运营任务台账", "V1")
     filters = {
@@ -1694,6 +1695,7 @@ def export_operation_tasks(role="admin", user="", status="", task_type="", store
         "store": store,
         "platform": platform,
         "overdue": overdue,
+        "unassigned": unassigned,
     }
     operation_task_store().export_tasks(out, rows, filters=filters)
     return {"file": out.name, "download": f"/download?path={quote(out.name)}", "rows": len(rows), "history_rows": history_rows}
@@ -1718,6 +1720,7 @@ def handle_tasks_api(action, headers, payload):
                 store=payload.get("store", ""),
                 platform=payload.get("platform", ""),
                 overdue=payload.get("overdue", ""),
+                unassigned=payload.get("unassigned", ""),
             )
             return json_bytes({"ok": True, "operator": operator, "summary": summarize_operation_tasks(rows), "tasks": rows})
         if action == "POST_SUBMIT":
@@ -1758,6 +1761,7 @@ def handle_tasks_api(action, headers, payload):
                 store=payload.get("store", ""),
                 platform=payload.get("platform", ""),
                 overdue=payload.get("overdue", ""),
+                unassigned=payload.get("unassigned", ""),
             )
             return json_bytes({"ok": True, **result})
         return json_bytes({"ok": False, "error": "任务接口不存在"}, status=404)
@@ -1981,6 +1985,7 @@ HTML_PAGE = r"""<!doctype html>
           <select id="taskType"><option value="">全部类型</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
           <input id="taskStore" placeholder="店铺">
           <label><input id="taskOverdue" type="checkbox"> 只看超时</label>
+          <label><input id="taskUnassigned" type="checkbox"> 只看未分配</label>
           <button class="primary" onclick="loadTasks()">查询</button>
           <button class="primary" onclick="batchReviewTasks('通过')">批量通过</button>
           <button class="danger" onclick="batchReviewTasks('驳回')">批量驳回</button>
@@ -2484,6 +2489,7 @@ function taskQuery(){
   params.set('task_type', document.getElementById('taskType')?.value || '');
   params.set('store', document.getElementById('taskStore')?.value.trim() || '');
   params.set('overdue', document.getElementById('taskOverdue')?.checked ? '1' : '');
+  params.set('unassigned', document.getElementById('taskUnassigned')?.checked ? '1' : '');
   return params;
 }
 async function loadTasks(showMessage=true){

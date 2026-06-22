@@ -213,6 +213,7 @@ function taskFilters() {
     store: $("#taskStore")?.value.trim() || "",
     platform: "",
     overdue: $("#taskOverdue")?.checked ? "1" : "",
+    unassigned: $("#taskUnassigned")?.checked ? "1" : "",
   };
 }
 

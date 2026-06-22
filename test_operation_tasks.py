@@ -346,6 +346,20 @@ class OperationTaskStoreTest(unittest.TestCase):
             )
             self.assertEqual([row["product_name"] for row in rows], ["红色球衣"])
 
+    def test_task_listing_can_filter_unassigned_tasks(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "7", "owner": "", "merchant_code": "A", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "8", "owner": "小琴", "merchant_code": "B", "source_report": "r", "source_row": 2},
+            ])
+
+            rows = store.list_tasks(unassigned="1")
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["store"], "7")
+            self.assertEqual(rows[0]["owner"], "")
+
     def test_admin_can_assign_unassigned_task_to_owner(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -743,6 +757,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("overdue", html)
         self.assertIn("taskOverdue", html)
         self.assertIn("只看超时", html)
+        self.assertIn("taskUnassigned", html)
+        self.assertIn("只看未分配", html)
         self.assertIn("驳回原因", html)
         self.assertIn("必须填写原因", html)
         self.assertIn("完成确认说明", html)
@@ -789,6 +805,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("overdue", js)
         self.assertIn("taskOverdue", html)
         self.assertIn("只看超时", html)
+        self.assertIn("taskUnassigned", html)
+        self.assertIn("只看未分配", html)
         self.assertIn("驳回原因", js)
         self.assertIn("必须填写原因", js)
         self.assertIn("完成确认说明", js)
@@ -1082,6 +1100,47 @@ class OperationTaskStoreTest(unittest.TestCase):
                     for row in range(2, criteria_ws.max_row + 1)
                 }
                 self.assertEqual(criteria["overdue"], "1")
+            finally:
+                workbook.close()
+
+    def test_http_task_export_can_filter_unassigned_tasks(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+        admin_headers = {"X-Operator-Token": admin["token"]}
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            output_dir = root / "outputs"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "7", "owner": "", "merchant_code": "A", "product_name": "未分配雨衣", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "8", "owner": "小琴", "merchant_code": "B", "product_name": "已分配球衣", "source_report": "r", "source_row": 2},
+            ])
+
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
+                 patch.object(daily_ops_app, "OUTPUT_DIR", output_dir):
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "POST_EXPORT",
+                    admin_headers,
+                    {"unassigned": "1"},
+                )
+            self.assertEqual(status, 200)
+            payload = json.loads(body)
+            self.assertEqual(payload["rows"], 1)
+
+            workbook = load_workbook(output_dir / payload["file"], read_only=True, data_only=True)
+            try:
+                ws = workbook["任务台账"]
+                headers = [cell.value for cell in ws[1]]
+                product_col = headers.index("货品名称") + 1
+                self.assertEqual(ws.cell(row=2, column=product_col).value, "未分配雨衣")
+                criteria_ws = workbook["导出口径"]
+                criteria = {
+                    criteria_ws.cell(row=row, column=1).value: criteria_ws.cell(row=row, column=2).value
+                    for row in range(2, criteria_ws.max_row + 1)
+                }
+                self.assertEqual(criteria["unassigned"], "1")
             finally:
                 workbook.close()
 
