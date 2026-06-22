@@ -47,6 +47,7 @@ CLIENT_CLOSE_SHUTDOWN_DELAY_SECONDS = 4
 SCHEDULED_SHUTDOWN = None
 SCHEDULED_SHUTDOWN_LOCK = threading.Lock()
 OPERATOR_SESSIONS = {}
+DOWNLOAD_GRANTS = {}
 
 UPLOAD_TARGETS = {
     "temu_platform": ("Temu平台表", TEMU_DIR),
@@ -272,6 +273,22 @@ def operator_from_token(token):
     if not token or token not in OPERATOR_SESSIONS:
         raise PermissionError("请先登录")
     return OPERATOR_SESSIONS[token]
+
+
+def grant_download(token, filename):
+    token = norm(token)
+    filename = Path(norm(filename)).name
+    if token and filename:
+        DOWNLOAD_GRANTS.setdefault(token, set()).add(filename)
+
+
+def require_download_permission(token, filename):
+    operator = operator_from_token(token)
+    if operator.get("role") == "admin":
+        return operator
+    if Path(norm(filename)).name not in DOWNLOAD_GRANTS.get(norm(token), set()):
+        raise PermissionError("没有权限下载这个文件")
+    return operator
 
 
 def scoped_task_filters(operator, filters):
@@ -1722,7 +1739,8 @@ def token_from_headers(headers):
 
 def handle_tasks_api(action, headers, payload):
     try:
-        operator = operator_from_token(token_from_headers(headers))
+        token = token_from_headers(headers)
+        operator = operator_from_token(token)
         if action == "GET":
             filters = scoped_task_filters(operator, payload)
             rows = list_operation_tasks(
@@ -1776,6 +1794,7 @@ def handle_tasks_api(action, headers, payload):
                 overdue=payload.get("overdue", ""),
                 unassigned=payload.get("unassigned", ""),
             )
+            grant_download(token, result.get("file", ""))
             return json_bytes({"ok": True, **result})
         return json_bytes({"ok": False, "error": "任务接口不存在"}, status=404)
     except PermissionError as exc:
@@ -2884,8 +2903,8 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
     def handle_download(self, parsed):
         params = parse_qs(parsed.query)
         token = token_from_headers(getattr(self, "headers", {})) or params.get("token", [""])[0]
-        operator_from_token(token)
         name = unquote(params.get("path", [""])[0])
+        require_download_permission(token, name)
         path = (OUTPUT_DIR / Path(name).name).resolve()
         if OUTPUT_DIR.resolve() not in path.parents and path != OUTPUT_DIR.resolve():
             raise ValueError("下载路径不允许")

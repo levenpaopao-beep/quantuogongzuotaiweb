@@ -1339,6 +1339,43 @@ class OperationTaskStoreTest(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     handler.handle_download(urlparse("/download?path=%E5%8F%B0%E8%B4%A6.xlsx"))
 
+    def test_owner_download_requires_file_grant(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        owner = daily_ops_app.login_operator("owner", "小琴", "")
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_dir = root / "outputs"
+            output_dir.mkdir()
+            (output_dir / "全部店铺.xlsx").write_bytes(b"demo")
+            handler = daily_ops_app.DailyOpsHandler.__new__(daily_ops_app.DailyOpsHandler)
+            handler.headers = {}
+
+            with patch.object(daily_ops_app, "OUTPUT_DIR", output_dir):
+                with self.assertRaises(PermissionError):
+                    handler.handle_download(urlparse(f"/download?path=%E5%85%A8%E9%83%A8%E5%BA%97%E9%93%BA.xlsx&token={owner['token']}"))
+
+    def test_owner_task_export_grants_download_to_that_session(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        daily_ops_app.DOWNLOAD_GRANTS.clear()
+        owner = daily_ops_app.login_operator("owner", "小琴", "")
+        owner_headers = {"X-Operator-Token": owner["token"]}
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            output_dir = root / "outputs"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "7", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+            ])
+
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
+                 patch.object(daily_ops_app, "OUTPUT_DIR", output_dir):
+                status, _content_type, body = daily_ops_app.handle_tasks_api("POST_EXPORT", owner_headers, {})
+
+            self.assertEqual(status, 200)
+            exported = json.loads(body)
+            self.assertIn(exported["file"], daily_ops_app.DOWNLOAD_GRANTS[owner["token"]])
+
     def test_owner_directory_api_is_available_before_login(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         with TemporaryDirectory() as tmp:
