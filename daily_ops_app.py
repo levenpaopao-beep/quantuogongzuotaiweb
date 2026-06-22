@@ -275,6 +275,24 @@ def operator_from_token(token):
     return OPERATOR_SESSIONS[token]
 
 
+def logout_operator(token):
+    token = norm(token)
+    if token:
+        OPERATOR_SESSIONS.pop(token, None)
+        DOWNLOAD_GRANTS.pop(token, None)
+    return {"ok": True}
+
+
+def handle_session_logout(headers):
+    try:
+        token = token_from_headers(headers)
+        operator_from_token(token)
+        logout_operator(token)
+        return json_bytes({"ok": True})
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+
+
 def grant_download(token, filename):
     token = norm(token)
     filename = Path(norm(filename)).name
@@ -2007,7 +2025,7 @@ HTML_PAGE = r"""<!doctype html>
     .task-product { min-width:220px; }
     .task-actions { display:flex; gap:6px; flex-wrap:wrap; }
     .task-actions button { padding:7px 9px; }
-    .login-bar { background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:12px; display:grid; grid-template-columns:120px 160px 160px auto 1fr; gap:8px; align-items:center; }
+    .login-bar { background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:12px; display:grid; grid-template-columns:120px 160px 160px auto auto 1fr; gap:8px; align-items:center; }
     .login-bar .identity { color:var(--muted); font-size:13px; }
     .owner-entry { background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:12px; display:grid; grid-template-columns:auto minmax(260px,1fr) auto auto; gap:8px; align-items:center; }
     .owner-entry input { width:100%; }
@@ -2046,6 +2064,7 @@ HTML_PAGE = r"""<!doctype html>
       <datalist id="ownerOptions"></datalist>
       <input id="loginPassword" placeholder="管理员/店长访问密码，可空" type="password">
       <button class="primary" onclick="loginOperator()">登录身份</button>
+      <button class="secondary" onclick="logoutOperator()">退出身份</button>
       <div class="identity" id="operatorIdentity">未登录：任务台账需要先登录</div>
     </div>
     <div class="owner-entry">
@@ -2276,6 +2295,24 @@ async function loginOperator(){
   localStorage.setItem('operatorToken', operatorToken);
   renderOperator();
   await loadTasks();
+}
+async function logoutOperator(){
+  try {
+    if(operatorToken){
+      await api('/api/session/logout', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({})});
+    }
+  } catch(e) {
+    // 本地仍清掉身份，避免旧 token 继续留在共享浏览器里。
+  }
+  localStorage.removeItem('operatorSession');
+  localStorage.removeItem('operatorToken');
+  operatorSession = null;
+  operatorToken = '';
+  document.getElementById('loginPassword').value = '';
+  renderOperator();
+  renderTaskSummary();
+  const tbody = document.getElementById('taskRows');
+  if(tbody) tbody.innerHTML = '<tr><td colspan="9" class="muted">请先登录身份。</td></tr>';
 }
 async function loadOwnerOptions(){
   try {
@@ -2855,6 +2892,9 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 payload = self.read_json()
                 session = login_operator(payload.get("role", ""), payload.get("user", ""), payload.get("password", ""))
                 self.send_json({"ok": True, "session": session})
+            elif parsed.path == "/api/session/logout":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_session_logout(self.headers))
             elif parsed.path == "/api/reports/run":
                 cancel_scheduled_shutdown()
                 if not self.require_admin_request("生成报表"):

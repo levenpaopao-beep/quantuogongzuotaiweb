@@ -1295,6 +1295,19 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertTrue(daily_ops_app.can_review_tasks(admin))
         self.assertFalse(daily_ops_app.can_review_tasks(owner))
 
+    def test_operator_can_logout_and_invalidate_session_token(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        session = daily_ops_app.login_operator("owner", "小琴", "")
+        headers = {"X-Operator-Token": session["token"]}
+
+        status, _content_type, body = daily_ops_app.handle_session_logout(headers)
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)["ok"])
+
+        status, _content_type, body = daily_ops_app.handle_tasks_api("GET", headers, {})
+        self.assertEqual(status, 401)
+        self.assertIn("请先登录", json.loads(body)["error"])
+
     def test_lan_mode_requires_admin_password_configuration(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         with patch.dict(os.environ, {"DAILY_OPS_HOST": "0.0.0.0"}, clear=True):
@@ -1724,9 +1737,12 @@ class OperationTaskStoreTest(unittest.TestCase):
     def test_local_web_page_exposes_operator_login(self):
         html = daily_ops_app.HTML_PAGE
         self.assertIn("/api/session/login", html)
+        self.assertIn("/api/session/logout", html)
         self.assertIn("/api/owners", html)
         self.assertIn("operatorToken", html)
         self.assertIn("登录身份", html)
+        self.assertIn("退出身份", html)
+        self.assertIn("logoutOperator", html)
         self.assertIn("ownerOptions", html)
         self.assertIn("店长入口", html)
         self.assertIn("ownerEntryLink", html)
