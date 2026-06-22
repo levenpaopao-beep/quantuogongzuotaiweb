@@ -1659,7 +1659,15 @@ def export_operation_tasks(role="admin", user="", status="", task_type="", store
     rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform)
     history_rows = sum(len(row.get("history") or []) for row in rows)
     out = output_path("运营任务台账", "V1")
-    operation_task_store().export_tasks(out, rows)
+    filters = {
+        "role": role,
+        "user": user,
+        "status": status,
+        "task_type": task_type,
+        "store": store,
+        "platform": platform,
+    }
+    operation_task_store().export_tasks(out, rows, filters=filters)
     return {"file": out.name, "download": f"/download?path={quote(out.name)}", "rows": len(rows), "history_rows": history_rows}
 
 

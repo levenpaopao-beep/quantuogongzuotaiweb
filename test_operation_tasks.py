@@ -82,10 +82,10 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(reviewed["admin_decision"], "通过")
             self.assertEqual(len(reviewed["history"]), 2)
 
-            export_path = store.export_tasks(root / "导出.xlsx")
+            export_path = store.export_tasks(root / "导出.xlsx", filters={"role": "owner", "user": "小琴", "status": "已通过"})
             workbook = load_workbook(export_path, read_only=True, data_only=True)
             try:
-                self.assertEqual(workbook.sheetnames, ["任务台账", "操作记录", "负责人汇总"])
+                self.assertEqual(workbook.sheetnames, ["任务台账", "操作记录", "负责人汇总", "导出口径"])
                 ws = workbook["任务台账"]
                 self.assertEqual(ws.max_row, 3)
                 headers = [cell.value for cell in ws[1]]
@@ -105,6 +105,15 @@ class OperationTaskStoreTest(unittest.TestCase):
                 owner_rows = {owner_ws.cell(row=row, column=1).value: row for row in range(2, owner_ws.max_row + 1)}
                 self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=2).value, 1)
                 self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=5).value, 1)
+                criteria_ws = workbook["导出口径"]
+                criteria = {
+                    criteria_ws.cell(row=row, column=1).value: criteria_ws.cell(row=row, column=2).value
+                    for row in range(2, criteria_ws.max_row + 1)
+                }
+                self.assertEqual(criteria["role"], "owner")
+                self.assertEqual(criteria["user"], "小琴")
+                self.assertEqual(criteria["status"], "已通过")
+                self.assertEqual(criteria["rows"], 2)
             finally:
                 workbook.close()
 
@@ -848,10 +857,19 @@ class OperationTaskStoreTest(unittest.TestCase):
                 exported_path = output_dir / exported["file"]
                 exported_book = load_workbook(exported_path, read_only=True, data_only=True)
                 try:
-                    self.assertEqual(exported_book.sheetnames, ["任务台账", "操作记录", "负责人汇总"])
+                    self.assertEqual(exported_book.sheetnames, ["任务台账", "操作记录", "负责人汇总", "导出口径"])
                     self.assertEqual(exported_book["任务台账"].max_row, 2)
                     self.assertEqual(exported_book["操作记录"].max_row, 3)
                     self.assertEqual(exported_book["负责人汇总"].max_row, 2)
+                    criteria_ws = exported_book["导出口径"]
+                    criteria = {
+                        criteria_ws.cell(row=row, column=1).value: criteria_ws.cell(row=row, column=2).value
+                        for row in range(2, criteria_ws.max_row + 1)
+                    }
+                    self.assertEqual(criteria["role"], "owner")
+                    self.assertEqual(criteria["user"], "小琴")
+                    self.assertEqual(criteria["rows"], 1)
+                    self.assertEqual(criteria["history_rows"], 2)
                 finally:
                     exported_book.close()
 

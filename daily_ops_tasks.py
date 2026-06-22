@@ -381,8 +381,10 @@ class OperationTaskStore:
         self.save(payload)
         return public_task(task)
 
-    def export_tasks(self, output_path, tasks=None):
+    def export_tasks(self, output_path, tasks=None, filters=None):
         rows = list(tasks) if tasks is not None else self.list_tasks()
+        filters = dict(filters or {})
+        history_rows = sum(len(row.get("history") or []) for row in rows)
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         workbook = Workbook()
@@ -425,6 +427,14 @@ class OperationTaskStore:
                 status.get(STATUS_DONE, 0),
             ])
         style_task_sheet(owner_ws)
+        criteria_ws = workbook.create_sheet("导出口径")
+        criteria_ws.append(["字段", "值"])
+        for key in ["role", "user", "status", "task_type", "store", "platform"]:
+            criteria_ws.append([key, norm(filters.get(key, ""))])
+        criteria_ws.append(["rows", len(rows)])
+        criteria_ws.append(["history_rows", history_rows])
+        criteria_ws.append(["exported_at", now_text()])
+        style_task_sheet(criteria_ws)
         workbook.save(output_path)
         return output_path
 
