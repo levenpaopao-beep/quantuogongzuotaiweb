@@ -252,8 +252,11 @@ def login_operator(role, user, password=""):
     if not user:
         raise ValueError("请填写姓名")
     admin_password = os.environ.get("DAILY_OPS_ADMIN_PASSWORD", "")
-    if role == "admin" and admin_password and password != admin_password:
-        raise PermissionError("管理员密码不正确")
+    if role == "admin":
+        if configured_host() in {"0.0.0.0", "::"} and not admin_password:
+            raise PermissionError("局域网模式必须先设置 DAILY_OPS_ADMIN_PASSWORD")
+        if admin_password and password != admin_password:
+            raise PermissionError("管理员密码不正确")
     token = secrets.token_urlsafe(24)
     session = {"token": token, "role": role, "user": user, "login_at": now_text()}
     OPERATOR_SESSIONS[token] = session

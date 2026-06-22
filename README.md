@@ -56,10 +56,10 @@ python3 daily_ops_app.py
 需要局域网内多人访问时，管理员电脑启动为局域网模式：
 
 ```bash
-DAILY_OPS_HOST=0.0.0.0 python3 daily_ops_app.py
+DAILY_OPS_HOST=0.0.0.0 DAILY_OPS_ADMIN_PASSWORD=你的管理员密码 python3 daily_ops_app.py
 ```
 
-启动后，店长使用管理员电脑的局域网 IP 加端口 `8876` 访问。数据文件、输出表、图片产物、打包产物和虚拟环境产物不要提交到 git；仓库只保留必要代码、规则和测试。
+启动后，店长使用管理员电脑的局域网 IP 加端口 `8876` 访问。局域网模式下管理员登录必须输入 `DAILY_OPS_ADMIN_PASSWORD` 设置的密码；本机模式仍可不设置密码，方便单机调试。数据文件、输出表、图片产物、打包产物和虚拟环境产物不要提交到 git；仓库只保留必要代码、规则和测试。
 
 ## 数据备份与恢复
 
