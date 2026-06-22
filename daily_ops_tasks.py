@@ -42,6 +42,9 @@ TASK_COLUMNS = [
     ("last_rejection_reason", "最近驳回原因"),
     ("admin_reviewed_by", "管理员审核人"),
     ("admin_reviewed_at", "管理员审核时间"),
+    ("completed_by", "完成确认人"),
+    ("completed_at", "完成时间"),
+    ("completed_remark", "完成说明"),
     ("source_report", "来源报表"),
     ("source_file", "来源文件"),
     ("source_sheet", "来源页签"),
@@ -536,6 +539,9 @@ class OperationTaskStore:
             raise ValueError("标记完成必须填写确认说明")
         timestamp = now_text()
         task["status"] = STATUS_DONE
+        task["completed_by"] = norm(actor)
+        task["completed_at"] = timestamp
+        task["completed_remark"] = norm(remark)
         task["updated_at"] = timestamp
         task.setdefault("history", []).append({
             "time": timestamp,

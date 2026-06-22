@@ -848,9 +848,26 @@ class OperationTaskStoreTest(unittest.TestCase):
             done = store.mark_done(reviewed["id"], actor="管理员", remark="后台已确认")
 
             self.assertEqual(done["status"], daily_ops_tasks.STATUS_DONE)
+            self.assertEqual(done["completed_by"], "管理员")
+            self.assertEqual(done["completed_remark"], "后台已确认")
+            self.assertTrue(done["completed_at"])
             self.assertEqual(done["history"][-1]["event"], "标记完成")
             self.assertEqual(done["history"][-1]["action"], daily_ops_tasks.STATUS_DONE)
             self.assertEqual(done["history"][-1]["remark"], "后台已确认")
+
+            export_path = store.export_tasks(root / "导出.xlsx")
+            workbook = load_workbook(export_path, read_only=True, data_only=True)
+            try:
+                ws = workbook["任务台账"]
+                headers = [cell.value for cell in ws[1]]
+                completed_by_col = headers.index("完成确认人") + 1
+                completed_at_col = headers.index("完成时间") + 1
+                completed_remark_col = headers.index("完成说明") + 1
+                self.assertEqual(ws.cell(row=2, column=completed_by_col).value, "管理员")
+                self.assertTrue(ws.cell(row=2, column=completed_at_col).value)
+                self.assertEqual(ws.cell(row=2, column=completed_remark_col).value, "后台已确认")
+            finally:
+                workbook.close()
 
             with self.assertRaises(ValueError):
                 store.mark_done(task["id"], actor="管理员", remark="重复完成")
