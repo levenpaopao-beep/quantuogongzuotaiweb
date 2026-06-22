@@ -135,6 +135,8 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(summary["下一步处理人：店长"], 1)
                 self.assertEqual(summary["下一步动作：标记完成或归档"], 1)
                 self.assertEqual(summary["下一步动作：填写处理结果"], 1)
+                self.assertEqual(summary["来源批次：Temu爆旺款重复预警 / hot.xlsx"], 1)
+                self.assertEqual(summary["来源批次：店铺低分产品预警 / low.xlsx"], 1)
                 criteria_ws = workbook["导出口径"]
                 criteria = {
                     criteria_ws.cell(row=row, column=1).value: criteria_ws.cell(row=row, column=2).value

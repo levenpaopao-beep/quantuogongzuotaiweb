@@ -199,6 +199,16 @@ def generated_task_remark(row):
     return "；".join(parts)
 
 
+def task_source_batch_label(row):
+    parts = [
+        norm(row.get("source_report")),
+        norm(row.get("source_file")),
+        norm(row.get("source_sheet")),
+    ]
+    parts = [part for part in parts if part]
+    return " / ".join(parts) or "未填写"
+
+
 class OperationTaskStore:
     def __init__(self, path):
         self.path = Path(path)
@@ -626,6 +636,14 @@ class OperationTaskStore:
         summary_ws.append(["下一步动作", "数量"])
         for action, count in sorted(summary.get("by_next_action", {}).items()):
             summary_ws.append([f"下一步动作：{action or '未填写'}", count])
+        source_batches = {}
+        for row in rows:
+            label = task_source_batch_label(row)
+            source_batches[label] = source_batches.get(label, 0) + 1
+        summary_ws.append(["", ""])
+        summary_ws.append(["来源批次", "数量"])
+        for label, count in sorted(source_batches.items()):
+            summary_ws.append([f"来源批次：{label}", count])
         style_task_sheet(summary_ws)
         criteria_ws = workbook.create_sheet("导出口径")
         criteria_ws.append(["字段", "值"])
