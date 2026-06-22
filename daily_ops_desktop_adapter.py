@@ -105,7 +105,9 @@ def store_owners():
 
 
 def save_store_owners(assignments):
-    return {"assignments": app.save_store_owner_assignments(assignments), "owners": app.operation_owner_directory()}
+    saved = app.save_store_owner_assignments(assignments)
+    assigned_existing = app.assign_existing_unassigned_tasks(saved, "管理员")
+    return {"assignments": saved, "assigned_existing": assigned_existing, "owners": app.operation_owner_directory()}
 
 
 def create_backup():

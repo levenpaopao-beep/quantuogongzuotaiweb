@@ -813,6 +813,27 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(owner_payload["tasks"][0]["store"], "7")
                 self.assertEqual(owner_payload["summary"]["unassigned"], 0)
 
+    def test_desktop_adapter_saving_store_owners_assigns_existing_unassigned_tasks(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            owner_map = root / "store_owner_map.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "价格异常", "store": "7", "owner": "", "merchant_code": "A", "source_report": "r", "source_row": 1},
+            ])
+
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
+                 patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_map):
+                result = daily_ops_desktop_adapter.save_store_owners([
+                    {"platform": "Temu", "store": "7", "owner": "小琴"},
+                ])
+
+                self.assertEqual(result["assigned_existing"], 1)
+                owner_rows = daily_ops_desktop_adapter.operation_tasks(role="owner", user="小琴")["tasks"]
+                self.assertEqual(len(owner_rows), 1)
+                self.assertEqual(owner_rows[0]["owner"], "小琴")
+
     def test_local_web_page_exposes_operation_task_workflow(self):
         html = daily_ops_app.HTML_PAGE
         self.assertIn("/api/tasks", html)
@@ -905,6 +926,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
             self.assertIn(text, js)
         self.assertIn("未分配", html + js + daily_ops_app.HTML_PAGE)
+        self.assertIn("assigned_existing", js)
+        self.assertIn("已补齐", js)
         for text in ["task-summary", "task-table", "task-actions"]:
             self.assertIn(text, css)
 

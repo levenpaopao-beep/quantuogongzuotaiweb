@@ -441,7 +441,7 @@ async function saveStoreOwners() {
   const result = await api.saveStoreOwners({ assignments });
   state.storeOwners = result.assignments || [];
   renderStoreOwners();
-  showToast(`负责人配置已保存：${state.storeOwners.length} 条`);
+  showToast(`负责人配置已保存：${state.storeOwners.length} 条；已补齐 ${result.assigned_existing || 0} 条未分配任务`);
 }
 
 function collectRules() {
