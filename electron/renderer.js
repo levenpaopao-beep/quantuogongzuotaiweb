@@ -38,6 +38,14 @@ function applyOperatorToTasks() {
   }
   if ($("#taskUser")) $("#taskUser").value = user;
   if ($("#operatorHint")) $("#operatorHint").textContent = user ? `当前身份：${role === "admin" ? "管理员" : "店长"} · ${user}` : "未设置身份时按管理员查看";
+  applyRoleVisibility(role);
+}
+
+function applyRoleVisibility(role = currentOperator().role || "admin") {
+  const ownerMode = role === "owner";
+  document.querySelectorAll("[data-admin-only]").forEach((element) => {
+    element.classList.toggle("hidden", ownerMode);
+  });
 }
 
 function saveOperator() {
@@ -214,6 +222,7 @@ function taskFilters() {
     store: $("#taskStore")?.value.trim() || "",
     platform: $("#taskPlatform")?.value || "",
     next_handler: $("#taskNextHandler")?.value || "",
+    open_only: $("#taskOpenOnly")?.checked ? "1" : "",
     overdue: $("#taskOverdue")?.checked ? "1" : "",
     unassigned: $("#taskUnassigned")?.checked ? "1" : "",
     reworked: $("#taskReworked")?.checked ? "1" : "",

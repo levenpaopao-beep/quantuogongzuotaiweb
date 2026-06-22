@@ -1333,6 +1333,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("taskOpenOnly", html)
         self.assertIn("只看未完成", html)
         self.assertIn("open_only", js)
+        self.assertIn('data-admin-only="task-review"', html)
+        self.assertIn("applyRoleVisibility", js)
         self.assertIn("taskUnassigned", html)
         self.assertIn("只看未分配", html)
         self.assertIn("taskPlatform", html)
