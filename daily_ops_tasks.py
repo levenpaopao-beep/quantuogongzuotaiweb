@@ -142,6 +142,30 @@ class OperationTaskStore:
             "by_owner": by_owner,
         }
 
+    def owner_directory(self):
+        owners = {}
+        for row in self.load()["tasks"]:
+            owner = norm(row.get("owner"))
+            if not owner:
+                continue
+            item = owners.setdefault(owner, {"owner": owner, "stores": set(), "platforms": set(), "task_count": 0})
+            store = norm(row.get("store"))
+            platform = norm(row.get("platform"))
+            if store:
+                item["stores"].add(store)
+            if platform:
+                item["platforms"].add(platform)
+            item["task_count"] += 1
+        result = []
+        for item in owners.values():
+            result.append({
+                "owner": item["owner"],
+                "stores": sorted(item["stores"]),
+                "platforms": sorted(item["platforms"]),
+                "task_count": item["task_count"],
+            })
+        return sorted(result, key=lambda row: (-row["task_count"], row["owner"]))
+
     def upsert_generated_tasks(self, rows):
         payload = self.load()
         tasks = payload["tasks"]

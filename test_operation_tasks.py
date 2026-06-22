@@ -136,6 +136,24 @@ class OperationTaskStoreTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 store.review_task(task["id"], admin="管理员", decision="同意", remark="非法审核结果")
 
+    def test_owner_directory_summarizes_task_owners_and_stores(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "7", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "低分预警", "store": "9", "owner": "小琴", "merchant_code": "B", "source_report": "r", "source_row": 2},
+                {"platform": "Shein", "task_type": "爆旺冲突", "store": "琪琪", "owner": "洁琳", "merchant_code": "C", "source_report": "r", "source_row": 3},
+                {"platform": "Temu", "task_type": "滞销处理", "store": "", "owner": "", "merchant_code": "D", "source_report": "r", "source_row": 4},
+            ])
+
+            owners = store.owner_directory()
+            self.assertEqual([row["owner"] for row in owners], ["小琴", "洁琳"])
+            self.assertEqual(owners[0]["stores"], ["7", "9"])
+            self.assertEqual(owners[0]["task_count"], 2)
+            self.assertEqual(owners[1]["stores"], ["琪琪"])
+            self.assertEqual(owners[1]["platforms"], ["Shein"])
+
     def test_daily_ops_app_syncs_report_output_into_tasks(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -370,8 +388,28 @@ class OperationTaskStoreTest(unittest.TestCase):
     def test_local_web_page_exposes_operator_login(self):
         html = daily_ops_app.HTML_PAGE
         self.assertIn("/api/session/login", html)
+        self.assertIn("/api/owners", html)
         self.assertIn("operatorToken", html)
         self.assertIn("登录身份", html)
+        self.assertIn("ownerOptions", html)
+
+    def test_owner_directory_api_is_available_before_login(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "7", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+                {"platform": "Shein", "task_type": "爆旺冲突", "store": "琪琪", "owner": "洁琳", "merchant_code": "B", "source_report": "r", "source_row": 2},
+            ])
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+                status, _content_type, body = daily_ops_app.handle_owners_api()
+                payload = json.loads(body)
+                self.assertEqual(status, 200)
+                self.assertEqual(payload["owners"][0]["owner"], "小琴")
+                self.assertEqual(payload["owners"][0]["stores"], ["7"])
+                self.assertEqual(payload["owners"][1]["owner"], "洁琳")
 
     def test_backup_exports_only_operational_state_and_can_restore(self):
         with TemporaryDirectory() as tmp:

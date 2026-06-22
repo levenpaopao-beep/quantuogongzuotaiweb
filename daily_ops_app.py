@@ -1443,6 +1443,10 @@ def operation_task_summary():
     return operation_task_store().summary()
 
 
+def operation_owner_directory():
+    return operation_task_store().owner_directory()
+
+
 def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform=""):
     return operation_task_store().list_tasks(
         role=role,
@@ -1519,6 +1523,13 @@ def handle_tasks_api(action, headers, payload):
         return json_bytes({"ok": False, "error": str(exc)}, status=401)
     except KeyError as exc:
         return json_bytes({"ok": False, "error": str(exc)}, status=404)
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
+def handle_owners_api():
+    try:
+        return json_bytes({"ok": True, "owners": operation_owner_directory()})
     except Exception as exc:
         return json_bytes({"ok": False, "error": str(exc)}, status=500)
 
@@ -1681,7 +1692,8 @@ HTML_PAGE = r"""<!doctype html>
     </header>
     <div class="login-bar">
       <select id="loginRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
-      <input id="loginUser" placeholder="登录身份">
+      <input id="loginUser" placeholder="登录身份" list="ownerOptions">
+      <datalist id="ownerOptions"></datalist>
       <input id="loginPassword" placeholder="管理员密码，可空" type="password">
       <button class="primary" onclick="loginOperator()">登录身份</button>
       <div class="identity" id="operatorIdentity">未登录：任务台账需要先登录</div>
@@ -1800,6 +1812,7 @@ let appStatus = null;
 let userRequestedShutdown = false;
 const reportRunMessages = {};
 let taskState = {summary:{}, tasks:[]};
+let ownerOptions = [];
 let operatorToken = localStorage.getItem('operatorToken') || '';
 let operatorSession = JSON.parse(localStorage.getItem('operatorSession') || 'null');
 const titles = {tasks:'任务面板', weekly:'每周工作流', rules:'规则设置', search:'基础数据查询', files:'输出文件'};
@@ -1847,11 +1860,24 @@ async function loginOperator(){
   renderOperator();
   await loadTasks();
 }
+async function loadOwnerOptions(){
+  try {
+    const res = await api('/api/owners');
+    ownerOptions = res.owners || [];
+    const list = document.getElementById('ownerOptions');
+    if(list){
+      list.innerHTML = ownerOptions.map(item => `<option value="${esc(item.owner)}">${esc(item.stores.join('、'))}</option>`).join('');
+    }
+  } catch(e) {
+    ownerOptions = [];
+  }
+}
 async function refreshStatus(){
   try {
     appStatus = await api('/api/status');
     document.getElementById('statusLine').textContent = `当前版本 ${appStatus.version || 'v2.0'}，Temu数据源 ${appStatus.temu_files} 个，Shein数据源 ${appStatus.shein_files} 个，ERP数据源 ${appStatus.erp_files} 个，基础库 ${appStatus.database.tables} 表 / ${appStatus.database.rows} 行`;
     renderReports(); renderOutputs(); renderWeeklySources(); renderRules(); renderOperator(); loadTasks(false);
+    loadOwnerOptions();
     updateReportOutputCapacity();
   } catch(e) { document.getElementById('statusLine').textContent = e.message; }
 }
@@ -2276,6 +2302,8 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                     "platform": params.get("platform", [""])[0],
                 })
                 self.send_payload(status, content_type, body)
+            elif parsed.path == "/api/owners":
+                self.send_payload(*handle_owners_api())
             elif parsed.path == "/download":
                 self.handle_download(parsed)
             else:
