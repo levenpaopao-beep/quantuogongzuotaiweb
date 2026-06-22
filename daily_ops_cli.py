@@ -90,6 +90,11 @@ def command(argv):
             payload.get("store", ""),
             payload.get("platform", ""),
         ))
+    if name == "store-owners":
+        return ok(adapter.store_owners())
+    if name == "save-store-owners":
+        payload = json.loads(sys.stdin.read() or "{}")
+        return ok(adapter.save_store_owners(payload.get("assignments", [])))
     if name == "create-backup":
         return ok(adapter.create_backup())
     if name == "restore-backup":

@@ -119,6 +119,8 @@ ipcMain.handle("api:assign-task", (_event, payload) => runPython("assign-task", 
 ipcMain.handle("api:review-task", (_event, payload) => runPython("review-task", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:done-task", (_event, payload) => runPython("done-task", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:export-tasks", (_event, payload) => runPython("export-tasks", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:store-owners", () => runPython("store-owners"));
+ipcMain.handle("api:save-store-owners", (_event, payload) => runPython("save-store-owners", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:create-backup", () => runPython("create-backup"));
 ipcMain.handle("api:restore-backup", (_event, payload) => runPython("restore-backup", [], JSON.stringify(payload || {})));
 

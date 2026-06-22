@@ -292,6 +292,72 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertTrue((output_dir / exported["file"]).exists())
                 self.assertEqual(exported["rows"], 1)
 
+    def test_store_owner_mapping_fills_report_tasks_without_owner_column(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            report = root / "shein_hot.xlsx"
+            workbook = daily_ops_tasks.Workbook()
+            ws = workbook.active
+            ws.title = "具体店铺操作表"
+            ws.append(["商家编码", "货品名称", "SKC", "店铺", "处理意见"])
+            ws.append(["S-001", "宠物背带", "SKC-S1", "琪琪", "下架重复铺货"])
+            workbook.save(report)
+
+            task_db = root / "operation_tasks.json"
+            owner_map = root / "store_owner_map.json"
+            admin = daily_ops_app.login_operator("admin", "管理员", "")
+            owner = daily_ops_app.login_operator("owner", "洁琳", "")
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
+                 patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_map):
+                status, _content_type, body = daily_ops_app.handle_store_owners_api(
+                    "POST_SAVE",
+                    {"X-Operator-Token": admin["token"]},
+                    {"assignments": [{"platform": "Shein", "store": "琪琪", "owner": "洁琳"}]},
+                )
+                self.assertEqual(status, 200)
+                self.assertEqual(json.loads(body)["assignments"][0]["owner"], "洁琳")
+
+                sync = daily_ops_app.sync_report_tasks("shein_hot", report)
+                self.assertEqual(sync["created"], 1)
+
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "GET",
+                    {"X-Operator-Token": owner["token"]},
+                    {},
+                )
+                payload = json.loads(body)
+                self.assertEqual(status, 200)
+                self.assertEqual(len(payload["tasks"]), 1)
+                self.assertEqual(payload["tasks"][0]["owner"], "洁琳")
+                self.assertEqual(payload["summary"]["unassigned"], 0)
+
+    def test_store_owner_mapping_api_requires_admin_to_save(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        owner = daily_ops_app.login_operator("owner", "小琴", "")
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+        with TemporaryDirectory() as tmp:
+            owner_map = Path(tmp) / "store_owner_map.json"
+            with patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_map):
+                status, _content_type, body = daily_ops_app.handle_store_owners_api(
+                    "POST_SAVE",
+                    {"X-Operator-Token": owner["token"]},
+                    {"assignments": [{"platform": "Temu", "store": "7", "owner": "小琴"}]},
+                )
+                self.assertEqual(status, 403)
+
+                status, _content_type, body = daily_ops_app.handle_store_owners_api(
+                    "POST_SAVE",
+                    {"X-Operator-Token": admin["token"]},
+                    {"assignments": [
+                        {"platform": "Temu", "store": "7", "owner": "小琴"},
+                        {"platform": "Shein", "store": "琪琪", "owner": "洁琳"},
+                    ]},
+                )
+                payload = json.loads(body)
+                self.assertEqual(status, 200)
+                self.assertEqual([row["store"] for row in payload["assignments"]], ["7", "琪琪"])
+
     def test_local_web_page_exposes_operation_task_workflow(self):
         html = daily_ops_app.HTML_PAGE
         self.assertIn("/api/tasks", html)
@@ -300,18 +366,20 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("/api/tasks/done", html)
         self.assertIn("/api/tasks/assign", html)
         self.assertIn("/api/tasks/export", html)
+        self.assertIn("/api/store-owners", html)
         self.assertIn("任务台账", html)
         self.assertIn("管理员审核", html)
         self.assertIn("标记完成", html)
         self.assertIn("指派负责人", html)
+        self.assertIn("店铺负责人配置", html)
 
     def test_electron_bridge_exposes_operation_task_workflow(self):
         root = Path(__file__).resolve().parent
         preload = (root / "electron" / "preload.js").read_text(encoding="utf-8")
         main = (root / "electron" / "main.js").read_text(encoding="utf-8")
-        for text in ["tasks", "submitTask", "reviewTask", "doneTask", "assignTask", "exportTasks"]:
+        for text in ["tasks", "submitTask", "reviewTask", "doneTask", "assignTask", "exportTasks", "storeOwners", "saveStoreOwners"]:
             self.assertIn(text, preload)
-        for text in ["api:tasks", "api:submit-task", "api:review-task", "api:done-task", "api:assign-task", "api:export-tasks"]:
+        for text in ["api:tasks", "api:submit-task", "api:review-task", "api:done-task", "api:assign-task", "api:export-tasks", "api:store-owners", "api:save-store-owners"]:
             self.assertIn(text, main)
 
     def test_desktop_adapter_scopes_task_summary_like_task_rows(self):
@@ -334,9 +402,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         html = (root / "electron" / "renderer.html").read_text(encoding="utf-8")
         js = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
         css = (root / "electron" / "renderer.css").read_text(encoding="utf-8")
-        for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "标记完成", "指派负责人", "导出任务"]:
+        for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "标记完成", "指派负责人", "店铺负责人配置", "导出任务"]:
             self.assertIn(text, html + js)
-        for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "doneTask", "assignTask", "exportTasks"]:
+        for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "doneTask", "assignTask", "loadStoreOwners", "saveStoreOwners", "exportTasks"]:
             self.assertIn(text, js)
         self.assertIn("未分配", html + js + daily_ops_app.HTML_PAGE)
         for text in ["task-summary", "task-table", "task-actions"]:
@@ -620,6 +688,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             (base / "operation_tasks.json").write_text('{"tasks":[{"id":"t1"}]}', encoding="utf-8")
             (base / "report_rules.json").write_text('{"slow_moving":{}}', encoding="utf-8")
             (base / "data_source_manifest.json").write_text('{"categories":{}}', encoding="utf-8")
+            (base / "store_owner_map.json").write_text('{"assignments":[{"store":"7","owner":"小琴"}]}', encoding="utf-8")
             (outputs / "should-not-backup.xlsx").write_bytes(b"xlsx")
             (temu / "source.xlsx").write_bytes(b"xlsx")
 
@@ -627,6 +696,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                  patch.object(daily_ops_app, "TASK_DB_PATH", base / "operation_tasks.json"), \
                  patch.object(daily_ops_app, "RULES_FILE", base / "report_rules.json"), \
                  patch.object(daily_ops_app, "DATA_SOURCE_MANIFEST", base / "data_source_manifest.json"), \
+                 patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", base / "store_owner_map.json"), \
                  patch.object(daily_ops_app, "OUTPUT_DIR", outputs), \
                  patch.object(daily_ops_app, "TEMU_DIR", temu):
                 result = daily_ops_app.create_operational_backup()
@@ -637,6 +707,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                     self.assertIn("基础数据库/operation_tasks.json", names)
                     self.assertIn("基础数据库/report_rules.json", names)
                     self.assertIn("基础数据库/data_source_manifest.json", names)
+                    self.assertIn("基础数据库/store_owner_map.json", names)
                     self.assertIn("temu数据源表/source.xlsx", names)
                     self.assertNotIn("outputs/should-not-backup.xlsx", names)
 

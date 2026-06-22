@@ -96,6 +96,14 @@ def export_operation_tasks(role="admin", user="", status="", task_type="", store
     return app.export_operation_tasks(role, user, status, task_type, store, platform)
 
 
+def store_owners():
+    return {"assignments": app.load_store_owner_assignments(), "owners": app.operation_owner_directory()}
+
+
+def save_store_owners(assignments):
+    return {"assignments": app.save_store_owner_assignments(assignments), "owners": app.operation_owner_directory()}
+
+
 def create_backup():
     return app.create_operational_backup()
 

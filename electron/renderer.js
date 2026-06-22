@@ -10,6 +10,7 @@ const state = {
   tasks: [],
   taskSummary: {},
   reportTaskSync: {},
+  storeOwners: [],
 };
 
 function $(selector) {
@@ -349,6 +350,36 @@ function renderRules() {
   });
 }
 
+function renderStoreOwners(assignments = state.storeOwners) {
+  const input = $("#storeOwnerMapText");
+  if (!input) return;
+  input.value = (assignments || []).map((item) => [item.platform || "", item.store || "", item.owner || ""].join("，")).join("\n");
+  const line = $("#storeOwnerStatus");
+  if (line) line.textContent = `已读取 ${(assignments || []).length} 条负责人配置`;
+}
+
+function parseStoreOwnerText() {
+  const text = $("#storeOwnerMapText")?.value || "";
+  return text.split(/\n+/).map((line) => {
+    const parts = line.split(/[,，\t]/).map((item) => item.trim());
+    return { platform: parts[0] || "", store: parts[1] || "", owner: parts[2] || "" };
+  }).filter((item) => item.store && item.owner);
+}
+
+async function loadStoreOwners() {
+  const result = await api.storeOwners();
+  state.storeOwners = result.assignments || [];
+  renderStoreOwners();
+}
+
+async function saveStoreOwners() {
+  const assignments = parseStoreOwnerText();
+  const result = await api.saveStoreOwners({ assignments });
+  state.storeOwners = result.assignments || [];
+  renderStoreOwners();
+  showToast(`负责人配置已保存：${state.storeOwners.length} 条`);
+}
+
 function collectRules() {
   const next = structuredClone(state.rules || {});
   document.querySelectorAll("[data-rule]").forEach((input) => {
@@ -389,6 +420,7 @@ async function refreshAll() {
     renderReportCards();
     renderOutputs();
     renderRules();
+    await loadStoreOwners();
     applyOperatorToTasks();
     await loadTasks(false);
     showToast("状态已刷新");
@@ -517,6 +549,8 @@ function bindEvents() {
     await api.saveRules(state.rules);
     showToast("规则已保存");
   });
+  $("#loadStoreOwnersBtn").addEventListener("click", loadStoreOwners);
+  $("#saveStoreOwnersBtn").addEventListener("click", saveStoreOwners);
   $("#searchBtn").addEventListener("click", async () => {
     const query = $("#searchInput").value.trim();
     if (!query) return;

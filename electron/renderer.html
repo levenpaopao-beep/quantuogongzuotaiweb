@@ -152,6 +152,16 @@
             <div id="rulesForm" class="rules-grid"></div>
             <button class="primary-button" id="saveRulesBtn">保存规则</button>
           </div>
+          <div class="simple-panel owner-map-panel">
+            <h2>店铺负责人配置</h2>
+            <p>每行格式：平台，店铺，负责人。用于 Shein 表格没有负责人、或导入表缺负责人时自动分配任务。</p>
+            <textarea id="storeOwnerMapText" placeholder="Temu，7，小琴&#10;Shein，琪琪，洁琳"></textarea>
+            <div class="download-actions">
+              <button class="primary-button" id="saveStoreOwnersBtn">保存负责人配置</button>
+              <button class="ghost-button" id="loadStoreOwnersBtn">重新读取</button>
+            </div>
+            <p id="storeOwnerStatus">等待读取负责人配置</p>
+          </div>
         </section>
 
         <section class="page" id="searchPage">

@@ -366,6 +366,18 @@ p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 .primary-button { background: var(--system-blue); color: white; }
 
 .simple-panel { padding: 18px; min-height: 720px; }
+.owner-map-panel { min-height: 0; margin-top: 14px; }
+.owner-map-panel p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.owner-map-panel textarea {
+  width: 100%;
+  min-height: 132px;
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: 13px/1.5 Consolas, "Microsoft YaHei", sans-serif;
+  resize: vertical;
+}
 .report-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(220px, 1fr));

@@ -38,6 +38,7 @@ DB_PATH = ROOT / "基础数据库" / "project_base_data.sqlite"
 DATA_SOURCE_MANIFEST = ROOT / "基础数据库" / "data_source_manifest.json"
 RULES_FILE = ROOT / "基础数据库" / "report_rules.json"
 TASK_DB_PATH = ROOT / "基础数据库" / "operation_tasks.json"
+STORE_OWNER_MAP_FILE = ROOT / "基础数据库" / "store_owner_map.json"
 OWNER_FILE = ROOT / "店铺负责人对应表.xlsx"
 
 HOST = "127.0.0.1"
@@ -320,6 +321,7 @@ def backup_source_paths():
         TASK_DB_PATH,
         RULES_FILE,
         DATA_SOURCE_MANIFEST,
+        STORE_OWNER_MAP_FILE,
         DB_PATH,
         OWNER_FILE,
         TEMU_DIR,
@@ -507,6 +509,77 @@ def owner_files():
     if uploaded:
         return uploaded
     return [OWNER_FILE] if OWNER_FILE.exists() else []
+
+
+def normalize_store_owner_assignment(row):
+    platform = norm(row.get("platform", ""))
+    store = norm(row.get("store", ""))
+    owner = norm(row.get("owner", ""))
+    if not store or not owner:
+        return None
+    return {"platform": platform, "store": store, "owner": owner}
+
+
+def load_store_owner_assignments():
+    path = Path(STORE_OWNER_MAP_FILE)
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    rows = payload.get("assignments", []) if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        return []
+    assignments = []
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        item = normalize_store_owner_assignment(row)
+        if not item:
+            continue
+        key = (item["platform"], item["store"])
+        if key in seen:
+            continue
+        seen.add(key)
+        assignments.append(item)
+    return assignments
+
+
+def save_store_owner_assignments(rows):
+    assignments = []
+    seen = set()
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        item = normalize_store_owner_assignment(row)
+        if not item:
+            continue
+        key = (item["platform"], item["store"])
+        if key in seen:
+            continue
+        seen.add(key)
+        assignments.append(item)
+    path = Path(STORE_OWNER_MAP_FILE)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"assignments": assignments, "updated_at": now_text()}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return assignments
+
+
+def configured_owner_for_store(platform, store):
+    platform = norm(platform)
+    keys = owner_lookup_keys(store) or ([norm(store)] if norm(store) else [])
+    for assignment in load_store_owner_assignments():
+        assignment_platform = norm(assignment.get("platform"))
+        if assignment_platform and platform and assignment_platform != platform:
+            continue
+        if assignment_platform and not platform:
+            continue
+        assignment_keys = set(owner_lookup_keys(assignment.get("store")) or [norm(assignment.get("store"))])
+        if any(key in assignment_keys for key in keys):
+            return norm(assignment.get("owner"))
+    return ""
 
 
 def bargain_input_files():
@@ -1191,6 +1264,12 @@ def load_owners():
                 owners[store] = owner
                 for key in owner_lookup_keys(store):
                     owners.setdefault(key, owner)
+    for assignment in load_store_owner_assignments():
+        store = assignment["store"]
+        owner = assignment["owner"]
+        owners[store] = owner
+        for key in owner_lookup_keys(store):
+            owners.setdefault(key, owner)
     return owners
 
 
@@ -1434,9 +1513,22 @@ def operation_task_store():
     return daily_ops_tasks.OperationTaskStore(TASK_DB_PATH)
 
 
+def apply_store_owner_mapping(rows):
+    mapped = []
+    for row in rows:
+        item = dict(row)
+        if not norm(item.get("owner")):
+            owner = configured_owner_for_store(item.get("platform", ""), item.get("store", ""))
+            if owner:
+                item["owner"] = owner
+        mapped.append(item)
+    return mapped
+
+
 def sync_report_tasks(report_id, workbook_path):
     report = REPORTS.get(report_id, {})
     rows = daily_ops_tasks.rows_from_report_workbook(report_id, report.get("name", report_id), workbook_path)
+    rows = apply_store_owner_mapping(rows)
     result = operation_task_store().upsert_generated_tasks(rows)
     result["imported_rows"] = len(rows)
     return result
@@ -1451,7 +1543,19 @@ def summarize_operation_tasks(rows):
 
 
 def operation_owner_directory():
-    return operation_task_store().owner_directory()
+    owners = {row["owner"]: row for row in operation_task_store().owner_directory()}
+    for assignment in load_store_owner_assignments():
+        owner = assignment["owner"]
+        item = owners.setdefault(owner, {"owner": owner, "stores": [], "platforms": [], "task_count": 0})
+        if assignment["store"] not in item["stores"]:
+            item["stores"].append(assignment["store"])
+        platform = assignment.get("platform", "")
+        if platform and platform not in item["platforms"]:
+            item["platforms"].append(platform)
+    for item in owners.values():
+        item["stores"] = sorted(item["stores"])
+        item["platforms"] = sorted(item["platforms"])
+    return sorted(owners.values(), key=lambda row: (-row["task_count"], row["owner"]))
 
 
 def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform=""):
@@ -1555,6 +1659,24 @@ def handle_tasks_api(action, headers, payload):
 def handle_owners_api():
     try:
         return json_bytes({"ok": True, "owners": operation_owner_directory()})
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
+def handle_store_owners_api(action, headers, payload=None):
+    try:
+        if action == "GET":
+            return json_bytes({"ok": True, "assignments": load_store_owner_assignments(), "owners": operation_owner_directory()})
+        operator = operator_from_token(token_from_headers(headers))
+        if not can_review_tasks(operator):
+            return json_bytes({"ok": False, "error": "只有管理员可以维护店铺负责人"}, status=403)
+        payload = payload or {}
+        if action == "POST_SAVE":
+            assignments = save_store_owner_assignments(payload.get("assignments", []))
+            return json_bytes({"ok": True, "assignments": assignments, "owners": operation_owner_directory()})
+        return json_bytes({"ok": False, "error": "店铺负责人接口不存在"}, status=404)
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
     except Exception as exc:
         return json_bytes({"ok": False, "error": str(exc)}, status=500)
 
@@ -1677,6 +1799,7 @@ HTML_PAGE = r"""<!doctype html>
     .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
     .field label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
     .field input, .field textarea { width:100%; }
+    .owner-map-tools textarea { width:100%; min-height:132px; font-family:Consolas, "Microsoft YaHei", monospace; }
     .task-summary { display:grid; grid-template-columns:repeat(4,minmax(140px,1fr)); gap:10px; margin-bottom:12px; }
     .task-kpi { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; }
     .task-kpi strong { display:block; font-size:22px; margin-top:4px; }
@@ -1790,6 +1913,16 @@ HTML_PAGE = r"""<!doctype html>
         </div>
         <div class="status" id="rulesStatus"></div>
       </div>
+      <div class="panel owner-map-tools" style="margin-top:14px;">
+        <h2>店铺负责人配置</h2>
+        <div class="muted" style="margin-bottom:12px;">用于 Shein 表格没有负责人、或导入表缺负责人时自动分配任务。每行格式：平台，店铺，负责人。</div>
+        <textarea id="storeOwnerMapText" placeholder="Temu，7，小琴&#10;Shein，琪琪，洁琳"></textarea>
+        <div class="row" style="margin-top:12px;">
+          <button class="primary" onclick="saveStoreOwners()">保存负责人配置</button>
+          <button class="secondary" onclick="loadStoreOwners()">重新读取</button>
+        </div>
+        <div class="status" id="storeOwnerStatus"></div>
+      </div>
     </section>
 
     <section id="search" class="section">
@@ -1897,12 +2030,48 @@ async function loadOwnerOptions(){
     ownerOptions = [];
   }
 }
+function renderStoreOwners(assignments){
+  const el = document.getElementById('storeOwnerMapText');
+  if(!el) return;
+  el.value = (assignments || []).map(item => [item.platform || '', item.store || '', item.owner || ''].join('，')).join('\n');
+}
+function parseStoreOwnerText(){
+  const text = document.getElementById('storeOwnerMapText')?.value || '';
+  return text.split(/\n+/).map(line => {
+    const parts = line.split(/[,，\t]/).map(item => item.trim());
+    return {platform: parts[0] || '', store: parts[1] || '', owner: parts[2] || ''};
+  }).filter(item => item.store && item.owner);
+}
+async function loadStoreOwners(){
+  const st = document.getElementById('storeOwnerStatus');
+  try {
+    const res = await api('/api/store-owners');
+    renderStoreOwners(res.assignments || []);
+    if(st) st.textContent = `已读取 ${res.assignments?.length || 0} 条负责人配置`;
+  } catch(e){
+    if(st) st.innerHTML = `<span class="bad">${e.message}</span>`;
+  }
+}
+async function saveStoreOwners(){
+  const st = document.getElementById('storeOwnerStatus');
+  const assignments = parseStoreOwnerText();
+  if(st) st.textContent = '正在保存负责人配置...';
+  try {
+    const res = await api('/api/store-owners', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({assignments})});
+    renderStoreOwners(res.assignments || []);
+    await loadOwnerOptions();
+    if(st) st.innerHTML = `<span class="ok">负责人配置已保存：</span>${res.assignments?.length || 0} 条。后续生成任务会自动使用。`;
+  } catch(e){
+    if(st) st.innerHTML = `<span class="bad">${e.message}</span>`;
+  }
+}
 async function refreshStatus(){
   try {
     appStatus = await api('/api/status');
     document.getElementById('statusLine').textContent = `当前版本 ${appStatus.version || 'v2.0'}，Temu数据源 ${appStatus.temu_files} 个，Shein数据源 ${appStatus.shein_files} 个，ERP数据源 ${appStatus.erp_files} 个，基础库 ${appStatus.database.tables} 表 / ${appStatus.database.rows} 行`;
     renderReports(); renderOutputs(); renderWeeklySources(); renderRules(); renderOperator(); loadTasks(false);
     loadOwnerOptions();
+    loadStoreOwners();
     updateReportOutputCapacity();
   } catch(e) { document.getElementById('statusLine').textContent = e.message; }
 }
@@ -2342,6 +2511,8 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 self.send_payload(status, content_type, body)
             elif parsed.path == "/api/owners":
                 self.send_payload(*handle_owners_api())
+            elif parsed.path == "/api/store-owners":
+                self.send_payload(*handle_store_owners_api("GET", self.headers))
             elif parsed.path == "/download":
                 self.handle_download(parsed)
             else:
@@ -2383,6 +2554,9 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 if not self.require_admin_request("保存规则"):
                     return
                 self.send_json({"ok": True, "rules": save_rules(self.read_json())})
+            elif parsed.path == "/api/store-owners":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_store_owners_api("POST_SAVE", self.headers, self.read_json()))
             elif parsed.path == "/api/upload/finish-batch":
                 cancel_scheduled_shutdown()
                 if not self.require_admin_request("结束上传"):
