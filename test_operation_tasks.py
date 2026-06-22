@@ -159,6 +159,7 @@ class OperationTaskStoreTest(unittest.TestCase):
 
             self.assertEqual(store.upsert_generated_tasks([first_week])["created"], 1)
             self.assertEqual(store.upsert_generated_tasks([first_week])["updated"], 1)
+            self.assertEqual(store.list_tasks()[0]["history"], [])
             second_result = store.upsert_generated_tasks([second_week])
             self.assertEqual(second_result["created"], 1)
             self.assertEqual(second_result["total"], 2)
@@ -440,7 +441,9 @@ class OperationTaskStoreTest(unittest.TestCase):
             updated = store.list_tasks()[0]
             self.assertEqual(updated["owner"], "洁琳")
             self.assertEqual(updated["system_action"], "继续下架重复铺货")
-            self.assertEqual(updated["history"][-1]["event"], "任务指派")
+            self.assertEqual(updated["history"][-2]["event"], "任务指派")
+            self.assertEqual(updated["history"][-1]["event"], "系统更新")
+            self.assertIn("系统建议动作", updated["history"][-1]["remark"])
 
     def test_reimport_does_not_move_submitted_task_to_another_owner(self):
         with TemporaryDirectory() as tmp:
@@ -471,6 +474,10 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(updated["status"], daily_ops_tasks.STATUS_PENDING_REVIEW)
             self.assertEqual(updated["owner_action"], "已调价")
             self.assertEqual(updated["system_action"], "低于成本价，继续处理")
+            self.assertEqual(updated["history"][-1]["event"], "系统更新")
+            self.assertEqual(updated["history"][-1]["actor"], "系统")
+            self.assertEqual(updated["history"][-1]["action"], "更新任务明细")
+            self.assertIn("系统建议动作", updated["history"][-1]["remark"])
 
     def test_reimport_does_not_overwrite_manual_assignment_with_source_owner(self):
         with TemporaryDirectory() as tmp:
@@ -499,7 +506,9 @@ class OperationTaskStoreTest(unittest.TestCase):
             updated = store.list_tasks()[0]
             self.assertEqual(updated["owner"], "洁琳")
             self.assertEqual(updated["system_action"], "仓备仍异常")
-            self.assertEqual(updated["history"][-1]["event"], "任务指派")
+            self.assertEqual(updated["history"][-2]["event"], "任务指派")
+            self.assertEqual(updated["history"][-1]["event"], "系统更新")
+            self.assertIn("系统建议动作", updated["history"][-1]["remark"])
 
     def test_unassigned_task_must_be_assigned_before_owner_submit(self):
         with TemporaryDirectory() as tmp:

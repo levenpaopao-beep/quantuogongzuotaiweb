@@ -62,6 +62,8 @@ TASK_HISTORY_COLUMNS = [
     ("remark", "备注"),
 ]
 
+TASK_UPDATE_LABELS = dict(TASK_COLUMNS)
+
 
 def now_text():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -253,6 +255,7 @@ class OperationTaskStore:
             row_id = task_identity(row)
             if row_id in existing:
                 task = existing[row_id]
+                changed_labels = []
                 for key in [
                     "platform",
                     "task_type",
@@ -268,9 +271,22 @@ class OperationTaskStore:
                     "source_sheet",
                     "source_row",
                 ]:
-                    task[key] = row.get(key, task.get(key, ""))
+                    next_value = row.get(key, task.get(key, ""))
+                    if norm(task.get(key)) != norm(next_value):
+                        changed_labels.append(TASK_UPDATE_LABELS.get(key, key))
+                    task[key] = next_value
                 if row.get("owner") and can_update_generated_owner(task):
+                    if norm(task.get("owner")) != row.get("owner", ""):
+                        changed_labels.append(TASK_UPDATE_LABELS.get("owner", "负责人"))
                     task["owner"] = row.get("owner", "")
+                if changed_labels:
+                    task.setdefault("history", []).append({
+                        "time": timestamp,
+                        "actor": "系统",
+                        "event": "系统更新",
+                        "action": "更新任务明细",
+                        "remark": "更新字段：" + "、".join(changed_labels),
+                    })
                 task["updated_at"] = timestamp
                 updated += 1
             else:
