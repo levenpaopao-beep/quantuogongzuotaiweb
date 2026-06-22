@@ -126,8 +126,8 @@ class OperationTaskStore:
             rows = [row for row in rows if norm(row.get("platform")) == norm(platform)]
         return sorted(rows, key=lambda row: (row.get("status") != STATUS_PENDING_REVIEW, row.get("updated_at", "")), reverse=True)
 
-    def summary(self):
-        rows = self.load()["tasks"]
+    def summary(self, rows=None):
+        rows = list(rows) if rows is not None else self.load()["tasks"]
         by_status = {}
         by_type = {}
         by_owner = {}

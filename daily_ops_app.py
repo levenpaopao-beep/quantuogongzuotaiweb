@@ -1443,6 +1443,10 @@ def operation_task_summary():
     return operation_task_store().summary()
 
 
+def summarize_operation_tasks(rows):
+    return operation_task_store().summary(rows)
+
+
 def operation_owner_directory():
     return operation_task_store().owner_directory()
 
@@ -1497,7 +1501,7 @@ def handle_tasks_api(action, headers, payload):
                 store=payload.get("store", ""),
                 platform=payload.get("platform", ""),
             )
-            return json_bytes({"ok": True, "operator": operator, "summary": operation_task_summary(), "tasks": rows})
+            return json_bytes({"ok": True, "operator": operator, "summary": summarize_operation_tasks(rows), "tasks": rows})
         if action == "POST_SUBMIT":
             task_id = payload.get("id", "")
             if operator.get("role") == "owner":

@@ -315,6 +315,8 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(status, 200)
                 self.assertEqual(len(payload["tasks"]), 1)
                 self.assertEqual(payload["tasks"][0]["owner"], "小琴")
+                self.assertEqual(payload["summary"]["total"], 1)
+                self.assertEqual(payload["summary"]["by_owner"], {"小琴": 1})
 
                 owner_task = payload["tasks"][0]
                 status, _content_type, body = daily_ops_app.handle_tasks_api(
