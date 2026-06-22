@@ -292,6 +292,8 @@ class OperationTaskStore:
 
     def mark_done(self, task_id, actor, remark=""):
         payload, task = self.require_task(task_id)
+        if task.get("status") != STATUS_APPROVED:
+            raise ValueError("只有已通过的任务可以标记完成")
         timestamp = now_text()
         task["status"] = STATUS_DONE
         task["updated_at"] = timestamp

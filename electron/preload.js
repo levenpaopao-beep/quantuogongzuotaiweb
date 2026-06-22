@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("dailyOps", {
   tasks: (filters) => ipcRenderer.invoke("api:tasks", filters || {}),
   submitTask: (payload) => ipcRenderer.invoke("api:submit-task", payload || {}),
   reviewTask: (payload) => ipcRenderer.invoke("api:review-task", payload || {}),
+  doneTask: (payload) => ipcRenderer.invoke("api:done-task", payload || {}),
   exportTasks: (payload) => ipcRenderer.invoke("api:export-tasks", payload || {}),
   createBackup: () => ipcRenderer.invoke("api:create-backup"),
   restoreBackup: (payload) => ipcRenderer.invoke("api:restore-backup", payload || {}),

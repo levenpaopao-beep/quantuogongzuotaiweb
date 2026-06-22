@@ -136,6 +136,39 @@ class OperationTaskStoreTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 store.review_task(task["id"], admin="管理员", decision="同意", remark="非法审核结果")
 
+    def test_admin_can_mark_approved_task_done_once(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {
+                    "platform": "Temu",
+                    "task_type": "议价审核",
+                    "store": "7",
+                    "owner": "小琴",
+                    "merchant_code": "A-001",
+                    "product_name": "红色球衣",
+                    "system_action": "同意议价",
+                    "source_report": "Temu议价回复",
+                    "source_row": 2,
+                }
+            ])
+            task = store.list_tasks()[0]
+
+            with self.assertRaises(ValueError):
+                store.mark_done(task["id"], actor="管理员", remark="未审核不能完成")
+
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已处理", remark="")
+            reviewed = store.review_task(submitted["id"], admin="管理员", decision="通过", remark="同意")
+            done = store.mark_done(reviewed["id"], actor="管理员", remark="后台已确认")
+
+            self.assertEqual(done["status"], daily_ops_tasks.STATUS_DONE)
+            self.assertEqual(done["history"][-1]["event"], "标记完成")
+            self.assertEqual(done["history"][-1]["remark"], "后台已确认")
+
+            with self.assertRaises(ValueError):
+                store.mark_done(task["id"], actor="管理员", remark="重复完成")
+
     def test_owner_directory_summarizes_task_owners_and_stores(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -191,17 +224,19 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("/api/tasks", html)
         self.assertIn("/api/tasks/submit", html)
         self.assertIn("/api/tasks/review", html)
+        self.assertIn("/api/tasks/done", html)
         self.assertIn("/api/tasks/export", html)
         self.assertIn("任务台账", html)
         self.assertIn("管理员审核", html)
+        self.assertIn("标记完成", html)
 
     def test_electron_bridge_exposes_operation_task_workflow(self):
         root = Path(__file__).resolve().parent
         preload = (root / "electron" / "preload.js").read_text(encoding="utf-8")
         main = (root / "electron" / "main.js").read_text(encoding="utf-8")
-        for text in ["tasks", "submitTask", "reviewTask", "exportTasks"]:
+        for text in ["tasks", "submitTask", "reviewTask", "doneTask", "exportTasks"]:
             self.assertIn(text, preload)
-        for text in ["api:tasks", "api:submit-task", "api:review-task", "api:export-tasks"]:
+        for text in ["api:tasks", "api:submit-task", "api:review-task", "api:done-task", "api:export-tasks"]:
             self.assertIn(text, main)
 
     def test_electron_renderer_exposes_operation_task_center(self):
@@ -209,9 +244,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         html = (root / "electron" / "renderer.html").read_text(encoding="utf-8")
         js = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
         css = (root / "electron" / "renderer.css").read_text(encoding="utf-8")
-        for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "导出任务"]:
+        for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "标记完成", "导出任务"]:
             self.assertIn(text, html + js)
-        for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "exportTasks"]:
+        for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "doneTask", "exportTasks"]:
             self.assertIn(text, js)
         for text in ["task-summary", "task-table", "task-actions"]:
             self.assertIn(text, css)
@@ -302,6 +337,22 @@ class OperationTaskStoreTest(unittest.TestCase):
                     {"id": owner_task["id"], "decision": "通过", "remark": ""},
                 )
                 self.assertEqual(status, 200)
+
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "POST_DONE",
+                    owner_headers,
+                    {"id": owner_task["id"], "remark": "店长不能完成"},
+                )
+                self.assertEqual(status, 403)
+
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "POST_DONE",
+                    admin_headers,
+                    {"id": owner_task["id"], "remark": "管理员确认完成"},
+                )
+                self.assertEqual(status, 200)
+                done_payload = json.loads(body)
+                self.assertEqual(done_payload["task"]["status"], daily_ops_tasks.STATUS_DONE)
 
     def test_admin_workflow_apis_require_admin_session(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()

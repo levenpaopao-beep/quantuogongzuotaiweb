@@ -74,6 +74,9 @@ def command(argv):
     if name == "review-task":
         payload = json.loads(sys.stdin.read() or "{}")
         return ok(adapter.review_operation_task(payload.get("id", ""), payload.get("admin", ""), payload.get("decision", ""), payload.get("remark", "")))
+    if name == "done-task":
+        payload = json.loads(sys.stdin.read() or "{}")
+        return ok(adapter.mark_operation_task_done(payload.get("id", ""), payload.get("actor", ""), payload.get("remark", "")))
     if name == "export-tasks":
         payload = json.loads(sys.stdin.read() or "{}")
         return ok(adapter.export_operation_tasks(

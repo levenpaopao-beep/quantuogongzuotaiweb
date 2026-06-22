@@ -83,6 +83,10 @@ def review_operation_task(task_id, admin, decision, remark=""):
     return app.review_operation_task(task_id, admin, decision, remark)
 
 
+def mark_operation_task_done(task_id, actor, remark=""):
+    return app.mark_operation_task_done(task_id, actor, remark)
+
+
 def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform=""):
     return app.export_operation_tasks(role, user, status, task_type, store, platform)
 

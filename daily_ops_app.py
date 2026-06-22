@@ -1466,6 +1466,10 @@ def review_operation_task(task_id, admin, decision, remark=""):
     return operation_task_store().review_task(task_id, admin, decision, remark)
 
 
+def mark_operation_task_done(task_id, actor, remark=""):
+    return operation_task_store().mark_done(task_id, actor, remark)
+
+
 def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform=""):
     rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform)
     history_rows = sum(len(row.get("history") or []) for row in rows)
@@ -1506,6 +1510,11 @@ def handle_tasks_api(action, headers, payload):
             if not can_review_tasks(operator):
                 return json_bytes({"ok": False, "error": "只有管理员可以审核"}, status=403)
             task = review_operation_task(payload.get("id", ""), operator.get("user", "管理员"), payload.get("decision", ""), payload.get("remark", ""))
+            return json_bytes({"ok": True, "task": task})
+        if action == "POST_DONE":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以标记完成"}, status=403)
+            task = mark_operation_task_done(payload.get("id", ""), operator.get("user", "管理员"), payload.get("remark", ""))
             return json_bytes({"ok": True, "task": task})
         if action == "POST_EXPORT":
             filters = scoped_task_filters(operator, payload)
@@ -2156,7 +2165,7 @@ function renderTaskRows(){
     <td>${esc(task.system_action)}</td>
     <td>${esc(task.owner_action || '-')}<br><span class="muted">${esc(task.owner_remark || '')}</span></td>
     <td>${esc(task.admin_decision || '-')}<br><span class="muted">${esc(task.admin_remark || '')}</span></td>
-    <td><div class="task-actions"><button class="secondary" onclick="showTaskHistory('${task.id}')">查看记录</button><button class="secondary" onclick="submitTask('${task.id}')">店长填写</button><button class="primary" onclick="reviewTask('${task.id}','通过')">通过</button><button class="danger" onclick="reviewTask('${task.id}','驳回')">驳回</button></div></td>
+    <td><div class="task-actions"><button class="secondary" onclick="showTaskHistory('${task.id}')">查看记录</button><button class="secondary" onclick="submitTask('${task.id}')">店长填写</button><button class="primary" onclick="reviewTask('${task.id}','通过')">通过</button><button class="secondary" onclick="doneTask('${task.id}')">标记完成</button><button class="danger" onclick="reviewTask('${task.id}','驳回')">驳回</button></div></td>
   </tr>`).join('');
 }
 function showTaskHistory(id){
@@ -2181,6 +2190,11 @@ async function reviewTask(id, decision){
   const admin = document.getElementById('taskUser').value.trim() || prompt('管理员') || '管理员';
   const remark = prompt(`管理员审核：${decision}`) || '';
   await api('/api/tasks/review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, admin, decision, remark})});
+  await loadTasks();
+}
+async function doneTask(id){
+  const remark = prompt('完成备注') || '';
+  await api('/api/tasks/done', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, remark})});
   await loadTasks();
 }
 async function exportTasks(){
@@ -2370,6 +2384,9 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/tasks/review":
                 cancel_scheduled_shutdown()
                 self.send_payload(*handle_tasks_api("POST_REVIEW", self.headers, self.read_json()))
+            elif parsed.path == "/api/tasks/done":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_tasks_api("POST_DONE", self.headers, self.read_json()))
             elif parsed.path == "/api/tasks/export":
                 cancel_scheduled_shutdown()
                 self.send_payload(*handle_tasks_api("POST_EXPORT", self.headers, self.read_json()))

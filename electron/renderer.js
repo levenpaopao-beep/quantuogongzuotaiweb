@@ -249,11 +249,12 @@ function renderTaskCenter() {
       <div>${task.system_action || ""}</div>
       <div>${task.owner_action || "-"}<br><span class="file-meta">${task.owner_remark || ""}</span></div>
       <div>${task.admin_decision || "-"}<br><span class="file-meta">${task.admin_remark || ""}</span></div>
-      <div class="task-actions"><button class="tool-button" data-action="history" data-id="${task.id}">查看记录</button><button class="tool-button" data-action="submit" data-id="${task.id}">店长填写</button><button class="tool-button primary-mini" data-action="approve" data-id="${task.id}">管理员审核</button><button class="tool-button danger-mini" data-action="reject" data-id="${task.id}">驳回</button></div>
+      <div class="task-actions"><button class="tool-button" data-action="history" data-id="${task.id}">查看记录</button><button class="tool-button" data-action="submit" data-id="${task.id}">店长填写</button><button class="tool-button primary-mini" data-action="approve" data-id="${task.id}">管理员审核</button><button class="tool-button" data-action="done" data-id="${task.id}">标记完成</button><button class="tool-button danger-mini" data-action="reject" data-id="${task.id}">驳回</button></div>
     </div>`).join("");
   rows.querySelectorAll('[data-action="history"]').forEach((button) => button.addEventListener("click", () => showTaskHistory(button.dataset.id)));
   rows.querySelectorAll('[data-action="submit"]').forEach((button) => button.addEventListener("click", () => submitTask(button.dataset.id)));
   rows.querySelectorAll('[data-action="approve"]').forEach((button) => button.addEventListener("click", () => reviewTask(button.dataset.id, "通过")));
+  rows.querySelectorAll('[data-action="done"]').forEach((button) => button.addEventListener("click", () => doneTask(button.dataset.id)));
   rows.querySelectorAll('[data-action="reject"]').forEach((button) => button.addEventListener("click", () => reviewTask(button.dataset.id, "驳回")));
 }
 
@@ -298,6 +299,14 @@ async function reviewTask(id, decision) {
   await api.reviewTask({ id, admin, decision, remark });
   await loadTasks(false);
   showToast(`管理员审核${decision}`);
+}
+
+async function doneTask(id) {
+  const actor = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
+  const remark = window.prompt("完成备注") || "";
+  await api.doneTask({ id, actor, remark });
+  await loadTasks(false);
+  showToast("任务已标记完成");
 }
 
 async function exportTasks() {
