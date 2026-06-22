@@ -730,10 +730,18 @@ def source_file_state(path):
     }
 
 
+def upload_batch_id(category):
+    return f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{safe_name(category)}"
+
+
 def record_uploaded_source(category, path):
     manifest = load_source_manifest()
     categories = manifest.setdefault("categories", {})
-    pending = manifest.setdefault("pending_batches", {}).setdefault(category, {"files": [], "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+    pending = manifest.setdefault("pending_batches", {}).setdefault(category, {
+        "batch_id": upload_batch_id(category),
+        "files": [],
+        "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    })
     state = source_file_state(path)
     active_hashes = set(categories.get(category, {}).get("sha256_list", []))
     state["changed"] = state["sha256"] not in active_hashes
@@ -742,7 +750,7 @@ def record_uploaded_source(category, path):
     pending["files"] = pending_files
     pending["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     save_source_manifest(manifest)
-    return {**state, "pending": True, "pending_count": len(pending_files)}
+    return {**state, "pending": True, "pending_count": len(pending_files), "batch_id": pending.get("batch_id", "")}
 
 
 def pending_batch(category):
@@ -764,6 +772,7 @@ def finish_upload_batch(category):
     sha256_list = [item["sha256"] for item in files]
     changed = sha256_list != list(previous.get("sha256_list", [])) or any(value not in previous_hashes for value in sha256_list)
     categories[category] = {
+        "batch_id": pending.get("batch_id") or upload_batch_id(category),
         "paths": [item["path"] for item in files],
         "path": files[-1]["path"],
         "files": [item["file"] for item in files],
@@ -816,6 +825,11 @@ def source_group_status():
             "batch_files": [],
             "total_rows": "",
             "pending_count": len(pending),
+            "pending_files": [item.get("file", "") for item in pending if item.get("file")],
+            "pending_batch_id": pending_batches.get(key, {}).get("batch_id", ""),
+            "pending_started_at": pending_batches.get(key, {}).get("started_at", ""),
+            "batch_id": "",
+            "uploaded_at": "",
         }
         if latest:
             stat = latest.stat()
@@ -832,6 +846,8 @@ def source_group_status():
             }
             item["batch_files"] = uploaded.get("files") or [path.name for path in files]
             item["total_rows"] = uploaded.get("rows", "")
+            item["batch_id"] = uploaded.get("batch_id", "")
+            item["uploaded_at"] = uploaded.get("uploaded_at", "")
             item["count"] = len(files)
             if uploaded_paths:
                 item["changed"] = bool(uploaded.get("changed"))
@@ -2398,8 +2414,11 @@ function renderWeeklySources(){
     const id = 'weekly_file_' + g.key;
     const stid = 'weekly_st_' + g.key;
     const batchNames = (g.batch_files || []).length ? (g.batch_files || []).map(esc).join('、') : (latest ? esc(latest.name) : '暂无');
-    const pendingText = g.pending_count ? `待结束上传：${g.pending_count} 个文件` : '无待提交文件';
+    const pendingFiles = (g.pending_files || []).length ? `（${(g.pending_files || []).map(esc).join('、')}）` : '';
+    const pendingText = g.pending_count ? `待结束上传：${g.pending_count} 个文件${pendingFiles}` : '无待提交文件';
     const rowsText = g.total_rows !== '' ? g.total_rows : (latest && latest.rows !== '' ? latest.rows : '-');
+    const batchText = g.batch_id ? `批次：${esc(g.batch_id)}` : '批次：-';
+    const uploadText = g.uploaded_at ? `上传时间：${esc(g.uploaded_at)}` : '上传时间：-';
     const card = document.createElement('div'); card.className = 'weekly-source-card';
     card.innerHTML = `<div class="weekly-source-head">
         <div class="weekly-source-title"><h3>${esc(g.name)}</h3><span class="badge ${badgeClass(g.status)}">${esc(g.status)}</span></div>
@@ -2409,6 +2428,8 @@ function renderWeeklySources(){
         <div class="source-meta">
           <div class="muted source-meta-line" title="${batchNames}">最新文件：${batchNames}</div>
           <div class="muted source-meta-line">更新时间：${latest ? esc(latest.modified) : '-'}</div>
+          <div class="muted source-meta-line">${batchText}</div>
+          <div class="muted source-meta-line">${uploadText}</div>
           <div class="muted source-meta-line">记录数：${rowsText}</div>
           <div class="muted source-meta-line">${pendingText}</div>
         </div>

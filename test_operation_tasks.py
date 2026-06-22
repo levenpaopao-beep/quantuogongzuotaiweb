@@ -986,6 +986,53 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertIn("基础数据库/operation_tasks.json", restored["restored"])
                 self.assertEqual(json.loads((base / "operation_tasks.json").read_text(encoding="utf-8"))["tasks"][0]["id"], "t1")
 
+    def test_source_group_status_tracks_upload_batch_metadata(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_dir = root / "temu数据源表"
+            source_dir.mkdir()
+            manifest = root / "data_source_manifest.json"
+            source = source_dir / "20260622-Temu销售.xlsx"
+            workbook = daily_ops_tasks.Workbook()
+            ws = workbook.active
+            ws.append(["店铺", "SKC", "销量"])
+            ws.append(["7", "SKC1", 10])
+            workbook.save(source)
+
+            weekly_groups = {
+                "temu_platform": {
+                    "name": "Temu 销售表",
+                    "description": "Temu 仓库销售情况导出表",
+                    "patterns": ["*.xlsx"],
+                    "folder": source_dir,
+                }
+            }
+            upload_targets = {"temu_platform": ("Temu平台表", source_dir)}
+
+            with patch.object(daily_ops_app, "DATA_SOURCE_MANIFEST", manifest), \
+                 patch.object(daily_ops_app, "WEEKLY_SOURCE_GROUPS", weekly_groups), \
+                 patch.object(daily_ops_app, "UPLOAD_TARGETS", upload_targets):
+                pending = daily_ops_app.record_uploaded_source("temu_platform", source)
+                self.assertTrue(pending["pending"])
+                self.assertIn("batch_id", pending)
+
+                pending_status = daily_ops_app.source_group_status()[0]
+                self.assertEqual(pending_status["status"], "待结束上传")
+                self.assertEqual(pending_status["pending_count"], 1)
+                self.assertEqual(pending_status["pending_files"], ["20260622-Temu销售.xlsx"])
+                self.assertEqual(pending_status["pending_batch_id"], pending["batch_id"])
+
+                finished = daily_ops_app.finish_upload_batch("temu_platform")
+                self.assertEqual(finished["batch_id"], pending["batch_id"])
+                self.assertEqual(finished["count"], 1)
+                self.assertEqual(finished["rows"], 1)
+
+                active_status = daily_ops_app.source_group_status()[0]
+                self.assertEqual(active_status["batch_id"], pending["batch_id"])
+                self.assertEqual(active_status["uploaded_at"], finished["uploaded_at"])
+                self.assertEqual(active_status["batch_files"], ["20260622-Temu销售.xlsx"])
+                self.assertEqual(active_status["total_rows"], 1)
+
     def test_backup_entrypoints_are_exposed(self):
         html = daily_ops_app.HTML_PAGE
         cli = (Path(__file__).resolve().parent / "daily_ops_cli.py").read_text(encoding="utf-8")
@@ -1027,6 +1074,14 @@ class OperationTaskStoreTest(unittest.TestCase):
         html = daily_ops_app.HTML_PAGE
         renderer = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
         for text in ["reportTaskSummary", "已生成任务", "report_tasks"]:
+            self.assertIn(text, html)
+            self.assertIn(text, renderer)
+
+    def test_upload_batch_metadata_is_visible_in_web_and_desktop(self):
+        root = Path(__file__).resolve().parent
+        html = daily_ops_app.HTML_PAGE
+        renderer = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
+        for text in ["batch_id", "uploaded_at", "pending_files", "批次", "上传时间"]:
             self.assertIn(text, html)
             self.assertIn(text, renderer)
 

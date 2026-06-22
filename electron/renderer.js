@@ -91,14 +91,15 @@ function renderSourceProgress(group) {
     </div>`;
   }
   if (group.pending_count) {
+    const pendingFiles = (group.pending_files || []).map(fileBaseName).join("、");
     return `<div class="source-progress source-progress-pending">
       <strong>待结束上传</strong>
-      <span>已上传 ${group.pending_count} 个文件，点击“结束上传”后才会正式生效。</span>
+      <span>已上传 ${group.pending_count} 个文件${pendingFiles ? `：${pendingFiles}` : ""}，点击“结束上传”后才会正式生效。</span>
     </div>`;
   }
   return `<div class="source-progress">
-    <strong>当前批次</strong>
-    <span>未选择新文件。</span>
+    <strong>当前批次${group.batch_id ? `：${group.batch_id}` : ""}</strong>
+    <span>${group.uploaded_at ? `上传时间 ${group.uploaded_at}` : "未选择新文件。"}</span>
   </div>`;
 }
 
@@ -113,7 +114,7 @@ function renderSources(groups) {
     row.className = "table-row";
     row.innerHTML = `
       <div class="table-cell source-name"><span class="source-badge ${badgeClass}">${badgeText}</span><span>${group.name}</span></div>
-      <div class="table-cell"><div class="file-name" title="${latestName(group)}">${latestName(group)}</div><div class="file-meta">${group.latest?.modified || "等待上传"}</div>${renderSourceProgress(group)}</div>
+      <div class="table-cell"><div class="file-name" title="${latestName(group)}">${latestName(group)}</div><div class="file-meta">${group.latest?.modified || "等待上传"}${group.batch_id ? ` · 批次 ${group.batch_id}` : ""}</div>${renderSourceProgress(group)}</div>
       <div class="table-cell pending">${group.pending_count || 0}</div>
       <div class="table-cell rows-count">${group.total_rows || group.latest?.rows || "-"}</div>
       <div class="table-cell"><span class="status-pill ${statusClass(group.status)}">${group.status}</span><div class="file-meta">${group.latest?.modified ? `更新于 ${group.latest.modified.slice(5, 16)}` : ""}</div></div>
