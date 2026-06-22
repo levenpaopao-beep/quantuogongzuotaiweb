@@ -121,6 +121,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                 log_headers = [cell.value for cell in log_ws[1]]
                 self.assertIn("事件", log_headers)
                 self.assertIn("操作人", log_headers)
+                self.assertIn("处理凭证", log_headers)
                 self.assertIn("当前状态", log_headers)
                 self.assertIn("下一步处理人", log_headers)
                 self.assertIn("下一步动作", log_headers)
@@ -133,6 +134,8 @@ class OperationTaskStoreTest(unittest.TestCase):
                     for row in range(2, log_ws.max_row + 1)
                 }
                 review_row = log_rows_by_event["管理员审核"]
+                submit_row = log_rows_by_event["店长提交"]
+                self.assertEqual(log_ws.cell(row=submit_row, column=log_headers.index("处理凭证") + 1).value, "后台截图：https://example.test/proof-a")
                 self.assertEqual(log_ws.cell(row=review_row, column=log_headers.index("当前状态") + 1).value, daily_ops_tasks.STATUS_APPROVED)
                 self.assertEqual(log_ws.cell(row=review_row, column=log_headers.index("下一步处理人") + 1).value, "管理员")
                 self.assertEqual(log_ws.cell(row=review_row, column=log_headers.index("下一步动作") + 1).value, "标记完成或归档")
@@ -1456,7 +1459,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         root = Path(__file__).resolve().parent
         html = daily_ops_app.HTML_PAGE
         renderer = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
-        for text in ["showTaskHistory", "查看记录", "操作记录", "动作后状态", "动作后下一步"]:
+        for text in ["showTaskHistory", "查看记录", "操作记录", "处理凭证", "动作后状态", "动作后下一步"]:
             self.assertIn(text, html)
             self.assertIn(text, renderer)
 

@@ -355,7 +355,7 @@ function showTaskHistory(id) {
   }
   const lines = history.map((item) => {
     const nextAfter = [item.next_handler_after, item.next_action_after].filter(Boolean).join(" / ") || "-";
-    return `${item.time || ""} ${item.event || ""}\n操作人：${item.actor || "-"}\n动作：${item.action || "-"}\n备注：${item.remark || "-"}\n动作后状态：${item.status_after || "-"}\n动作后下一步：${nextAfter}`;
+    return `${item.time || ""} ${item.event || ""}\n操作人：${item.actor || "-"}\n动作：${item.action || "-"}\n备注：${item.remark || "-"}\n处理凭证：${item.proof || "-"}\n动作后状态：${item.status_after || "-"}\n动作后下一步：${nextAfter}`;
   });
   window.alert(`${title}\n\n${lines.join("\n\n")}`);
 }

@@ -71,6 +71,7 @@ TASK_HISTORY_COLUMNS = [
     ("actor", "操作人"),
     ("action", "动作"),
     ("remark", "备注"),
+    ("proof", "处理凭证"),
     ("status_after", "动作后状态"),
     ("next_handler_after", "动作后下一步处理人"),
     ("next_action_after", "动作后下一步动作"),
@@ -226,7 +227,7 @@ def task_source_batch_label(row):
     return " / ".join(parts) or "未填写"
 
 
-def history_entry(task, actor, event, action, remark="", time=""):
+def history_entry(task, actor, event, action, remark="", time="", proof=""):
     next_handler, next_action = task_next_step(task)
     return {
         "time": time or now_text(),
@@ -234,6 +235,7 @@ def history_entry(task, actor, event, action, remark="", time=""):
         "event": norm(event),
         "action": norm(action),
         "remark": norm(remark),
+        "proof": norm(proof),
         "status_after": norm(task.get("status")),
         "next_handler_after": next_handler,
         "next_action_after": next_action,
@@ -484,7 +486,7 @@ class OperationTaskStore:
         task["admin_reviewed_by"] = ""
         task["admin_reviewed_at"] = ""
         task["updated_at"] = timestamp
-        task.setdefault("history", []).append(history_entry(task, actor, "店长提交", action, remark, time=timestamp))
+        task.setdefault("history", []).append(history_entry(task, actor, "店长提交", action, remark, time=timestamp, proof=proof))
         self.save(payload)
         return public_task(task)
 
@@ -600,6 +602,7 @@ class OperationTaskStore:
                     item.get("actor", ""),
                     item.get("action", ""),
                     item.get("remark", ""),
+                    item.get("proof", ""),
                     item.get("status_after", row.get("status", "")),
                     item.get("next_handler_after", next_handler),
                     item.get("next_action_after", next_action),
