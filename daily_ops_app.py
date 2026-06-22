@@ -1671,6 +1671,22 @@ def handle_search_api(action, headers, payload):
         return json_bytes({"ok": False, "error": str(exc)}, status=500)
 
 
+def handle_rules_api(action, headers, payload=None):
+    try:
+        operator = operator_from_token(token_from_headers(headers))
+        if not can_review_tasks(operator):
+            return json_bytes({"ok": False, "error": "只有管理员可以维护规则"}, status=403)
+        if action == "GET":
+            return json_bytes({"ok": True, "rules": load_rules()})
+        if action == "POST_SAVE":
+            return json_bytes({"ok": True, "rules": save_rules(payload or {})})
+        return json_bytes({"ok": False, "error": "规则接口不存在"}, status=404)
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
 def operation_task_store():
     return daily_ops_tasks.OperationTaskStore(TASK_DB_PATH)
 
@@ -2904,7 +2920,7 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/status":
                 self.send_payload(*handle_status_api(self.headers))
             elif parsed.path == "/api/rules":
-                self.send_json({"ok": True, "rules": load_rules()})
+                self.send_payload(*handle_rules_api("GET", self.headers))
             elif parsed.path == "/api/search":
                 params = parse_qs(parsed.query)
                 self.send_payload(*handle_search_api("GET", self.headers, {
@@ -2962,9 +2978,7 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "result": run_weekly_reports()})
             elif parsed.path == "/api/rules":
                 cancel_scheduled_shutdown()
-                if not self.require_admin_request("保存规则"):
-                    return
-                self.send_json({"ok": True, "rules": save_rules(self.read_json())})
+                self.send_payload(*handle_rules_api("POST_SAVE", self.headers, self.read_json()))
             elif parsed.path == "/api/store-owners":
                 cancel_scheduled_shutdown()
                 self.send_payload(*handle_store_owners_api("POST_SAVE", self.headers, self.read_json()))

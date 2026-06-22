@@ -1643,6 +1643,33 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["operator"]["role"], "admin")
 
+    def test_rules_api_requires_admin_session(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        owner = daily_ops_app.login_operator("owner", "小琴", "")
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+
+        status, _content_type, body = daily_ops_app.handle_rules_api("GET", {}, None)
+        self.assertEqual(status, 401)
+        self.assertIn("请先登录", json.loads(body)["error"])
+
+        status, _content_type, body = daily_ops_app.handle_rules_api(
+            "GET",
+            {"X-Operator-Token": owner["token"]},
+            None,
+        )
+        self.assertEqual(status, 403)
+        self.assertIn("只有管理员", json.loads(body)["error"])
+
+        with patch.object(daily_ops_app, "load_rules", return_value={"hot_item": {"keywords": ["爆"]}}):
+            status, _content_type, body = daily_ops_app.handle_rules_api(
+                "GET",
+                {"X-Operator-Token": admin["token"]},
+                None,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["rules"], {"hot_item": {"keywords": ["爆"]}})
+
     def test_search_api_requires_admin_session(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
         owner = daily_ops_app.login_operator("owner", "小琴", "")
