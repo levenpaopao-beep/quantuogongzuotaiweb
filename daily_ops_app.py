@@ -1322,6 +1322,7 @@ def run_weekly_reports():
         ("temu_inventory", "V1"),
         ("temu_hot", "V1.1"),
         ("temu_slow", "V3"),
+        ("temu_bargain", "V1"),
         ("low_score_warning", "V1"),
         ("shein_price", "V1"),
         ("shein_inventory", "V1"),

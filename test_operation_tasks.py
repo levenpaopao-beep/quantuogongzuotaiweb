@@ -2208,7 +2208,10 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("result.task_sync", renderer)
 
     def test_weekly_report_generation_returns_total_task_sync_summary(self):
+        seen_reports = []
+
         def fake_run_report(report_id, _version):
+            seen_reports.append(report_id)
             if report_id == "temu_inventory":
                 raise ValueError("缺少库存表")
             return {
@@ -2224,8 +2227,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         with patch.object(daily_ops_app, "run_report", fake_run_report):
             result = daily_ops_app.run_weekly_reports()
 
-        self.assertEqual(result["summary"]["total"], 8)
-        self.assertEqual(result["summary"]["ok"], 7)
+        self.assertIn("temu_bargain", seen_reports)
+        self.assertEqual(result["summary"]["total"], 9)
+        self.assertEqual(result["summary"]["ok"], 8)
         self.assertEqual(result["summary"]["failed"], 1)
         self.assertEqual(result["task_sync"], {"created": 2, "updated": 1, "imported_rows": 6})
 
