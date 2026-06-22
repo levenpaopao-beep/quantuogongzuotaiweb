@@ -174,6 +174,35 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(len(owner_rows), 1)
             self.assertEqual(store.summary()["unassigned"], 0)
 
+    def test_reimport_without_owner_keeps_manual_assignment(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            source = {
+                "platform": "Shein",
+                "task_type": "爆旺冲突",
+                "store": "琪琪",
+                "owner": "",
+                "merchant_code": "B-001",
+                "product_name": "宠物背带",
+                "system_action": "下架重复铺货",
+                "source_report": "Shein爆旺款重复预警",
+                "source_file": "shein-hot.xlsx",
+                "source_sheet": "具体店铺操作表",
+                "source_row": 2,
+            }
+            store.upsert_generated_tasks([source])
+            task = store.list_tasks()[0]
+            store.assign_task(task["id"], actor="管理员", owner="洁琳", remark="手动补负责人")
+
+            result = store.upsert_generated_tasks([{**source, "system_action": "继续下架重复铺货"}])
+
+            self.assertEqual(result["updated"], 1)
+            updated = store.list_tasks()[0]
+            self.assertEqual(updated["owner"], "洁琳")
+            self.assertEqual(updated["system_action"], "继续下架重复铺货")
+            self.assertEqual(updated["history"][-1]["event"], "任务指派")
+
     def test_task_status_flow_rejects_invalid_operations(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -189,7 +189,6 @@ class OperationTaskStore:
                     "platform",
                     "task_type",
                     "store",
-                    "owner",
                     "merchant_code",
                     "skc",
                     "spu",
@@ -201,6 +200,8 @@ class OperationTaskStore:
                     "source_row",
                 ]:
                     task[key] = row.get(key, task.get(key, ""))
+                if row.get("owner"):
+                    task["owner"] = row.get("owner", "")
                 task["updated_at"] = timestamp
                 updated += 1
             else:
