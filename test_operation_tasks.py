@@ -882,6 +882,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         css = (root / "electron" / "renderer.css").read_text(encoding="utf-8")
         for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "批量通过", "批量驳回", "标记完成", "指派负责人", "店铺负责人配置", "导出任务"]:
             self.assertIn(text, html + js)
+        for text in ["价格异常", "库存异常"]:
+            self.assertIn(text, html)
+            self.assertIn(text, daily_ops_app.HTML_PAGE)
         for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "batchReviewTasks", "doneTask", "assignTask", "loadStoreOwners", "saveStoreOwners", "exportTasks", "taskActionButtons", "renderOwnerTaskSummary"]:
             self.assertIn(text, js)
         self.assertIn("owner_status", js)
