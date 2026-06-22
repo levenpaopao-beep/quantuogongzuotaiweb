@@ -1001,6 +1001,19 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(ws.cell(row=2, column=completed_by_col).value, "管理员")
                 self.assertTrue(ws.cell(row=2, column=completed_at_col).value)
                 self.assertEqual(ws.cell(row=2, column=completed_remark_col).value, "后台已确认")
+
+                history_ws = workbook["操作记录"]
+                history_headers = [cell.value for cell in history_ws[1]]
+                status_after_col = history_headers.index("动作后状态") + 1
+                event_col = history_headers.index("事件") + 1
+                status_by_event = {
+                    history_ws.cell(row=row, column=event_col).value: history_ws.cell(row=row, column=status_after_col).value
+                    for row in range(2, history_ws.max_row + 1)
+                }
+                self.assertEqual(status_by_event["系统生成"], daily_ops_tasks.STATUS_PENDING_OWNER)
+                self.assertEqual(status_by_event["店长提交"], daily_ops_tasks.STATUS_PENDING_REVIEW)
+                self.assertEqual(status_by_event["管理员审核"], daily_ops_tasks.STATUS_APPROVED)
+                self.assertEqual(status_by_event["标记完成"], daily_ops_tasks.STATUS_DONE)
             finally:
                 workbook.close()
 

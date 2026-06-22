@@ -70,6 +70,9 @@ TASK_HISTORY_COLUMNS = [
     ("actor", "操作人"),
     ("action", "动作"),
     ("remark", "备注"),
+    ("status_after", "动作后状态"),
+    ("next_handler_after", "动作后下一步处理人"),
+    ("next_action_after", "动作后下一步动作"),
 ]
 
 TASK_UPDATE_LABELS = dict(TASK_COLUMNS)
@@ -217,6 +220,20 @@ def task_source_batch_label(row):
     ]
     parts = [part for part in parts if part]
     return " / ".join(parts) or "未填写"
+
+
+def history_entry(task, actor, event, action, remark="", time=""):
+    next_handler, next_action = task_next_step(task)
+    return {
+        "time": time or now_text(),
+        "actor": norm(actor),
+        "event": norm(event),
+        "action": norm(action),
+        "remark": norm(remark),
+        "status_after": norm(task.get("status")),
+        "next_handler_after": next_handler,
+        "next_action_after": next_action,
+    }
 
 
 class OperationTaskStore:
@@ -375,13 +392,7 @@ class OperationTaskStore:
                         changed_labels.append(TASK_UPDATE_LABELS.get("owner", "负责人"))
                     task["owner"] = row.get("owner", "")
                 if changed_labels:
-                    task.setdefault("history", []).append({
-                        "time": timestamp,
-                        "actor": "系统",
-                        "event": "系统更新",
-                        "action": "更新任务明细",
-                        "remark": "更新字段：" + "、".join(changed_labels),
-                    })
+                    task.setdefault("history", []).append(history_entry(task, "系统", "系统更新", "更新任务明细", "更新字段：" + "、".join(changed_labels), time=timestamp))
                 task["updated_at"] = timestamp
                 updated += 1
             else:
@@ -410,16 +421,11 @@ class OperationTaskStore:
                     "source_file": row.get("source_file", ""),
                     "source_sheet": row.get("source_sheet", ""),
                     "source_row": row.get("source_row", ""),
-                    "history": [{
-                        "time": timestamp,
-                        "actor": "系统",
-                        "event": "系统生成",
-                        "action": "生成待处理任务",
-                        "remark": generated_task_remark(row),
-                    }],
+                    "history": [],
                     "created_at": timestamp,
                     "updated_at": timestamp,
                 }
+                task["history"].append(history_entry(task, "系统", "系统生成", "生成待处理任务", generated_task_remark(row), time=timestamp))
                 tasks.append(task)
                 existing[row_id] = task
                 created += 1
@@ -444,13 +450,7 @@ class OperationTaskStore:
         previous_owner = norm(task.get("owner"))
         task["owner"] = owner
         task["updated_at"] = timestamp
-        task.setdefault("history", []).append({
-            "time": timestamp,
-            "actor": norm(actor),
-            "event": "任务指派",
-            "action": f"指派给 {owner}",
-            "remark": norm(remark) or (f"原负责人：{previous_owner}" if previous_owner else ""),
-        })
+        task.setdefault("history", []).append(history_entry(task, actor, "任务指派", f"指派给 {owner}", norm(remark) or (f"原负责人：{previous_owner}" if previous_owner else ""), time=timestamp))
         self.save(payload)
         return public_task(task)
 
@@ -478,13 +478,7 @@ class OperationTaskStore:
         task["admin_reviewed_by"] = ""
         task["admin_reviewed_at"] = ""
         task["updated_at"] = timestamp
-        task.setdefault("history", []).append({
-            "time": timestamp,
-            "actor": actor,
-            "event": "店长提交",
-            "action": action,
-            "remark": norm(remark),
-        })
+        task.setdefault("history", []).append(history_entry(task, actor, "店长提交", action, remark, time=timestamp))
         self.save(payload)
         return public_task(task)
 
@@ -504,13 +498,7 @@ class OperationTaskStore:
         task["admin_reviewed_at"] = timestamp
         task["status"] = STATUS_APPROVED if decision == "通过" else STATUS_REJECTED
         task["updated_at"] = timestamp
-        task.setdefault("history", []).append({
-            "time": timestamp,
-            "actor": norm(admin),
-            "event": "管理员审核",
-            "action": decision,
-            "remark": norm(remark),
-        })
+        task.setdefault("history", []).append(history_entry(task, admin, "管理员审核", decision, remark, time=timestamp))
         self.save(payload)
         return public_task(task)
 
@@ -547,13 +535,7 @@ class OperationTaskStore:
             task["admin_reviewed_at"] = timestamp
             task["status"] = STATUS_APPROVED if decision == "通过" else STATUS_REJECTED
             task["updated_at"] = timestamp
-            task.setdefault("history", []).append({
-                "time": timestamp,
-                "actor": norm(admin),
-                "event": "管理员批量审核",
-                "action": decision,
-                "remark": norm(remark),
-            })
+            task.setdefault("history", []).append(history_entry(task, admin, "管理员批量审核", decision, remark, time=timestamp))
         self.save(payload)
         return {"count": len(tasks), "tasks": [public_task(task) for task in tasks]}
 
@@ -569,13 +551,7 @@ class OperationTaskStore:
         task["completed_at"] = timestamp
         task["completed_remark"] = norm(remark)
         task["updated_at"] = timestamp
-        task.setdefault("history", []).append({
-            "time": timestamp,
-            "actor": norm(actor),
-            "event": "标记完成",
-            "action": STATUS_DONE,
-            "remark": norm(remark),
-        })
+        task.setdefault("history", []).append(history_entry(task, actor, "标记完成", STATUS_DONE, remark, time=timestamp))
         self.save(payload)
         return public_task(task)
 
@@ -618,6 +594,9 @@ class OperationTaskStore:
                     item.get("actor", ""),
                     item.get("action", ""),
                     item.get("remark", ""),
+                    item.get("status_after", row.get("status", "")),
+                    item.get("next_handler_after", next_handler),
+                    item.get("next_action_after", next_action),
                 ])
         style_task_sheet(log_ws)
         owner_ws = workbook.create_sheet("负责人汇总")
