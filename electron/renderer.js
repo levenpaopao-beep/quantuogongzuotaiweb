@@ -147,12 +147,13 @@ function renderReportQueue() {
     const hasOutput = Boolean(latest);
     const taskSync = state.reportTaskSync[reportId];
     const taskLine = taskSync ? taskSyncSummary(taskSync) : reportTaskSummary(reportId);
+    const taskBadges = reportTaskBadges(reportId);
     const item = document.createElement("div");
     item.className = `queue-item ${hasOutput ? "queue-item-done" : "queue-item-todo"}`;
     item.innerHTML = `
       <div>${index + 1}</div>
       <div class="queue-icon">${hasOutput ? "✓" : "!"}</div>
-      <div><div class="queue-title">${report.name}</div><div class="queue-subtitle">${hasOutput ? latest.modified : "等待生成"}</div><div class="queue-task-sync">${taskLine}</div></div>
+      <div><div class="queue-title">${report.name}</div><div class="queue-subtitle">${hasOutput ? latest.modified : "等待生成"}</div>${taskBadges}<div class="queue-task-sync">${taskLine}</div></div>
       <div class="queue-status">${hasOutput ? "已完成" : "未完成"}</div>
       <div>›</div>
     `;
@@ -484,6 +485,17 @@ function reportTaskSummary(reportId) {
   const item = state.reportTasks?.[reportId] || {};
   const status = item.by_status || {};
   return `已生成任务 ${item.total || 0} 条，待店长 ${status["待店长处理"] || 0} 条，待审核 ${status["待管理员审核"] || 0} 条`;
+}
+
+function reportTaskBadges(reportId) {
+  const item = state.reportTasks?.[reportId] || {};
+  const status = item.by_status || {};
+  const badges = [
+    ["任务", item.total || 0],
+    ["待店长", status["待店长处理"] || 0],
+    ["待审核", status["待管理员审核"] || 0],
+  ];
+  return `<div class="queue-task-badges">${badges.map(([label, value]) => `<span class="queue-task-badge">${label} ${value}</span>`).join("")}</div>`;
 }
 
 async function refreshAll() {

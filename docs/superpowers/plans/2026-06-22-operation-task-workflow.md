@@ -58,7 +58,7 @@
 
 - [x] Add the same task center UI to the Electron desktop renderer.
 - [x] Add a simple operator selector for 管理员 / 店长 and current user.
-- [ ] Add task badges to the weekly report queue showing how many tasks each report generated. Deferred after the 5-day MVP because the task center already shows the generated ledger and export status.
+- [x] Add task badges to the weekly report queue showing how many tasks each report generated.
 
 ### Task 5: Deployment Readiness
 
