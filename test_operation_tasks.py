@@ -85,7 +85,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             export_path = store.export_tasks(root / "导出.xlsx")
             workbook = load_workbook(export_path, read_only=True, data_only=True)
             try:
-                self.assertEqual(workbook.sheetnames, ["任务台账", "操作记录"])
+                self.assertEqual(workbook.sheetnames, ["任务台账", "操作记录", "负责人汇总"])
                 ws = workbook["任务台账"]
                 self.assertEqual(ws.max_row, 3)
                 headers = [cell.value for cell in ws[1]]
@@ -99,6 +99,12 @@ class OperationTaskStoreTest(unittest.TestCase):
                 events = [log_ws.cell(row=row, column=log_headers.index("事件") + 1).value for row in range(2, log_ws.max_row + 1)]
                 self.assertIn("店长提交", events)
                 self.assertIn("管理员审核", events)
+                owner_ws = workbook["负责人汇总"]
+                owner_headers = [cell.value for cell in owner_ws[1]]
+                self.assertEqual(owner_headers, ["负责人", "任务总数", "待店长处理", "待管理员审核", "已通过", "已驳回", "已完成"])
+                owner_rows = {owner_ws.cell(row=row, column=1).value: row for row in range(2, owner_ws.max_row + 1)}
+                self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=2).value, 1)
+                self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=5).value, 1)
             finally:
                 workbook.close()
 
@@ -842,9 +848,10 @@ class OperationTaskStoreTest(unittest.TestCase):
                 exported_path = output_dir / exported["file"]
                 exported_book = load_workbook(exported_path, read_only=True, data_only=True)
                 try:
-                    self.assertEqual(exported_book.sheetnames, ["任务台账", "操作记录"])
+                    self.assertEqual(exported_book.sheetnames, ["任务台账", "操作记录", "负责人汇总"])
                     self.assertEqual(exported_book["任务台账"].max_row, 2)
                     self.assertEqual(exported_book["操作记录"].max_row, 3)
+                    self.assertEqual(exported_book["负责人汇总"].max_row, 2)
                 finally:
                     exported_book.close()
 

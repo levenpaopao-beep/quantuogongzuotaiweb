@@ -410,6 +410,21 @@ class OperationTaskStore:
                     item.get("remark", ""),
                 ])
         style_task_sheet(log_ws)
+        owner_ws = workbook.create_sheet("负责人汇总")
+        owner_ws.append(["负责人", "任务总数", STATUS_PENDING_OWNER, STATUS_PENDING_REVIEW, STATUS_APPROVED, STATUS_REJECTED, STATUS_DONE])
+        owner_rows = sorted(self.summary(rows).get("owner_status", {}).values(), key=lambda item: (-item.get("total", 0), item.get("owner", "")))
+        for item in owner_rows:
+            status = item.get("by_status", {})
+            owner_ws.append([
+                item.get("owner", ""),
+                item.get("total", 0),
+                status.get(STATUS_PENDING_OWNER, 0),
+                status.get(STATUS_PENDING_REVIEW, 0),
+                status.get(STATUS_APPROVED, 0),
+                status.get(STATUS_REJECTED, 0),
+                status.get(STATUS_DONE, 0),
+            ])
+        style_task_sheet(owner_ws)
         workbook.save(output_path)
         return output_path
 
