@@ -426,7 +426,7 @@ p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 .task-kpi strong { display: block; margin-top: 4px; font-size: 24px; }
 .task-filters {
   display: grid;
-  grid-template-columns: 112px 150px 160px 150px minmax(120px, 1fr) 96px;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }

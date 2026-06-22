@@ -114,6 +114,7 @@ ipcMain.handle("api:tasks", (_event, filters) => {
     payload.platform || "",
     payload.overdue || "",
     payload.unassigned || "",
+    payload.next_handler || "",
   ]);
 });
 ipcMain.handle("api:submit-task", (_event, payload) => runPython("submit-task", [], JSON.stringify(payload || {})));

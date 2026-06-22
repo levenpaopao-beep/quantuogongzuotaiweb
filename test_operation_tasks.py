@@ -267,6 +267,17 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(rows["approved"]["next_handler"], "管理员")
             self.assertEqual(rows["approved"]["next_action"], "标记完成或归档")
 
+            admin_queue = daily_ops_tasks.OperationTaskStore(task_db).list_tasks(
+                next_handler="管理员",
+                now=datetime(2026, 6, 22, 12, 0, 0),
+            )
+            self.assertEqual({row["id"] for row in admin_queue}, {"unassigned", "owner-overdue", "review", "approved"})
+            owner_queue = daily_ops_tasks.OperationTaskStore(task_db).list_tasks(
+                next_handler="店长",
+                now=datetime(2026, 6, 22, 12, 0, 0),
+            )
+            self.assertEqual([row["id"] for row in owner_queue], ["owner-normal"])
+
             export_path = daily_ops_tasks.OperationTaskStore(task_db).export_tasks(root / "导出.xlsx", now=datetime(2026, 6, 22, 12, 0, 0))
             workbook = load_workbook(export_path, read_only=True, data_only=True)
             try:
@@ -1519,7 +1530,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                 status, _content_type, body = daily_ops_app.handle_tasks_api(
                     "POST_EXPORT",
                     admin_headers,
-                    {"role": "owner", "user": "小琴"},
+                    {"role": "owner", "user": "小琴", "next_handler": "管理员"},
                 )
                 self.assertEqual(status, 200)
                 exported = json.loads(body)
@@ -1542,6 +1553,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                     }
                     self.assertEqual(criteria["role"], "owner")
                     self.assertEqual(criteria["user"], "小琴")
+                    self.assertEqual(criteria["next_handler"], "管理员")
                     self.assertEqual(criteria["rows"], 1)
                     self.assertEqual(criteria["history_rows"], 3)
                 finally:

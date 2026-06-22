@@ -1680,7 +1680,7 @@ def operation_owner_directory():
     return sorted(owners.values(), key=lambda row: (-row["task_count"], row["owner"]))
 
 
-def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned=""):
+def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler=""):
     return operation_task_store().list_tasks(
         role=role,
         user=user,
@@ -1690,6 +1690,7 @@ def list_operation_tasks(role="admin", user="", status="", task_type="", store="
         platform=platform,
         overdue=overdue,
         unassigned=unassigned,
+        next_handler=next_handler,
     )
 
 
@@ -1713,8 +1714,8 @@ def mark_operation_task_done(task_id, actor, remark=""):
     return operation_task_store().mark_done(task_id, actor, remark)
 
 
-def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned=""):
-    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned)
+def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler=""):
+    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned, next_handler=next_handler)
     history_rows = sum(len(row.get("history") or []) for row in rows)
     out = output_path("运营任务台账", "V1")
     filters = {
@@ -1726,6 +1727,7 @@ def export_operation_tasks(role="admin", user="", status="", task_type="", store
         "platform": platform,
         "overdue": overdue,
         "unassigned": unassigned,
+        "next_handler": next_handler,
     }
     operation_task_store().export_tasks(out, rows, filters=filters)
     return {"file": out.name, "download": f"/download?path={quote(out.name)}", "rows": len(rows), "history_rows": history_rows}
@@ -1752,6 +1754,7 @@ def handle_tasks_api(action, headers, payload):
                 platform=payload.get("platform", ""),
                 overdue=payload.get("overdue", ""),
                 unassigned=payload.get("unassigned", ""),
+                next_handler=payload.get("next_handler", ""),
             )
             return json_bytes({"ok": True, "operator": operator, "summary": summarize_operation_tasks(rows), "tasks": rows})
         if action == "POST_SUBMIT":
@@ -1793,6 +1796,7 @@ def handle_tasks_api(action, headers, payload):
                 platform=payload.get("platform", ""),
                 overdue=payload.get("overdue", ""),
                 unassigned=payload.get("unassigned", ""),
+                next_handler=payload.get("next_handler", ""),
             )
             grant_download(token, result.get("file", ""))
             return json_bytes({"ok": True, **result})
@@ -1953,7 +1957,7 @@ HTML_PAGE = r"""<!doctype html>
     .task-summary { display:grid; grid-template-columns:repeat(4,minmax(140px,1fr)); gap:10px; margin-bottom:12px; }
     .task-kpi { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; }
     .task-kpi strong { display:block; font-size:22px; margin-top:4px; }
-    .task-filters { display:grid; grid-template-columns:120px 160px 160px 160px minmax(120px,1fr) auto auto auto auto; gap:8px; align-items:center; margin-bottom:12px; }
+    .task-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; align-items:center; margin-bottom:12px; }
     .task-product { min-width:220px; }
     .task-actions { display:flex; gap:6px; flex-wrap:wrap; }
     .task-actions button { padding:7px 9px; }
@@ -2017,6 +2021,7 @@ HTML_PAGE = r"""<!doctype html>
           <select id="taskPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option></select>
           <select id="taskType"><option value="">全部类型</option><option>价格异常</option><option>库存异常</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
           <input id="taskStore" placeholder="店铺">
+          <select id="taskNextHandler"><option value="">全部下一步</option><option>管理员</option><option>店长</option><option>无需处理</option></select>
           <label><input id="taskOverdue" type="checkbox"> 只看超时</label>
           <label><input id="taskUnassigned" type="checkbox"> 只看未分配</label>
           <button class="primary" onclick="loadTasks()">查询</button>
@@ -2528,6 +2533,7 @@ function taskQuery(){
   params.set('platform', document.getElementById('taskPlatform')?.value || '');
   params.set('task_type', document.getElementById('taskType')?.value || '');
   params.set('store', document.getElementById('taskStore')?.value.trim() || '');
+  params.set('next_handler', document.getElementById('taskNextHandler')?.value || '');
   params.set('overdue', document.getElementById('taskOverdue')?.checked ? '1' : '');
   params.set('unassigned', document.getElementById('taskUnassigned')?.checked ? '1' : '');
   return params;

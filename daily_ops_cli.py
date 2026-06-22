@@ -69,7 +69,8 @@ def command(argv):
         platform = args[5] if len(args) > 5 else ""
         overdue = args[6] if len(args) > 6 else ""
         unassigned = args[7] if len(args) > 7 else ""
-        return ok(adapter.operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned))
+        next_handler = args[8] if len(args) > 8 else ""
+        return ok(adapter.operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler))
     if name == "submit-task":
         payload = json.loads(sys.stdin.read() or "{}")
         return ok(adapter.submit_operation_task(payload.get("id", ""), payload.get("actor", ""), payload.get("action", ""), payload.get("remark", "")))
@@ -96,6 +97,7 @@ def command(argv):
             payload.get("platform", ""),
             payload.get("overdue", ""),
             payload.get("unassigned", ""),
+            payload.get("next_handler", ""),
         ))
     if name == "store-owners":
         return ok(adapter.store_owners())
