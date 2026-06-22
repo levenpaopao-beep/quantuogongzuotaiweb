@@ -63,6 +63,15 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(len(xiaoqin_tasks), 1)
             self.assertEqual(xiaoqin_tasks[0]["store"], "7")
             self.assertEqual(xiaoqin_tasks[0]["status"], daily_ops_tasks.STATUS_PENDING_OWNER)
+            self.assertEqual(store.list_tasks(role="owner", user=""), [])
+
+            with self.assertRaises(ValueError):
+                store.submit_owner_action(
+                    xiaoqin_tasks[0]["id"],
+                    actor="洁琳",
+                    action="已下架",
+                    remark="不能处理其他负责人的任务",
+                )
 
             submitted = store.submit_owner_action(
                 xiaoqin_tasks[0]["id"],
@@ -359,6 +368,17 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["store"], "7")
             self.assertEqual(rows[0]["owner"], "")
+
+    def test_owner_listing_requires_named_owner(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "7", "owner": "", "merchant_code": "A", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "8", "owner": "小琴", "merchant_code": "B", "source_report": "r", "source_row": 2},
+            ])
+
+            self.assertEqual(store.list_tasks(role="owner", user=""), [])
 
     def test_admin_can_assign_unassigned_task_to_owner(self):
         with TemporaryDirectory() as tmp:

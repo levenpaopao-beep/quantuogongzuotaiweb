@@ -155,6 +155,8 @@ class OperationTaskStore:
         user = norm(user)
         rows = [public_task(row) for row in self.load()["tasks"]]
         if role != "admin":
+            if not user:
+                return []
             rows = [row for row in rows if norm(row.get("owner")) == user]
         if status:
             rows = [row for row in rows if norm(row.get("status")) == norm(status)]
@@ -329,14 +331,18 @@ class OperationTaskStore:
         action = norm(action)
         if not action:
             raise ValueError("店长处理动作不能为空")
-        if not norm(task.get("owner")):
+        owner = norm(task.get("owner"))
+        actor = norm(actor)
+        if not owner:
             raise ValueError("未分配负责人任务不能填写处理结果，请先指派负责人")
+        if actor != owner:
+            raise ValueError("只能由任务负责人填写处理结果")
         if task.get("status") not in {STATUS_PENDING_OWNER, STATUS_REJECTED}:
             raise ValueError("只有待店长处理或已驳回的任务可以由店长填写")
         timestamp = now_text()
         task["owner_action"] = action
         task["owner_remark"] = norm(remark)
-        task["owner_submitted_by"] = norm(actor)
+        task["owner_submitted_by"] = actor
         task["owner_submitted_at"] = timestamp
         task["status"] = STATUS_PENDING_REVIEW
         task["admin_decision"] = ""
@@ -346,7 +352,7 @@ class OperationTaskStore:
         task["updated_at"] = timestamp
         task.setdefault("history", []).append({
             "time": timestamp,
-            "actor": norm(actor),
+            "actor": actor,
             "event": "店长提交",
             "action": action,
             "remark": norm(remark),
