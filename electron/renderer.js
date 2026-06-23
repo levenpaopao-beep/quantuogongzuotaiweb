@@ -319,10 +319,33 @@ function renderOwnerTaskSummary() {
     wrap.innerHTML = "";
     return;
   }
-  wrap.innerHTML = rows.map((item) => {
+  wrap.innerHTML = rows.map((item, index) => {
     const status = item.by_status || {};
-    return `<div class="task-kpi"><span>负责人待办：${item.owner || ""}</span><strong>${item.total || 0}</strong><p>待店长 ${status["待店长处理"] || 0} / 待审核 ${status["待管理员审核"] || 0} / 超时 ${item.overdue || 0} / 返工 ${item.reworked || 0} / 已完成 ${status["已完成"] || 0}</p></div>`;
+    return `<button class="task-kpi" type="button" data-owner-index="${index}"><span>负责人待办：${item.owner || ""}</span><strong>${item.total || 0}</strong><p>待店长 ${status["待店长处理"] || 0} / 待审核 ${status["待管理员审核"] || 0} / 超时 ${item.overdue || 0} / 返工 ${item.reworked || 0} / 已完成 ${status["已完成"] || 0}</p></button>`;
   }).join("");
+  wrap.querySelectorAll("[data-owner-index]").forEach((button) => {
+    button.addEventListener("click", () => applyOwnerSummaryFilter(Number(button.dataset.ownerIndex)));
+  });
+}
+
+function applyOwnerSummaryFilter(index) {
+  const ownerStatus = state.taskSummary?.owner_status || {};
+  const rows = Object.values(ownerStatus).sort((a, b) => (b.total || 0) - (a.total || 0));
+  const item = rows[index];
+  if (!item) return;
+  setTaskField("taskRole", "admin");
+  setTaskField("taskUser", item.owner === "未分配" ? "" : item.owner || "");
+  setTaskField("taskStatus", "");
+  setTaskField("taskNextHandler", "");
+  setTaskField("taskPriority", "");
+  setTaskField("taskPlatform", "");
+  setTaskField("taskType", "");
+  setTaskField("taskStore", "");
+  setTaskCheck("taskOpenOnly", true);
+  setTaskCheck("taskOverdue", false);
+  setTaskCheck("taskUnassigned", item.owner === "未分配");
+  setTaskCheck("taskReworked", false);
+  loadTasks();
 }
 
 function taskBadge(status) {
