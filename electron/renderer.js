@@ -615,6 +615,116 @@ function applyOwnerSummaryFilter(index) {
   loadTasks();
 }
 
+function setTaskQuickFilters({ status = "", nextHandler = "", openOnly = true, unassigned = false, reworked = false } = {}) {
+  const operator = currentOperator();
+  setTaskField("taskRole", operator.role || "admin");
+  setTaskField("taskUser", operator.role === "owner" ? operator.user || "" : "");
+  setTaskField("taskStatus", status);
+  setTaskField("taskNextHandler", nextHandler);
+  setTaskField("taskPriority", "");
+  setTaskField("taskPlatform", "");
+  setTaskField("taskType", "");
+  setTaskField("taskStore", "");
+  setTaskField("taskSearch", "");
+  setTaskCheck("taskOpenOnly", openOnly);
+  setTaskCheck("taskOverdue", false);
+  setTaskCheck("taskUnassigned", unassigned);
+  setTaskCheck("taskReworked", reworked);
+  loadTasks();
+}
+
+function canCurrentRoleHandleTask(task) {
+  const operator = currentOperator();
+  if (operator.role === "owner") return canSubmitOwnerTask(task);
+  return Boolean(
+    packageActionIds({ pushable_task_ids: task.status === "待推送" && task.owner ? [task.id] : [] }, "push").length
+    || canReviewTask(task)
+    || canMarkDoneTask(task)
+    || (!task.owner && canAssignTask(task))
+  );
+}
+
+function selectActionableTasks() {
+  const ids = state.tasks.filter(canCurrentRoleHandleTask).map((task) => task.id).filter(Boolean);
+  document.querySelectorAll(".task-check").forEach((input) => {
+    input.checked = ids.includes(input.value);
+  });
+  renderTaskWorkbar();
+  showToast(ids.length ? `已选择 ${ids.length} 条当前可处理任务` : "当前筛选没有可直接处理的任务");
+}
+
+function renderTaskWorkbar() {
+  const bar = $("#taskWorkbar");
+  if (!bar) return;
+  const operator = currentOperator();
+  const ownerMode = operator.role === "owner";
+  const overview = state.taskOverview || state.taskSummary || {};
+  const filtered = state.taskSummary || {};
+  const status = overview.by_status || {};
+  const nextHandler = overview.by_next_handler || {};
+  const filteredStatus = filtered.by_status || {};
+  const packages = state.taskPackages || [];
+  const selected = selectedTaskIds().length;
+  const actionable = state.tasks.filter(canCurrentRoleHandleTask).length;
+  const adminQueue = (overview.admin_queue || [])[0] || null;
+  const title = $("#taskWorkTitle");
+  const hint = $("#taskWorkHint");
+  const metrics = $("#taskWorkMetrics");
+  const actions = $("#taskWorkActions");
+  if (title) {
+    title.textContent = ownerMode
+      ? (status["待店长处理"] || 0 ? "店长待整包处理" : "店长暂无待处理任务")
+      : (adminQueue ? `管理员下一步：${adminActionLabel(adminQueue.action)}` : "管理员暂无待办队列");
+  }
+  if (hint) {
+    hint.textContent = ownerMode
+      ? "优先处理“待店长处理”的任务包；提交后等待管理员确认，完成后从待办消失。"
+      : "管理员按队列先推送、再确认、最后归档；任务多时可下载任务表给店长。";
+  }
+  if (metrics) {
+    metrics.innerHTML = [
+      ["当前筛选", state.tasks.length, `任务包 ${packages.length}`],
+      ["可直接处理", actionable, ownerMode ? "可整包提交" : "可推送/确认/归档"],
+      ["已勾选", selected, "用于批量动作"],
+      ["全局待办", ownerMode ? status["待店长处理"] || 0 : nextHandler["管理员"] || 0, ownerMode ? "我的口径" : "管理员口径"],
+    ].map(([label, value, note]) => `
+      <div class="task-work-metric">
+        <span>${label}</span>
+        <strong>${value}</strong>
+        <small>${note}</small>
+      </div>
+    `).join("");
+  }
+  if (actions) {
+    const quickActions = ownerMode ? [
+      ["我的待处理", "待店长处理", "", true, false, false],
+      ["返工任务", "已驳回", "", true, false, true],
+      ["全部未完成", "", "", true, false, false],
+    ] : [
+      ["待推送", "待推送", "", true, false, false],
+      ["待确认", "待管理员审核", "", true, false, false],
+      ["待归档", "已通过", "", true, false, false],
+      ["未分配", "", "", true, true, false],
+    ];
+    actions.innerHTML = `
+      <button class="tool-button primary-mini" data-task-work-action="select-actionable" type="button">选择可处理</button>
+      ${quickActions.map(([label, quickStatus, next, openOnly, unassigned, reworked]) => `
+        <button class="tool-button" data-task-work-action="filter" data-status="${quickStatus}" data-next="${next}" data-open-only="${openOnly ? "1" : ""}" data-unassigned="${unassigned ? "1" : ""}" data-reworked="${reworked ? "1" : ""}" type="button">${label}</button>
+      `).join("")}
+    `;
+    actions.querySelector('[data-task-work-action="select-actionable"]')?.addEventListener("click", selectActionableTasks);
+    actions.querySelectorAll('[data-task-work-action="filter"]').forEach((button) => {
+      button.addEventListener("click", () => setTaskQuickFilters({
+        status: button.dataset.status || "",
+        nextHandler: button.dataset.next || "",
+        openOnly: button.dataset.openOnly === "1",
+        unassigned: button.dataset.unassigned === "1",
+        reworked: button.dataset.reworked === "1",
+      }));
+    });
+  }
+}
+
 function taskBadge(status) {
   if (status === "待管理员审核") return "status-warn";
   if (status === "已通过" || status === "已完成") return "status-ok";
@@ -787,11 +897,13 @@ function selectedTaskIds() {
 
 function toggleAllTaskSelection(checked) {
   document.querySelectorAll(".task-check").forEach((input) => { input.checked = checked; });
+  renderTaskWorkbar();
 }
 
 function renderTaskCenter() {
   renderTaskSummary();
   renderTaskPackages();
+  renderTaskWorkbar();
   const rows = $("#taskRows");
   if (!rows) return;
   const selectAll = $("#taskSelectAll");
@@ -828,6 +940,9 @@ function renderTaskCenter() {
       <div class="task-actions">${taskActionButtons(task)}</div>
     </div>`).join("");
   if (selectAll) selectAll.onchange = () => toggleAllTaskSelection(selectAll.checked);
+  rows.querySelectorAll(".task-check").forEach((input) => {
+    input.addEventListener("change", renderTaskWorkbar);
+  });
   rows.querySelectorAll('[data-action="history"]').forEach((button) => button.addEventListener("click", () => showTaskHistory(button.dataset.id)));
   rows.querySelectorAll('[data-action="assign"]').forEach((button) => button.addEventListener("click", () => assignTask(button.dataset.id)));
   rows.querySelectorAll('[data-action="submit"]').forEach((button) => button.addEventListener("click", () => submitTask(button.dataset.id)));

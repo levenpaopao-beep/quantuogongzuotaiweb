@@ -186,6 +186,22 @@ if (!applyAdminQueueFilterBody.includes("state.taskOverview?.admin_queue")) {
     "管理员待办入口应读取全局 taskOverview.admin_queue，不能读取当前筛选结果。",
   ]);
 }
+const renderTaskWorkbarBody = functionBody(renderer, "renderTaskWorkbar");
+if (!html.includes('id="taskWorkbar"') || !renderer.includes("function renderTaskWorkbar(") || !renderer.includes("function selectActionableTasks(")) {
+  fail("任务页缺少当前队列工作条", [
+    "商品任务数量很大，管理员和店长需要在任务页顶部看到当前筛选、可处理、已勾选和下一步动作。",
+  ]);
+}
+if (!renderTaskWorkbarBody.includes("管理员下一步") || !renderTaskWorkbarBody.includes("店长待整包处理") || !renderTaskWorkbarBody.includes("data-task-work-action")) {
+  fail("任务工作条缺少角色化下一步操作", [
+    "管理员需要看到推送/确认/归档入口，店长需要看到我的待处理和整包处理入口。",
+  ]);
+}
+if (!renderer.includes("setTaskQuickFilters") || !renderer.includes("renderTaskWorkbar();")) {
+  fail("任务工作条未接入快速筛选或勾选刷新", [
+    "点击顶部按钮应能切换任务筛选，勾选任务后已选数量应立即刷新。",
+  ]);
+}
 
 const renderStoreOwnersBody = functionBody(renderer, "renderStoreOwners");
 const validateStoreOwnerRowsBody = functionBody(renderer, "validateStoreOwnerRows");

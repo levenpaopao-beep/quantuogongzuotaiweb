@@ -99,6 +99,7 @@ const modules = [
     checks: [
       ["有任务页面入口", hasPage("tasksPage", "tasks")],
       ["有整包处理和批量按钮", hasButton("batchPushTasksBtn") && hasButton("batchSubmitTasksBtn") && hasButton("batchApproveTasksBtn")],
+      ["有任务队列工作条", html.includes("taskWorkbar") && renderer.includes("renderTaskWorkbar") && renderer.includes("selectActionableTasks")],
       ["有任务导出接口", hasButton("exportTasksBtn") && hasApi("exportTasks", "api:export-tasks")],
       ["CLI 返回任务、任务包和汇总", Array.isArray(tasks.tasks) && Array.isArray(tasks.packages) && tasks.summary],
       ["店长提交、管理员确认接口存在", hasApi("submitTask", "api:submit-task") && hasApi("confirmTasks", "api:confirm-tasks")],
