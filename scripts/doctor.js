@@ -82,6 +82,18 @@ function checkCliSmoke() {
   }
 }
 
+function checkRoleJourneys() {
+  const result = spawnSync(process.execPath, [path.join(ROOT, "scripts", "check-journeys.js")], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    console.error(result.stdout || "");
+    console.error(result.stderr || "");
+    process.exit(result.status || 1);
+  }
+}
+
 function checkBusinessTests() {
   const result = spawnSync(process.execPath, [path.join(ROOT, "scripts", "check-python-tests.js")], {
     cwd: ROOT,
@@ -99,5 +111,6 @@ checkElectron();
 checkPython();
 checkUiWiring();
 checkCliSmoke();
+checkRoleJourneys();
 checkBusinessTests();
-console.log("启动检查通过：Electron、Python、关键文件、界面绑定、角色权限和核心业务测试均可用。");
+console.log("启动检查通过：Electron、Python、关键文件、界面绑定、角色旅程、权限边界和核心业务测试均可用。");

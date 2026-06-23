@@ -8,6 +8,7 @@
     "doctor": "node scripts/doctor.js",
     "check:ui": "node scripts/check-ui.js",
     "check:cli": "node scripts/check-cli.js",
+    "check:journeys": "node scripts/check-journeys.js",
     "test": "node scripts/check-python-tests.js",
     "check:ready": "node scripts/check-ready.js",
     "check:release": "node scripts/check-release.js",
