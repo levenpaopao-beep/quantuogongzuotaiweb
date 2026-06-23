@@ -106,7 +106,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             export_path = store.export_tasks(root / "导出.xlsx", filters={"role": "owner", "user": "小琴", "status": "已通过"}, now=datetime(2026, 6, 22, 12, 0, 0))
             workbook = load_workbook(export_path, read_only=True, data_only=True)
             try:
-                self.assertEqual(workbook.sheetnames, ["任务台账", "操作记录", "负责人汇总", "状态汇总", "导出口径"])
+                self.assertEqual(workbook.sheetnames, ["任务台账", "操作记录", "负责人汇总", "状态汇总", "管理员待办队列", "导出口径"])
                 ws = workbook["任务台账"]
                 self.assertEqual(ws.max_row, 3)
                 headers = [cell.value for cell in ws[1]]
@@ -582,6 +582,54 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(queue[0]["filters"], {"unassigned": "1", "open_only": "1"})
             self.assertEqual(queue[1]["filters"], {"status": daily_ops_tasks.STATUS_PENDING_REVIEW, "overdue": "1", "open_only": "1"})
             self.assertEqual(queue[-1]["priority"], "中")
+
+    def test_task_export_includes_admin_action_queue_sheet(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            task_db.write_text(json.dumps({
+                "tasks": [
+                    {
+                        "id": "unassigned",
+                        "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                        "owner": "",
+                        "created_at": "2026-06-22 09:00:00",
+                        "updated_at": "2026-06-22 09:00:00",
+                    },
+                    {
+                        "id": "review-old",
+                        "status": daily_ops_tasks.STATUS_PENDING_REVIEW,
+                        "owner": "小琴",
+                        "owner_submitted_at": "2026-06-20 08:00:00",
+                        "updated_at": "2026-06-20 08:00:00",
+                    },
+                    {
+                        "id": "approved",
+                        "status": daily_ops_tasks.STATUS_APPROVED,
+                        "owner": "洁琳",
+                        "updated_at": "2026-06-22 08:00:00",
+                    },
+                ]
+            }, ensure_ascii=False), encoding="utf-8")
+
+            export_path = daily_ops_tasks.OperationTaskStore(task_db).export_tasks(root / "导出.xlsx", now=datetime(2026, 6, 22, 12, 0, 0))
+            workbook = load_workbook(export_path, read_only=True, data_only=True)
+            try:
+                self.assertIn("管理员待办队列", workbook.sheetnames)
+                ws = workbook["管理员待办队列"]
+                headers = [cell.value for cell in ws[1]]
+                self.assertEqual(headers, ["处理动作", "优先级", "任务数量", "筛选条件"])
+                rows = {
+                    ws.cell(row=row, column=1).value: row
+                    for row in range(2, ws.max_row + 1)
+                }
+                self.assertEqual(ws.cell(row=rows["指派负责人"], column=3).value, 1)
+                self.assertEqual(ws.cell(row=rows["指派负责人"], column=4).value, "unassigned=1; open_only=1")
+                self.assertEqual(ws.cell(row=rows["处理超时审核"], column=2).value, "高")
+                self.assertEqual(ws.cell(row=rows["处理超时审核"], column=4).value, "status=待管理员审核; overdue=1; open_only=1")
+                self.assertEqual(ws.cell(row=rows["标记完成或归档"], column=3).value, 1)
+            finally:
+                workbook.close()
 
     def test_rejected_tasks_become_overdue_when_owner_does_not_rework(self):
         with TemporaryDirectory() as tmp:
@@ -2341,7 +2389,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                 exported_path = output_dir / exported["file"]
                 exported_book = load_workbook(exported_path, read_only=True, data_only=True)
                 try:
-                    self.assertEqual(exported_book.sheetnames, ["任务台账", "操作记录", "负责人汇总", "状态汇总", "导出口径"])
+                    self.assertEqual(exported_book.sheetnames, ["任务台账", "操作记录", "负责人汇总", "状态汇总", "管理员待办队列", "导出口径"])
                     self.assertEqual(exported_book["任务台账"].max_row, 2)
                     self.assertEqual(exported_book["操作记录"].max_row, 4)
                     self.assertEqual(exported_book["负责人汇总"].max_row, 2)

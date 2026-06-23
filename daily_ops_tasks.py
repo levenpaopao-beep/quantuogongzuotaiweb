@@ -244,6 +244,10 @@ def admin_queue_summary(rows, now=None):
     ]
 
 
+def task_filter_text(filters):
+    return "; ".join(f"{key}={value}" for key, value in (filters or {}).items() if norm(value))
+
+
 def task_rejection_info(row):
     rejection_count = 0
     last_reason = ""
@@ -744,6 +748,16 @@ class OperationTaskStore:
         for label, count in sorted(source_batches.items()):
             summary_ws.append([f"来源批次：{label}", count])
         style_task_sheet(summary_ws)
+        queue_ws = workbook.create_sheet("管理员待办队列")
+        queue_ws.append(["处理动作", "优先级", "任务数量", "筛选条件"])
+        for item in summary.get("admin_queue", []):
+            queue_ws.append([
+                item.get("action", ""),
+                item.get("priority", ""),
+                item.get("count", 0),
+                task_filter_text(item.get("filters", {})),
+            ])
+        style_task_sheet(queue_ws)
         criteria_ws = workbook.create_sheet("导出口径")
         criteria_ws.append(["字段", "值"])
         for key in ["role", "user", "status", "task_type", "store", "platform", "overdue", "unassigned", "next_handler", "priority", "reworked", "open_only"]:
