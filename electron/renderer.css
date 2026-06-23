@@ -69,6 +69,19 @@ button { cursor: pointer; }
   object-fit: cover;
   box-shadow: 0 10px 22px rgba(92, 103, 154, .2);
 }
+.brand-logo.asset-fallback,
+.hero-mascot.asset-fallback {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--pink), var(--mint) 52%, var(--cyan));
+  color: #fff;
+  font-weight: 900;
+  text-align: center;
+}
+.brand-logo.asset-fallback {
+  font-size: 12px;
+  line-height: 1;
+}
 
 .brand-title { font-size: 17px; font-weight: 800; line-height: 1.1; }
 .brand-subtitle { margin-top: 4px; color: var(--muted); font-size: 12px; }
@@ -280,6 +293,12 @@ button { cursor: pointer; }
   object-position: 50% 48%;
   border-radius: 28px;
   box-shadow: 0 18px 38px rgba(91, 101, 142, .2);
+}
+.hero-mascot.asset-fallback {
+  padding: 18px;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: 0;
 }
 
 .pill {

@@ -2207,6 +2207,7 @@ function showPage(name) {
 }
 
 function bindEvents() {
+  installImageFallbacks();
   if ($("#salesDate") && !$("#salesDate").value) $("#salesDate").value = todayDateText();
   document.querySelectorAll("[data-page]").forEach((button) => {
     button.addEventListener("click", () => showPage(button.dataset.page));
@@ -2309,6 +2310,24 @@ function bindEvents() {
     if (!query) return;
     const rows = await api.search(query, 80, operatorPayload());
     $("#searchRows").innerHTML = rows.map((row) => `<div class="output-row"><div><strong>${Object.values(row).slice(0, 3).join(" · ")}</strong><p>${Object.entries(row).slice(0, 8).map(([k, v]) => `${k}: ${v}`).join("　")}</p></div></div>`).join("");
+  });
+}
+
+function installImageFallbacks() {
+  document.querySelectorAll("img[data-fallback-label]").forEach((image) => {
+    const replaceImage = () => {
+      if (image.dataset.fallbackApplied === "1") return;
+      image.dataset.fallbackApplied = "1";
+      const fallback = document.createElement("div");
+      fallback.className = image.className;
+      fallback.classList.add("asset-fallback");
+      fallback.textContent = image.dataset.fallbackLabel || "PETCIRCLE";
+      fallback.setAttribute("role", "img");
+      fallback.setAttribute("aria-label", image.alt || image.dataset.fallbackLabel || "PETCIRCLE");
+      image.replaceWith(fallback);
+    };
+    image.addEventListener("error", replaceImage, { once: true });
+    if (image.complete && image.naturalWidth === 0) replaceImage();
   });
 }
 

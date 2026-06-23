@@ -7,6 +7,7 @@
   "scripts": {
     "doctor": "node scripts/doctor.js",
     "check:ui": "node scripts/check-ui.js",
+    "check:design": "node scripts/check-design.js",
     "check:cli": "node scripts/check-cli.js",
     "check:journeys": "node scripts/check-journeys.js",
     "check:modules": "node scripts/check-modules.js",
