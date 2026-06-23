@@ -7,10 +7,70 @@ const state = {
   rules: {},
   selectedFiles: {},
   sourceProgress: {},
+  tasks: [],
+  taskSummary: {},
+  reportTaskSync: {},
+  reportTasks: {},
+  storeOwners: [],
 };
 
 function $(selector) {
   return document.querySelector(selector);
+}
+
+function currentOperator() {
+  try {
+    return JSON.parse(localStorage.getItem("dailyOpsOperator") || "{}");
+  } catch (_error) {
+    return {};
+  }
+}
+
+function applyOperatorToTasks() {
+  const operator = currentOperator();
+  const role = operator.role || "admin";
+  const user = operator.user || "";
+  if ($("#operatorRole")) $("#operatorRole").value = role;
+  if ($("#operatorUser")) $("#operatorUser").value = user;
+  if ($("#taskRole")) {
+    $("#taskRole").value = role;
+    $("#taskRole").disabled = role === "owner";
+  }
+  if ($("#taskUser")) $("#taskUser").value = user;
+  defaultOpenTasksForOwner(role);
+  if ($("#operatorHint")) $("#operatorHint").textContent = user ? `当前身份：${role === "admin" ? "管理员" : "店长"} · ${user}` : "未设置身份时按管理员查看";
+  applyRoleVisibility(role);
+}
+
+function defaultOpenTasksForOwner(role = currentOperator().role || "admin") {
+  const openOnly = $("#taskOpenOnly");
+  if (role === "owner" && openOnly) openOnly.checked = true;
+}
+
+function applyRoleVisibility(role = currentOperator().role || "admin") {
+  const ownerMode = role === "owner";
+  document.querySelectorAll("[data-admin-only]").forEach((element) => {
+    element.classList.toggle("hidden", ownerMode);
+  });
+}
+
+function saveOperator() {
+  const operator = {
+    role: $("#operatorRole")?.value || "admin",
+    user: $("#operatorUser")?.value.trim() || "",
+  };
+  localStorage.setItem("dailyOpsOperator", JSON.stringify(operator));
+  applyOperatorToTasks();
+  loadTasks();
+}
+
+function operatorPayload(extra = {}) {
+  const operator = currentOperator();
+  return {
+    role: operator.role || "admin",
+    user: operator.user || "",
+    ...extra,
+  };
 }
 
 function showToast(message) {
@@ -54,14 +114,15 @@ function renderSourceProgress(group) {
     </div>`;
   }
   if (group.pending_count) {
+    const pendingFiles = (group.pending_files || []).map(fileBaseName).join("、");
     return `<div class="source-progress source-progress-pending">
       <strong>待结束上传</strong>
-      <span>已上传 ${group.pending_count} 个文件，点击“结束上传”后才会正式生效。</span>
+      <span>已上传 ${group.pending_count} 个文件${pendingFiles ? `：${pendingFiles}` : ""}，点击“结束上传”后才会正式生效。</span>
     </div>`;
   }
   return `<div class="source-progress">
-    <strong>当前批次</strong>
-    <span>未选择新文件。</span>
+    <strong>当前批次${group.batch_id ? `：${group.batch_id}` : ""}</strong>
+    <span>${group.uploaded_at ? `上传时间 ${group.uploaded_at}` : "未选择新文件。"}</span>
   </div>`;
 }
 
@@ -76,7 +137,7 @@ function renderSources(groups) {
     row.className = "table-row";
     row.innerHTML = `
       <div class="table-cell source-name"><span class="source-badge ${badgeClass}">${badgeText}</span><span>${group.name}</span></div>
-      <div class="table-cell"><div class="file-name" title="${latestName(group)}">${latestName(group)}</div><div class="file-meta">${group.latest?.modified || "等待上传"}</div>${renderSourceProgress(group)}</div>
+      <div class="table-cell"><div class="file-name" title="${latestName(group)}">${latestName(group)}</div><div class="file-meta">${group.latest?.modified || "等待上传"}${group.batch_id ? ` · 批次 ${group.batch_id}` : ""}</div>${renderSourceProgress(group)}</div>
       <div class="table-cell pending">${group.pending_count || 0}</div>
       <div class="table-cell rows-count">${group.total_rows || group.latest?.rows || "-"}</div>
       <div class="table-cell"><span class="status-pill ${statusClass(group.status)}">${group.status}</span><div class="file-meta">${group.latest?.modified ? `更新于 ${group.latest.modified.slice(5, 16)}` : ""}</div></div>
@@ -107,12 +168,15 @@ function renderReportQueue() {
   reports.forEach(([reportId, report], index) => {
     const latest = latestOutputForReport(reportId);
     const hasOutput = Boolean(latest);
+    const taskSync = state.reportTaskSync[reportId];
+    const taskLine = taskSync ? taskSyncSummary(taskSync) : reportTaskSummary(reportId);
+    const taskBadges = reportTaskBadges(reportId);
     const item = document.createElement("div");
     item.className = `queue-item ${hasOutput ? "queue-item-done" : "queue-item-todo"}`;
     item.innerHTML = `
       <div>${index + 1}</div>
       <div class="queue-icon">${hasOutput ? "✓" : "!"}</div>
-      <div><div class="queue-title">${report.name}</div><div class="queue-subtitle">${hasOutput ? latest.modified : "等待生成"}</div></div>
+      <div><div class="queue-title">${report.name}</div><div class="queue-subtitle">${hasOutput ? latest.modified : "等待生成"}</div>${taskBadges}<div class="queue-task-sync">${taskLine}</div></div>
       <div class="queue-status">${hasOutput ? "已完成" : "未完成"}</div>
       <div>›</div>
     `;
@@ -135,7 +199,7 @@ function renderReportCards() {
     card.innerHTML = `
       <h3>${report.name}</h3>
       <p>${report.description || ""}</p>
-      <div class="report-latest">${latest ? `最近生成：${latest.name}<br>${latest.modified} · ${formatSize(latest.size)}` : "暂无已生成表格"}</div>
+      <div class="report-latest">${latest ? `最近生成：${latest.name}<br>${latest.modified} · ${formatSize(latest.size)}` : "暂无已生成表格"}<br>${reportTaskSummary(reportId)}</div>
       <div class="download-actions">
         <button class="primary-button" data-action="generate">生成表格</button>
         ${latest ? `<button class="ghost-button download-report" data-action="open">打开表格</button><button class="ghost-button" data-action="folder">打开所在文件夹</button>` : ""}
@@ -163,6 +227,332 @@ function renderOutputs() {
   });
 }
 
+function taskFilters() {
+  return {
+    role: $("#taskRole")?.value || "admin",
+    user: $("#taskUser")?.value.trim() || "",
+    status: $("#taskStatus")?.value || "",
+    task_type: $("#taskType")?.value || "",
+    store: $("#taskStore")?.value.trim() || "",
+    platform: $("#taskPlatform")?.value || "",
+    next_handler: $("#taskNextHandler")?.value || "",
+    priority: $("#taskPriority")?.value || "",
+    open_only: $("#taskOpenOnly")?.checked ? "1" : "",
+    overdue: $("#taskOverdue")?.checked ? "1" : "",
+    unassigned: $("#taskUnassigned")?.checked ? "1" : "",
+    reworked: $("#taskReworked")?.checked ? "1" : "",
+  };
+}
+
+function renderTaskSummary() {
+  const wrap = $("#taskSummary");
+  if (!wrap) return;
+  const summary = state.taskSummary || {};
+  const status = summary.by_status || {};
+  const overdue = summary.overdue || {};
+  const nextHandler = summary.by_next_handler || {};
+  const cards = [
+    ["全部任务", summary.total || 0],
+    ["管理员待办", nextHandler["管理员"] || 0],
+    ["店长待办", nextHandler["店长"] || 0],
+    ["待店长处理", status["待店长处理"] || 0],
+    ["待管理员审核", status["待管理员审核"] || 0],
+    ["超时未处理", overdue.total || 0],
+    ["已通过", status["已通过"] || 0],
+    ["未分配", summary.unassigned || 0],
+    ["无需处理", nextHandler["无需处理"] || 0],
+  ];
+  wrap.innerHTML = cards.map(([label, value]) => `<div class="task-kpi"><span>${label}</span><strong>${value}</strong></div>`).join("");
+  renderAdminTaskQueue();
+  renderOwnerTaskSummary();
+}
+
+function renderAdminTaskQueue() {
+  const wrap = $("#adminTaskQueue");
+  if (!wrap) return;
+  const rows = state.taskSummary?.admin_queue || [];
+  if (!rows.length) {
+    wrap.innerHTML = "";
+    return;
+  }
+  wrap.innerHTML = rows.map((item, index) => `<button class="task-kpi" type="button" data-queue-index="${index}"><span>管理员待办队列</span><strong>${item.count || 0}</strong><p>${item.action || ""}<br>优先级：${item.priority || ""}</p></button>`).join("");
+  wrap.querySelectorAll("[data-queue-index]").forEach((button) => {
+    button.addEventListener("click", () => applyAdminQueueFilter(Number(button.dataset.queueIndex)));
+  });
+}
+
+function setTaskField(id, value) {
+  const field = $(`#${id}`);
+  if (field) field.value = value || "";
+}
+
+function setTaskCheck(id, value) {
+  const field = $(`#${id}`);
+  if (field) field.checked = Boolean(value);
+}
+
+function applyAdminQueueFilter(index) {
+  const item = (state.taskSummary?.admin_queue || [])[index];
+  if (!item) return;
+  const filters = item.filters || {};
+  setTaskField("taskRole", "admin");
+  setTaskField("taskUser", "");
+  setTaskField("taskStatus", filters.status || "");
+  setTaskField("taskNextHandler", "");
+  setTaskField("taskPriority", "");
+  setTaskField("taskPlatform", "");
+  setTaskField("taskType", "");
+  setTaskField("taskStore", "");
+  setTaskCheck("taskOpenOnly", filters.open_only === "1");
+  setTaskCheck("taskOverdue", filters.overdue === "1");
+  setTaskCheck("taskUnassigned", filters.unassigned === "1");
+  setTaskCheck("taskReworked", filters.reworked === "1");
+  loadTasks();
+}
+
+function renderOwnerTaskSummary() {
+  const wrap = $("#ownerTaskSummary");
+  if (!wrap) return;
+  const ownerStatus = state.taskSummary?.owner_status || {};
+  const rows = Object.values(ownerStatus).sort((a, b) => (b.total || 0) - (a.total || 0));
+  if (!rows.length) {
+    wrap.innerHTML = "";
+    return;
+  }
+  wrap.innerHTML = rows.map((item, index) => {
+    const status = item.by_status || {};
+    return `<button class="task-kpi" type="button" data-owner-index="${index}"><span>负责人待办：${item.owner || ""}</span><strong>${item.total || 0}</strong><p>待店长 ${status["待店长处理"] || 0} / 待审核 ${status["待管理员审核"] || 0} / 超时 ${item.overdue || 0} / 返工 ${item.reworked || 0} / 已完成 ${status["已完成"] || 0}</p></button>`;
+  }).join("");
+  wrap.querySelectorAll("[data-owner-index]").forEach((button) => {
+    button.addEventListener("click", () => applyOwnerSummaryFilter(Number(button.dataset.ownerIndex)));
+  });
+}
+
+function applyOwnerSummaryFilter(index) {
+  const ownerStatus = state.taskSummary?.owner_status || {};
+  const rows = Object.values(ownerStatus).sort((a, b) => (b.total || 0) - (a.total || 0));
+  const item = rows[index];
+  if (!item) return;
+  setTaskField("taskRole", "admin");
+  setTaskField("taskUser", item.owner === "未分配" ? "" : item.owner || "");
+  setTaskField("taskStatus", "");
+  setTaskField("taskNextHandler", "");
+  setTaskField("taskPriority", "");
+  setTaskField("taskPlatform", "");
+  setTaskField("taskType", "");
+  setTaskField("taskStore", "");
+  setTaskCheck("taskOpenOnly", true);
+  setTaskCheck("taskOverdue", false);
+  setTaskCheck("taskUnassigned", item.owner === "未分配");
+  setTaskCheck("taskReworked", false);
+  loadTasks();
+}
+
+function taskBadge(status) {
+  if (status === "待管理员审核") return "status-warn";
+  if (status === "已通过" || status === "已完成") return "status-ok";
+  if (status === "已驳回") return "status-danger";
+  return "";
+}
+
+function taskSourceText(task) {
+  const source = [task.source_report, task.source_file].filter(Boolean).join(" / ");
+  const row = task.source_row ? ` #${task.source_row}` : "";
+  return `来源：${source || "-"}${row}`;
+}
+
+function canSubmitOwnerTask(task) {
+  return task.owner && (task.status === "待店长处理" || task.status === "已驳回");
+}
+
+function canReviewTask(task) {
+  return task.status === "待管理员审核";
+}
+
+function canMarkDoneTask(task) {
+  return task.status === "已通过";
+}
+
+function canAssignTask(task) {
+  return task.status !== "已完成";
+}
+
+function taskActionButtons(task) {
+  const operator = currentOperator();
+  const historyButton = `<button class="tool-button" data-action="history" data-id="${task.id}">查看记录</button>`;
+  const submitButton = !task.owner ? '<span class="file-meta">先指派负责人</span>' : canSubmitOwnerTask(task) ? `<button class="tool-button" data-action="submit" data-id="${task.id}">店长填写</button>` : '<span class="file-meta">无需店长填写</span>';
+  if (operator.role === "owner") {
+    return `${historyButton}${submitButton}<span class="file-meta">店长只能填写自己负责的任务</span>`;
+  }
+  const reviewButtons = canReviewTask(task) ? `<button class="tool-button primary-mini" data-action="approve" data-id="${task.id}">管理员审核</button><button class="tool-button danger-mini" data-action="reject" data-id="${task.id}">驳回</button>` : '<span class="file-meta">无需审核</span>';
+  const doneButton = canMarkDoneTask(task) ? `<button class="tool-button" data-action="done" data-id="${task.id}">标记完成</button>` : "";
+  const assignButton = canAssignTask(task) ? `<button class="tool-button" data-action="assign" data-id="${task.id}">指派负责人</button>` : "";
+  return `${historyButton}${assignButton}${submitButton}${reviewButtons}${doneButton}`;
+}
+
+function renderTaskCenter() {
+  renderTaskSummary();
+  const rows = $("#taskRows");
+  if (!rows) return;
+  if (!state.tasks.length) {
+    rows.innerHTML = `<div class="task-empty">暂无任务。生成爆旺、低分、滞销或议价报表后，系统会自动写入任务台账。</div>`;
+    return;
+  }
+  rows.innerHTML = state.tasks.map((task) => `
+    <div class="task-row">
+      <div><span class="status-pill ${taskBadge(task.status)}">${task.status || ""}</span></div>
+      <div>${task.next_handler || "-"}<br><span class="file-meta">${task.next_action || ""}</span><br><span class="status-pill ${task.priority === "高" ? "status-danger" : task.priority === "中" ? "status-warn" : task.priority === "低" ? "status-ok" : ""}">${task.priority || "普通"}</span><br><span class="file-meta">${task.priority_reason || ""}</span></div>
+      <div>${task.platform || ""}<br><span class="file-meta">${task.task_type || ""}</span><br><span class="file-meta">${taskSourceText(task)}</span></div>
+      <div>${task.store || ""}<br><span class="file-meta">${task.owner || ""}</span></div>
+      <div class="task-product"><strong>${task.product_name || task.merchant_code || task.skc || task.spu || ""}</strong><span>${[task.merchant_code, task.skc, task.spu].filter(Boolean).join(" ")}</span></div>
+      <div>${task.system_action || ""}<br><span class="file-meta">${task.task_detail || ""}</span></div>
+      <div>${task.owner_action || "-"}<br><span class="file-meta">${task.owner_remark || ""}</span><br><span class="file-meta">${task.owner_proof ? `凭证：${task.owner_proof}` : ""}</span></div>
+      <div>${task.admin_decision || "-"}<br><span class="file-meta">${task.admin_remark || ""}</span></div>
+      <div class="task-actions">${taskActionButtons(task)}</div>
+    </div>`).join("");
+  rows.querySelectorAll('[data-action="history"]').forEach((button) => button.addEventListener("click", () => showTaskHistory(button.dataset.id)));
+  rows.querySelectorAll('[data-action="assign"]').forEach((button) => button.addEventListener("click", () => assignTask(button.dataset.id)));
+  rows.querySelectorAll('[data-action="submit"]').forEach((button) => button.addEventListener("click", () => submitTask(button.dataset.id)));
+  rows.querySelectorAll('[data-action="approve"]').forEach((button) => button.addEventListener("click", () => reviewTask(button.dataset.id, "通过")));
+  rows.querySelectorAll('[data-action="done"]').forEach((button) => button.addEventListener("click", () => doneTask(button.dataset.id)));
+  rows.querySelectorAll('[data-action="reject"]').forEach((button) => button.addEventListener("click", () => reviewTask(button.dataset.id, "驳回")));
+}
+
+function showTaskHistory(id) {
+  const task = state.tasks.find((item) => item.id === id);
+  if (!task) return;
+  const title = `操作记录：${task.product_name || task.merchant_code || task.skc || task.spu || task.id}`;
+  const history = task.history || [];
+  if (!history.length) {
+    window.alert(`${title}\n暂无操作记录`);
+    return;
+  }
+  const lines = history.map((item) => {
+    const nextAfter = [item.next_handler_after, item.next_action_after].filter(Boolean).join(" / ") || "-";
+    return `${item.time || ""} ${item.event || ""}\n操作人：${item.actor || "-"}\n动作：${item.action || "-"}\n备注：${item.remark || "-"}\n处理凭证：${item.proof || "-"}\n动作后状态：${item.status_after || "-"}\n动作后下一步：${nextAfter}`;
+  });
+  window.alert(`${title}\n\n${lines.join("\n\n")}`);
+}
+
+function showTaskError(error) {
+  const line = $("#taskStatusLine");
+  const message = error.message || "任务操作失败";
+  if (line) line.textContent = message;
+  showToast(message);
+}
+
+async function loadTasks(showToastOnDone = true) {
+  try {
+    const line = $("#taskStatusLine");
+    if (line) line.textContent = "正在读取任务...";
+    const result = await api.tasks(operatorPayload({ filters: taskFilters() }));
+    state.taskSummary = result.summary || {};
+    state.tasks = result.tasks || [];
+    renderTaskCenter();
+    if (line) line.textContent = `当前筛选 ${state.tasks.length} 条任务`;
+    if (showToastOnDone) showToast("任务已刷新");
+  } catch (error) {
+    showTaskError(error);
+  }
+}
+
+async function submitTask(id) {
+  try {
+    const actor = $("#taskUser")?.value.trim() || window.prompt("填写人") || "";
+    if (!actor) return;
+    const action = window.prompt("店长填写处理动作，例如：已下架、申请退货、继续观察、同意议价");
+    if (!action) return;
+    const remark = window.prompt("处理备注，和处理凭证至少填一个") || "";
+    const proof = window.prompt("处理凭证，例如截图链接、后台单号，和备注至少填一个") || "";
+    if (!remark.trim() && !proof.trim()) {
+      showToast("店长提交必须填写处理依据：备注或处理凭证至少填一个");
+      return;
+    }
+    await api.submitTask(operatorPayload({ id, actor, action, remark, proof }));
+    await loadTasks(false);
+    showToast("店长填写已提交");
+  } catch (error) {
+    showTaskError(error);
+  }
+}
+
+async function assignTask(id) {
+  try {
+    const actor = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
+    const owner = window.prompt("指派给负责人");
+    if (!owner) return;
+    const remark = window.prompt("指派备注") || "";
+    await api.assignTask(operatorPayload({ id, actor, owner, remark }));
+    await loadTasks(false);
+    showToast("任务负责人已指派");
+  } catch (error) {
+    showTaskError(error);
+  }
+}
+
+async function reviewTask(id, decision) {
+  try {
+    const admin = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
+    const remark = window.prompt(decision === "驳回" ? "管理员审核：驳回原因（必填）" : `管理员审核：${decision}说明（必填）`) || "";
+    if (!remark.trim()) {
+      showToast("管理员审核必须填写说明");
+      return;
+    }
+    await api.reviewTask(operatorPayload({ id, admin, decision, remark }));
+    await loadTasks(false);
+    showToast(`管理员审核${decision}`);
+  } catch (error) {
+    showTaskError(error);
+  }
+}
+
+async function batchReviewTasks(decision) {
+  try {
+    const admin = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
+    const ids = state.tasks.filter((task) => task.status === "待管理员审核").map((task) => task.id);
+    if (!ids.length) {
+      showToast("当前筛选没有待管理员审核任务");
+      return;
+    }
+    const remark = window.prompt(decision === "驳回" ? "批量驳回原因（必填）" : `批量${decision}说明（必填）`) || "";
+    if (!remark.trim()) {
+      showToast("批量审核必须填写说明");
+      return;
+    }
+    const result = await api.batchReviewTasks(operatorPayload({ ids, admin, decision, remark }));
+    await loadTasks(false);
+    showToast(`已批量${decision} ${result.count || 0} 条任务`);
+  } catch (error) {
+    showTaskError(error);
+  }
+}
+
+async function doneTask(id) {
+  try {
+    const actor = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
+    const remark = window.prompt("完成确认说明（必填）") || "";
+    if (!remark.trim()) {
+      showToast("标记完成必须填写确认说明");
+      return;
+    }
+    await api.doneTask(operatorPayload({ id, actor, remark }));
+    await loadTasks(false);
+    showToast("任务已标记完成");
+  } catch (error) {
+    showTaskError(error);
+  }
+}
+
+async function exportTasks() {
+  try {
+    const result = await api.exportTasks(operatorPayload({ filters: taskFilters() }));
+    showToast(`任务台账已导出：${result.file || ""}`);
+    await refreshAll();
+  } catch (error) {
+    showTaskError(error);
+  }
+}
+
 function flattenRules(rules) {
   return [
     ["Temu爆旺款口径", "hot_item.temu_basis", rules.hot_item?.temu_basis || ""],
@@ -183,6 +573,36 @@ function renderRules() {
     card.innerHTML = `<label>${label}</label><input data-rule="${key}" value="${String(value).replaceAll('"', "&quot;")}" />`;
     form.appendChild(card);
   });
+}
+
+function renderStoreOwners(assignments = state.storeOwners) {
+  const input = $("#storeOwnerMapText");
+  if (!input) return;
+  input.value = (assignments || []).map((item) => [item.platform || "", item.store || "", item.owner || ""].join("，")).join("\n");
+  const line = $("#storeOwnerStatus");
+  if (line) line.textContent = `已读取 ${(assignments || []).length} 条负责人配置`;
+}
+
+function parseStoreOwnerText() {
+  const text = $("#storeOwnerMapText")?.value || "";
+  return text.split(/\n+/).map((line) => {
+    const parts = line.split(/[,，\t]/).map((item) => item.trim());
+    return { platform: parts[0] || "", store: parts[1] || "", owner: parts[2] || "" };
+  }).filter((item) => item.store && item.owner);
+}
+
+async function loadStoreOwners() {
+  const result = await api.storeOwners(operatorPayload());
+  state.storeOwners = result.assignments || [];
+  renderStoreOwners();
+}
+
+async function saveStoreOwners() {
+  const assignments = parseStoreOwnerText();
+  const result = await api.saveStoreOwners(operatorPayload({ assignments }));
+  state.storeOwners = result.assignments || [];
+  renderStoreOwners();
+  showToast(`负责人配置已保存：${state.storeOwners.length} 条；已补齐 ${result.assigned_existing || 0} 条未分配任务`);
 }
 
 function collectRules() {
@@ -209,17 +629,43 @@ function formatSize(value) {
   return `${size} B`;
 }
 
+function taskSyncSummary(sync) {
+  const summary = sync || {};
+  return `新增任务 ${summary.created || 0} 条，更新任务 ${summary.updated || 0} 条，导入明细 ${summary.imported_rows || 0} 行`;
+}
+
+function reportTaskSummary(reportId) {
+  const item = state.reportTasks?.[reportId] || {};
+  const status = item.by_status || {};
+  return `已生成任务 ${item.total || 0} 条，待店长 ${status["待店长处理"] || 0} 条，待审核 ${status["待管理员审核"] || 0} 条`;
+}
+
+function reportTaskBadges(reportId) {
+  const item = state.reportTasks?.[reportId] || {};
+  const status = item.by_status || {};
+  const badges = [
+    ["任务", item.total || 0],
+    ["待店长", status["待店长处理"] || 0],
+    ["待审核", status["待管理员审核"] || 0],
+  ];
+  return `<div class="queue-task-badges">${badges.map(([label, value]) => `<span class="queue-task-badge">${label} ${value}</span>`).join("")}</div>`;
+}
+
 async function refreshAll() {
   try {
     state.status = await api.status();
     state.reports = state.status.reports || await api.reports();
     state.outputs = state.status.outputs || await api.outputs(80);
     state.rules = state.status.rules || await api.loadRules();
+    state.reportTasks = state.status.report_tasks || {};
     renderSources(state.status.source_groups || []);
     renderReportQueue();
     renderReportCards();
     renderOutputs();
     renderRules();
+    await loadStoreOwners();
+    applyOperatorToTasks();
+    await loadTasks(false);
     showToast("状态已刷新");
   } catch (error) {
     showToast(error.message);
@@ -249,7 +695,7 @@ async function uploadSource(group) {
       message: files.length ? `正在提交 ${files.length} 个文件...` : "请先选择要上传的文件。",
     };
     renderSources(state.status.source_groups || []);
-    const result = await api.uploadSource(group, files);
+    const result = await api.uploadSource(group, files, operatorPayload());
     state.sourceProgress[group.key] = {
       kind: "success",
       title: `上传成功：${result.count} 个文件`,
@@ -270,7 +716,7 @@ async function uploadSource(group) {
 
 async function finishUpload(group) {
   try {
-    const result = await api.finishUpload(group.upload_target);
+    const result = await api.finishUpload(group.upload_target, operatorPayload());
     state.sourceProgress[group.key] = {
       kind: "success",
       title: "已更新",
@@ -290,16 +736,17 @@ async function finishUpload(group) {
 }
 
 async function clearUpload(group) {
-  await api.clearUpload(group.upload_target);
+  await api.clearUpload(group.upload_target, operatorPayload());
   showToast(`${group.name} 已清空待提交`);
   await refreshAll();
 }
 
 async function generateReport(reportId) {
   showToast("开始生成表格");
-  const result = await api.generateReport(reportId, "V1");
+  const result = await api.generateReport(reportId, "V1", operatorPayload());
+  state.reportTaskSync[reportId] = result.task_sync || {};
   await refreshAll();
-  showToast(`表格已生成：${result.file || ""}`);
+  showToast(`表格已生成：${result.file || ""}；${taskSyncSummary(result.task_sync)}`);
 }
 
 function showPage(name) {
@@ -309,6 +756,7 @@ function showPage(name) {
   if (name === "outputs") $("#outputsPage").classList.add("page-active");
   if (name === "rules") $("#rulesPage").classList.add("page-active");
   if (name === "search") $("#searchPage").classList.add("page-active");
+  if (name === "tasks") $("#tasksPage").classList.add("page-active");
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === name || (name === "weekly" && item.textContent === "每周工作流")));
 }
 
@@ -326,21 +774,31 @@ function bindEvents() {
     });
   });
   $("#refreshBtn").addEventListener("click", refreshAll);
+  $("#loadTasksBtn").addEventListener("click", () => loadTasks());
+  $("#exportTasksBtn").addEventListener("click", exportTasks);
+  $("#batchApproveTasksBtn").addEventListener("click", () => batchReviewTasks("通过"));
+  $("#batchRejectTasksBtn").addEventListener("click", () => batchReviewTasks("驳回"));
+  $("#saveOperatorBtn").addEventListener("click", saveOperator);
   $("#generateWeeklyBtn").addEventListener("click", async () => {
     showToast("开始生成所有就绪报表");
-    await api.generateWeekly();
+    const result = await api.generateWeekly(operatorPayload());
+    (result.results || []).forEach((item) => {
+      if (item.status === "ok") state.reportTaskSync[item.report] = item.task_sync || {};
+    });
     await refreshAll();
-    showToast("本周报表已生成");
+    showToast(`本周报表已生成；${taskSyncSummary(result.task_sync)}`);
   });
   $("#saveRulesBtn").addEventListener("click", async () => {
     state.rules = collectRules();
-    await api.saveRules(state.rules);
+    await api.saveRules(operatorPayload({ rules: state.rules }));
     showToast("规则已保存");
   });
+  $("#loadStoreOwnersBtn").addEventListener("click", loadStoreOwners);
+  $("#saveStoreOwnersBtn").addEventListener("click", saveStoreOwners);
   $("#searchBtn").addEventListener("click", async () => {
     const query = $("#searchInput").value.trim();
     if (!query) return;
-    const rows = await api.search(query, 80);
+    const rows = await api.search(query, 80, operatorPayload());
     $("#searchRows").innerHTML = rows.map((row) => `<div class="output-row"><div><strong>${Object.values(row).slice(0, 3).join(" · ")}</strong><p>${Object.entries(row).slice(0, 8).map(([k, v]) => `${k}: ${v}`).join("　")}</p></div></div>`).join("");
   });
 }

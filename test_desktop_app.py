@@ -142,6 +142,15 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("queue-progress", css)
         self.assertIn("min-height: 58px", css)
 
+    def test_weekly_report_queue_shows_task_badges(self):
+        source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        css = (ROOT / "electron" / "renderer.css").read_text(encoding="utf-8")
+        self.assertIn("reportTaskBadges", source)
+        self.assertIn("queue-task-badges", source)
+        self.assertIn("queue-task-badge", css)
+        for text in ["任务", "待店长", "待审核"]:
+            self.assertIn(text, source)
+
     def test_desktop_shell_matches_workbench_reference(self):
         source = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
         self.assertIn('data-page="weekly"', source)

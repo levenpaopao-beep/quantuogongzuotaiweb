@@ -7,10 +7,12 @@ import json
 import mimetypes
 import os
 import re
+import secrets
 import shutil
 import sqlite3
 import sys
 import threading
+import zipfile
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -20,6 +22,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+import daily_ops_tasks
 import update_shein_summary_30d_skc as raw_xlsx
 
 
@@ -34,6 +37,8 @@ LOW_SCORE_DIR = ROOT / "低分预警输入表"
 DB_PATH = ROOT / "基础数据库" / "project_base_data.sqlite"
 DATA_SOURCE_MANIFEST = ROOT / "基础数据库" / "data_source_manifest.json"
 RULES_FILE = ROOT / "基础数据库" / "report_rules.json"
+TASK_DB_PATH = ROOT / "基础数据库" / "operation_tasks.json"
+STORE_OWNER_MAP_FILE = ROOT / "基础数据库" / "store_owner_map.json"
 OWNER_FILE = ROOT / "店铺负责人对应表.xlsx"
 
 HOST = "127.0.0.1"
@@ -41,6 +46,9 @@ PORT = 8876
 CLIENT_CLOSE_SHUTDOWN_DELAY_SECONDS = 4
 SCHEDULED_SHUTDOWN = None
 SCHEDULED_SHUTDOWN_LOCK = threading.Lock()
+OPERATOR_SESSIONS = {}
+DOWNLOAD_GRANTS = {}
+DEFAULT_OPERATOR_SESSION_SECONDS = 12 * 60 * 60
 
 UPLOAD_TARGETS = {
     "temu_platform": ("Temu平台表", TEMU_DIR),
@@ -224,6 +232,142 @@ def today_code():
     return datetime.now().strftime("%y%m%d")
 
 
+def now_text():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def configured_host():
+    value = os.environ.get("DAILY_OPS_HOST", "").strip()
+    return value or HOST
+
+
+def access_hint(host, port):
+    if host in {"0.0.0.0", "::"}:
+        return f"局域网模式已启动：本机访问 http://127.0.0.1:{port}，店长用本机局域网IP访问同一端口。"
+    return f"本机模式已启动：http://{host}:{port}"
+
+
+def login_operator(role, user, password=""):
+    role = norm(role) or "owner"
+    if role not in {"admin", "owner"}:
+        raise ValueError("身份类型不正确")
+    user = norm(user) or ("管理员" if role == "admin" else "")
+    if not user:
+        raise ValueError("请填写姓名")
+    admin_password = os.environ.get("DAILY_OPS_ADMIN_PASSWORD", "")
+    owner_password = os.environ.get("DAILY_OPS_OWNER_PASSWORD", "")
+    if role == "admin":
+        if configured_host() in {"0.0.0.0", "::"} and not admin_password:
+            raise PermissionError("局域网模式必须先设置 DAILY_OPS_ADMIN_PASSWORD")
+        if admin_password and password != admin_password:
+            raise PermissionError("管理员密码不正确")
+    else:
+        if owner_password and password != owner_password:
+            raise PermissionError("店长访问密码不正确")
+        owners = {norm(row.get("owner")) for row in operation_owner_directory() if norm(row.get("owner"))}
+        if owners and user not in owners:
+            raise PermissionError("店长姓名不在负责人名单中，请联系管理员配置店铺负责人")
+    token = secrets.token_urlsafe(24)
+    session = {"token": token, "role": role, "user": user, "login_at": now_text()}
+    OPERATOR_SESSIONS[token] = session
+    return session
+
+
+def operator_session_seconds():
+    try:
+        return max(1, int(os.environ.get("DAILY_OPS_SESSION_SECONDS", DEFAULT_OPERATOR_SESSION_SECONDS)))
+    except ValueError:
+        return DEFAULT_OPERATOR_SESSION_SECONDS
+
+
+def session_is_expired(session, now=None):
+    login_at = norm(session.get("login_at"))
+    if not login_at:
+        return True
+    try:
+        logged_at = datetime.strptime(login_at, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return True
+    now = now or datetime.now()
+    return (now - logged_at).total_seconds() > operator_session_seconds()
+
+
+def operator_from_token(token):
+    token = norm(token)
+    if not token or token not in OPERATOR_SESSIONS:
+        raise PermissionError("请先登录")
+    session = OPERATOR_SESSIONS[token]
+    if session_is_expired(session):
+        logout_operator(token)
+        raise PermissionError("登录已过期，请重新登录")
+    return session
+
+
+def logout_operator(token):
+    token = norm(token)
+    if token:
+        OPERATOR_SESSIONS.pop(token, None)
+        DOWNLOAD_GRANTS.pop(token, None)
+    return {"ok": True}
+
+
+def handle_session_logout(headers):
+    try:
+        token = token_from_headers(headers)
+        operator_from_token(token)
+        logout_operator(token)
+        return json_bytes({"ok": True})
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+
+
+def grant_download(token, filename):
+    token = norm(token)
+    filename = Path(norm(filename)).name
+    if token and filename:
+        DOWNLOAD_GRANTS.setdefault(token, set()).add(filename)
+
+
+def require_download_permission(token, filename):
+    operator = operator_from_token(token)
+    if operator.get("role") == "admin":
+        return operator
+    if Path(norm(filename)).name not in DOWNLOAD_GRANTS.get(norm(token), set()):
+        raise PermissionError("没有权限下载这个文件")
+    return operator
+
+
+def scoped_task_filters(operator, filters):
+    filters = dict(filters or {})
+    if operator.get("role") == "admin":
+        return {
+            "role": filters.get("role", "admin") or "admin",
+            "user": filters.get("user", "") or "",
+        }
+    return {"role": "owner", "user": operator.get("user", "")}
+
+
+def can_review_tasks(operator):
+    return operator.get("role") == "admin"
+
+
+def task_query_payload(params):
+    return {
+        "role": params.get("role", ["admin"])[0],
+        "user": params.get("user", [""])[0],
+        "status": params.get("status", [""])[0],
+        "task_type": params.get("task_type", [""])[0],
+        "store": params.get("store", [""])[0],
+        "platform": params.get("platform", [""])[0],
+        "next_handler": params.get("next_handler", [""])[0],
+        "priority": params.get("priority", [""])[0],
+        "open_only": params.get("open_only", [""])[0],
+        "overdue": params.get("overdue", [""])[0],
+        "unassigned": params.get("unassigned", [""])[0],
+        "reworked": params.get("reworked", [""])[0],
+    }
+
+
 def json_bytes(payload, status=200):
     body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
     return status, "application/json; charset=utf-8", body
@@ -247,6 +391,93 @@ def output_path(project_name, version, suffix=".xlsx"):
         return path
     stamp = datetime.now().strftime("%H%M%S")
     return OUTPUT_DIR / f"{today_code()}-{safe_name(project_name)}-{version_text(version)}-{stamp}{suffix}"
+
+
+def backup_output_dir():
+    path = ROOT / "运营备份"
+    path.mkdir(exist_ok=True)
+    return path
+
+
+def backup_source_paths():
+    paths = [
+        TASK_DB_PATH,
+        RULES_FILE,
+        DATA_SOURCE_MANIFEST,
+        STORE_OWNER_MAP_FILE,
+        DB_PATH,
+        OWNER_FILE,
+        TEMU_DIR,
+        SHEIN_DIR,
+        ERP_DIR,
+        BARGAIN_DIR,
+        LOW_SCORE_DIR,
+    ]
+    return [Path(path) for path in paths if Path(path).exists()]
+
+
+def backup_relative_path(path):
+    path = Path(path).resolve()
+    try:
+        return path.relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        return path.name
+
+
+def create_operational_backup():
+    target = backup_output_dir() / f"{datetime.now():%Y%m%d-%H%M%S}-运营状态备份.zip"
+    files = []
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for source in backup_source_paths():
+            if source.is_file():
+                zf.write(source, backup_relative_path(source))
+                files.append(backup_relative_path(source))
+            elif source.is_dir():
+                for path in sorted(source.rglob("*")):
+                    if path.is_file() and "__pycache__" not in path.parts:
+                        zf.write(path, backup_relative_path(path))
+                        files.append(backup_relative_path(path))
+        zf.writestr("backup_manifest.json", json.dumps({
+            "created_at": now_text(),
+            "app_version": APP_VERSION,
+            "files": files,
+            "excluded": ["outputs", "build", "打包产物", "虚拟环境", "图片产物"],
+        }, ensure_ascii=False, indent=2))
+    return {"file": target.name, "path": str(target), "count": len(files)}
+
+
+def restore_operational_backup(backup_path):
+    backup_path = Path(backup_path)
+    if not backup_path.exists() or backup_path.suffix.lower() != ".zip":
+        raise FileNotFoundError("备份文件不存在")
+    restored = []
+    allowed_roots = {
+        "基础数据库",
+        "temu数据源表",
+        "shein数据源表",
+        "erp数据源",
+        "核价输入表",
+        "低分预警输入表",
+    }
+    allowed_files = {"店铺负责人对应表.xlsx"}
+    with zipfile.ZipFile(backup_path) as zf:
+        for member in zf.infolist():
+            name = member.filename
+            if member.is_dir() or name == "backup_manifest.json":
+                continue
+            parts = Path(name).parts
+            if not parts:
+                continue
+            if parts[0] not in allowed_roots and name not in allowed_files:
+                continue
+            target = (ROOT / name).resolve()
+            if ROOT.resolve() not in target.parents and target != ROOT.resolve():
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(member) as src, target.open("wb") as dst:
+                shutil.copyfileobj(src, dst)
+            restored.append(name)
+    return {"file": backup_path.name, "restored": restored, "count": len(restored)}
 
 
 def report_id_for_output(filename):
@@ -361,6 +592,92 @@ def owner_files():
     if uploaded:
         return uploaded
     return [OWNER_FILE] if OWNER_FILE.exists() else []
+
+
+def normalize_store_owner_assignment(row):
+    platform = norm(row.get("platform", ""))
+    store = norm(row.get("store", ""))
+    owner = norm(row.get("owner", ""))
+    if not store or not owner:
+        return None
+    return {"platform": platform, "store": store, "owner": owner}
+
+
+def load_store_owner_assignments():
+    path = Path(STORE_OWNER_MAP_FILE)
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    rows = payload.get("assignments", []) if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        return []
+    assignments = []
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        item = normalize_store_owner_assignment(row)
+        if not item:
+            continue
+        key = (item["platform"], item["store"])
+        if key in seen:
+            continue
+        seen.add(key)
+        assignments.append(item)
+    return assignments
+
+
+def save_store_owner_assignments(rows):
+    assignments = []
+    seen = set()
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        item = normalize_store_owner_assignment(row)
+        if not item:
+            continue
+        key = (item["platform"], item["store"])
+        if key in seen:
+            continue
+        seen.add(key)
+        assignments.append(item)
+    path = Path(STORE_OWNER_MAP_FILE)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"assignments": assignments, "updated_at": now_text()}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return assignments
+
+
+def configured_owner_for_store(platform, store):
+    platform = norm(platform)
+    keys = owner_lookup_keys(store) or ([norm(store)] if norm(store) else [])
+    for assignment in load_store_owner_assignments():
+        assignment_platform = norm(assignment.get("platform"))
+        if assignment_platform and platform and assignment_platform != platform:
+            continue
+        if assignment_platform and not platform:
+            continue
+        assignment_keys = set(owner_lookup_keys(assignment.get("store")) or [norm(assignment.get("store"))])
+        if any(key in assignment_keys for key in keys):
+            return norm(assignment.get("owner"))
+    return ""
+
+
+def owner_from_assignments(assignments, platform, store):
+    platform = norm(platform)
+    keys = owner_lookup_keys(store) or ([norm(store)] if norm(store) else [])
+    for assignment in assignments or []:
+        assignment_platform = norm(assignment.get("platform"))
+        if assignment_platform and platform and assignment_platform != platform:
+            continue
+        if assignment_platform and not platform:
+            continue
+        assignment_keys = set(owner_lookup_keys(assignment.get("store")) or [norm(assignment.get("store"))])
+        if any(key in assignment_keys for key in keys):
+            return norm(assignment.get("owner"))
+    return ""
 
 
 def bargain_input_files():
@@ -493,10 +810,18 @@ def source_file_state(path):
     }
 
 
+def upload_batch_id(category):
+    return f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{safe_name(category)}"
+
+
 def record_uploaded_source(category, path):
     manifest = load_source_manifest()
     categories = manifest.setdefault("categories", {})
-    pending = manifest.setdefault("pending_batches", {}).setdefault(category, {"files": [], "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+    pending = manifest.setdefault("pending_batches", {}).setdefault(category, {
+        "batch_id": upload_batch_id(category),
+        "files": [],
+        "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    })
     state = source_file_state(path)
     active_hashes = set(categories.get(category, {}).get("sha256_list", []))
     state["changed"] = state["sha256"] not in active_hashes
@@ -505,7 +830,7 @@ def record_uploaded_source(category, path):
     pending["files"] = pending_files
     pending["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     save_source_manifest(manifest)
-    return {**state, "pending": True, "pending_count": len(pending_files)}
+    return {**state, "pending": True, "pending_count": len(pending_files), "batch_id": pending.get("batch_id", "")}
 
 
 def pending_batch(category):
@@ -527,6 +852,7 @@ def finish_upload_batch(category):
     sha256_list = [item["sha256"] for item in files]
     changed = sha256_list != list(previous.get("sha256_list", [])) or any(value not in previous_hashes for value in sha256_list)
     categories[category] = {
+        "batch_id": pending.get("batch_id") or upload_batch_id(category),
         "paths": [item["path"] for item in files],
         "path": files[-1]["path"],
         "files": [item["file"] for item in files],
@@ -579,6 +905,11 @@ def source_group_status():
             "batch_files": [],
             "total_rows": "",
             "pending_count": len(pending),
+            "pending_files": [item.get("file", "") for item in pending if item.get("file")],
+            "pending_batch_id": pending_batches.get(key, {}).get("batch_id", ""),
+            "pending_started_at": pending_batches.get(key, {}).get("started_at", ""),
+            "batch_id": "",
+            "uploaded_at": "",
         }
         if latest:
             stat = latest.stat()
@@ -595,6 +926,8 @@ def source_group_status():
             }
             item["batch_files"] = uploaded.get("files") or [path.name for path in files]
             item["total_rows"] = uploaded.get("rows", "")
+            item["batch_id"] = uploaded.get("batch_id", "")
+            item["uploaded_at"] = uploaded.get("uploaded_at", "")
             item["count"] = len(files)
             if uploaded_paths:
                 item["changed"] = bool(uploaded.get("changed"))
@@ -673,10 +1006,42 @@ def data_status():
         "source_groups": source_group_status(),
         "outputs": recent_outputs(80),
         "database": {"exists": db_ok, "tables": db_tables, "rows": db_rows, "path": str(DB_PATH)},
+        "tasks": operation_task_summary(),
+        "report_tasks": report_task_summary(),
         "reports": REPORTS,
         "rules": load_rules(),
         "upload_targets": {key: label for key, (label, _folder) in UPLOAD_TARGETS.items()},
     }
+
+
+def public_status(payload):
+    safe = dict(payload)
+    safe["source_groups"] = []
+    safe["outputs"] = []
+    safe["reports"] = {}
+    safe["rules"] = {}
+    safe["upload_targets"] = {}
+    safe["report_tasks"] = {}
+    safe["tasks"] = {}
+    database = dict(safe.get("database") or {})
+    database["path"] = ""
+    safe["database"] = database
+    return safe
+
+
+def handle_status_api(headers):
+    try:
+        payload = data_status()
+        token = token_from_headers(headers or {})
+        if token:
+            operator = operator_from_token(token)
+            if can_review_tasks(operator):
+                return json_bytes({"ok": True, **payload})
+        return json_bytes({"ok": True, **public_status(payload)})
+    except PermissionError:
+        return json_bytes({"ok": True, **public_status(data_status())})
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
 
 
 def load_module(path, name):
@@ -962,17 +1327,22 @@ def run_weekly_reports():
         ("temu_inventory", "V1"),
         ("temu_hot", "V1.1"),
         ("temu_slow", "V3"),
+        ("temu_bargain", "V1"),
         ("low_score_warning", "V1"),
         ("shein_price", "V1"),
         ("shein_inventory", "V1"),
         ("shein_hot", "V2"),
     ]
     results = []
+    task_sync_total = {"created": 0, "updated": 0, "imported_rows": 0}
     for report_id, version in weekly:
         try:
             result = run_report(report_id, version)
             result["status"] = "ok"
             result["report"] = report_id
+            task_sync = result.get("task_sync") or {}
+            for key in task_sync_total:
+                task_sync_total[key] += int(task_sync.get(key) or 0)
         except Exception as exc:
             result = {
                 "status": "failed",
@@ -981,7 +1351,13 @@ def run_weekly_reports():
                 "error": str(exc),
             }
         results.append(result)
-    return {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "results": results}
+    ok_count = sum(1 for item in results if item.get("status") == "ok")
+    return {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "summary": {"total": len(results), "ok": ok_count, "failed": len(results) - ok_count},
+        "task_sync": task_sync_total,
+        "results": results,
+    }
 
 
 def norm(value):
@@ -1044,6 +1420,12 @@ def load_owners():
                 owners[store] = owner
                 for key in owner_lookup_keys(store):
                     owners.setdefault(key, owner)
+    for assignment in load_store_owner_assignments():
+        store = assignment["store"]
+        owner = assignment["owner"]
+        owners[store] = owner
+        for key in owner_lookup_keys(store):
+            owners.setdefault(key, owner)
     return owners
 
 
@@ -1230,7 +1612,8 @@ def run_report(report_id, version):
         detail = run_shein_hot(out)
     else:
         raise ValueError("暂未接入该报表")
-    return {"file": out.name, "download": f"/download?path={quote(out.name)}", "detail": detail}
+    task_sync = sync_report_tasks(report_id, out)
+    return {"file": out.name, "download": f"/download?path={quote(out.name)}", "detail": detail, "task_sync": task_sync}
 
 
 def search_database(query, limit=100):
@@ -1280,6 +1663,365 @@ def export_search(query, limit=500):
     style_basic_sheet(ws)
     wb.save(out)
     return {"file": out.name, "download": f"/download?path={quote(out.name)}", "rows": len(rows)}
+
+
+def handle_search_api(action, headers, payload):
+    try:
+        operator = operator_from_token(token_from_headers(headers))
+        if not can_review_tasks(operator):
+            return json_bytes({"ok": False, "error": f"只有管理员可以执行{action}"}, status=403)
+        if action == "GET":
+            rows = search_database(payload.get("q", ""), payload.get("limit", "100"))
+            return json_bytes({"ok": True, "rows": rows})
+        return json_bytes({"ok": False, "error": "基础数据查询接口不存在"}, status=404)
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
+def handle_rules_api(action, headers, payload=None):
+    try:
+        operator = operator_from_token(token_from_headers(headers))
+        if not can_review_tasks(operator):
+            return json_bytes({"ok": False, "error": "只有管理员可以维护规则"}, status=403)
+        if action == "GET":
+            return json_bytes({"ok": True, "rules": load_rules()})
+        if action == "POST_SAVE":
+            return json_bytes({"ok": True, "rules": save_rules(payload or {})})
+        return json_bytes({"ok": False, "error": "规则接口不存在"}, status=404)
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
+def operation_task_store():
+    return daily_ops_tasks.OperationTaskStore(TASK_DB_PATH)
+
+
+def assign_existing_unassigned_tasks(assignments, actor="管理员"):
+    store = operation_task_store()
+    with store._lock:
+        payload = store.load()
+        timestamp = now_text()
+        assigned = 0
+        for task in payload.get("tasks", []):
+            if norm(task.get("owner")):
+                continue
+            owner = owner_from_assignments(assignments, task.get("platform", ""), task.get("store", ""))
+            if not owner:
+                continue
+            task["owner"] = owner
+            task["updated_at"] = timestamp
+            task.setdefault("history", []).append(daily_ops_tasks.history_entry(
+                task,
+                norm(actor) or "管理员",
+                "自动指派",
+                f"按店铺负责人配置指派给 {owner}",
+                "保存店铺负责人配置时自动补齐",
+                time=timestamp,
+            ))
+            assigned += 1
+        if assigned:
+            store.save(payload)
+        return assigned
+
+
+def apply_store_owner_mapping(rows):
+    mapped = []
+    for row in rows:
+        item = dict(row)
+        if not norm(item.get("owner")):
+            owner = configured_owner_for_store(item.get("platform", ""), item.get("store", ""))
+            if owner:
+                item["owner"] = owner
+                item["owner_source"] = "店铺负责人配置"
+        mapped.append(item)
+    return mapped
+
+
+def sync_report_tasks(report_id, workbook_path):
+    report = REPORTS.get(report_id, {})
+    rows = daily_ops_tasks.rows_from_report_workbook(report_id, report.get("name", report_id), workbook_path)
+    batch_id = Path(workbook_path).stem
+    rows = [{**row, "source_batch_id": batch_id} for row in rows]
+    rows = apply_store_owner_mapping(rows)
+    result = operation_task_store().upsert_generated_tasks(rows)
+    result["imported_rows"] = len(rows)
+    return result
+
+
+def operation_task_summary():
+    return operation_task_store().summary()
+
+
+def report_id_for_task(row):
+    source_report = norm(row.get("source_report"))
+    for report_id, report in REPORTS.items():
+        if source_report == report.get("name"):
+            return report_id
+    return ""
+
+
+def report_task_summary():
+    result = {report_id: {"total": 0, "by_status": {}} for report_id in REPORTS}
+    for row in operation_task_store().list_tasks():
+        report_id = report_id_for_task(row)
+        if not report_id:
+            continue
+        item = result.setdefault(report_id, {"total": 0, "by_status": {}})
+        item["total"] += 1
+        status = norm(row.get("status"))
+        item["by_status"][status] = item["by_status"].get(status, 0) + 1
+    return result
+
+
+def summarize_operation_tasks(rows):
+    return operation_task_store().summary(rows)
+
+
+def operation_owner_directory():
+    owners = {row["owner"]: row for row in operation_task_store().owner_directory()}
+    for assignment in load_store_owner_assignments():
+        owner = assignment["owner"]
+        item = owners.setdefault(owner, {"owner": owner, "stores": [], "platforms": [], "task_count": 0})
+        if assignment["store"] not in item["stores"]:
+            item["stores"].append(assignment["store"])
+        platform = assignment.get("platform", "")
+        if platform and platform not in item["platforms"]:
+            item["platforms"].append(platform)
+    for item in owners.values():
+        item["stores"] = sorted(item["stores"])
+        item["platforms"] = sorted(item["platforms"])
+    return sorted(owners.values(), key=lambda row: (-row["task_count"], row["owner"]))
+
+
+def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only=""):
+    return operation_task_store().list_tasks(
+        role=role,
+        user=user,
+        status=status,
+        task_type=task_type,
+        store=store,
+        platform=platform,
+        overdue=overdue,
+        unassigned=unassigned,
+        next_handler=next_handler,
+        priority=priority,
+        reworked=reworked,
+        open_only=open_only,
+    )
+
+
+def submit_operation_task(task_id, actor, action, remark="", proof=""):
+    return operation_task_store().submit_owner_action(task_id, actor, action, remark, proof)
+
+
+def assign_operation_task(task_id, actor, owner, remark=""):
+    return operation_task_store().assign_task(task_id, actor, owner, remark)
+
+
+def review_operation_task(task_id, admin, decision, remark=""):
+    return operation_task_store().review_task(task_id, admin, decision, remark)
+
+
+def review_operation_tasks(task_ids, admin, decision, remark=""):
+    return operation_task_store().review_tasks(task_ids, admin, decision, remark)
+
+
+def mark_operation_task_done(task_id, actor, remark=""):
+    return operation_task_store().mark_done(task_id, actor, remark)
+
+
+def operation_task_export_title(filters):
+    parts = ["运营任务台账"]
+    for key in ["platform", "user", "status", "task_type", "store", "next_handler", "priority"]:
+        value = norm(filters.get(key, ""))
+        if value:
+            parts.append(value)
+    if norm(filters.get("overdue")) in {"1", "true", "是", "超时"}:
+        parts.append("超时")
+    if norm(filters.get("unassigned")) in {"1", "true", "是", "未分配"}:
+        parts.append("未分配")
+    if norm(filters.get("reworked")) in {"1", "true", "是", "返工"}:
+        parts.append("返工")
+    if norm(filters.get("open_only")) in {"1", "true", "是", "未完成", "待办"}:
+        parts.append("未完成")
+    return "-".join(parts)
+
+
+def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only=""):
+    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned, next_handler=next_handler, priority=priority, reworked=reworked, open_only=open_only)
+    history_rows = sum(len(row.get("history") or []) for row in rows)
+    filters = {
+        "role": role,
+        "user": user,
+        "status": status,
+        "task_type": task_type,
+        "store": store,
+        "platform": platform,
+        "overdue": overdue,
+        "unassigned": unassigned,
+        "next_handler": next_handler,
+        "priority": priority,
+        "reworked": reworked,
+        "open_only": open_only,
+    }
+    out = output_path(operation_task_export_title(filters), "V1")
+    operation_task_store().export_tasks(out, rows, filters=filters)
+    return {"file": out.name, "download": f"/download?path={quote(out.name)}", "rows": len(rows), "history_rows": history_rows}
+
+
+def token_from_headers(headers):
+    if not headers:
+        return ""
+    return headers.get("X-Operator-Token", "") or headers.get("x-operator-token", "")
+
+
+def handle_tasks_api(action, headers, payload):
+    try:
+        token = token_from_headers(headers)
+        operator = operator_from_token(token)
+        if action == "GET":
+            filters = scoped_task_filters(operator, payload)
+            rows = list_operation_tasks(
+                role=filters["role"],
+                user=filters["user"],
+                status=payload.get("status", ""),
+                task_type=payload.get("task_type", ""),
+                store=payload.get("store", ""),
+                platform=payload.get("platform", ""),
+                overdue=payload.get("overdue", ""),
+                unassigned=payload.get("unassigned", ""),
+                next_handler=payload.get("next_handler", ""),
+                priority=payload.get("priority", ""),
+                reworked=payload.get("reworked", ""),
+                open_only=payload.get("open_only", ""),
+            )
+            return json_bytes({"ok": True, "operator": operator, "summary": summarize_operation_tasks(rows), "tasks": rows})
+        if action == "POST_SUBMIT":
+            task_id = payload.get("id", "")
+            if operator.get("role") != "owner":
+                return json_bytes({"ok": False, "error": "只有店长可以填写处理结果"}, status=403)
+            task = operation_task_store().require_task(task_id)[1]
+            if norm(task.get("owner")) != norm(operator.get("user")):
+                return json_bytes({"ok": False, "error": "不能处理其他负责人的任务"}, status=403)
+            task = submit_operation_task(task_id, operator.get("user", ""), payload.get("action", ""), payload.get("remark", ""), payload.get("proof", ""))
+            return json_bytes({"ok": True, "task": task})
+        if action == "POST_ASSIGN":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以指派任务"}, status=403)
+            task = assign_operation_task(payload.get("id", ""), operator.get("user", "管理员"), payload.get("owner", ""), payload.get("remark", ""))
+            return json_bytes({"ok": True, "task": task})
+        if action == "POST_REVIEW":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以审核"}, status=403)
+            task = review_operation_task(payload.get("id", ""), operator.get("user", "管理员"), payload.get("decision", ""), payload.get("remark", ""))
+            return json_bytes({"ok": True, "task": task})
+        if action == "POST_BATCH_REVIEW":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以批量审核"}, status=403)
+            result = review_operation_tasks(payload.get("ids", []), operator.get("user", "管理员"), payload.get("decision", ""), payload.get("remark", ""))
+            return json_bytes({"ok": True, **result})
+        if action == "POST_DONE":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以标记完成"}, status=403)
+            task = mark_operation_task_done(payload.get("id", ""), operator.get("user", "管理员"), payload.get("remark", ""))
+            return json_bytes({"ok": True, "task": task})
+        if action == "POST_EXPORT":
+            filters = scoped_task_filters(operator, payload)
+            result = export_operation_tasks(
+                role=filters["role"],
+                user=filters["user"],
+                status=payload.get("status", ""),
+                task_type=payload.get("task_type", ""),
+                store=payload.get("store", ""),
+                platform=payload.get("platform", ""),
+                overdue=payload.get("overdue", ""),
+                unassigned=payload.get("unassigned", ""),
+                next_handler=payload.get("next_handler", ""),
+                priority=payload.get("priority", ""),
+                reworked=payload.get("reworked", ""),
+                open_only=payload.get("open_only", ""),
+            )
+            grant_download(token, result.get("file", ""))
+            return json_bytes({"ok": True, **result})
+        return json_bytes({"ok": False, "error": "任务接口不存在"}, status=404)
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+    except KeyError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=404)
+    except ValueError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=400)
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
+def public_owner_directory():
+    return [{"owner": row.get("owner", "")} for row in operation_owner_directory()]
+
+
+def handle_owners_api(headers=None):
+    try:
+        token = token_from_headers(headers or {})
+        if token:
+            operator = operator_from_token(token)
+            if can_review_tasks(operator):
+                return json_bytes({"ok": True, "owners": operation_owner_directory()})
+        return json_bytes({"ok": True, "owners": public_owner_directory()})
+    except PermissionError:
+        return json_bytes({"ok": True, "owners": public_owner_directory()})
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
+def handle_store_owners_api(action, headers, payload=None):
+    try:
+        operator = operator_from_token(token_from_headers(headers))
+        if not can_review_tasks(operator):
+            return json_bytes({"ok": False, "error": "只有管理员可以维护店铺负责人"}, status=403)
+        if action == "GET":
+            return json_bytes({"ok": True, "assignments": load_store_owner_assignments(), "owners": operation_owner_directory()})
+        payload = payload or {}
+        if action == "POST_SAVE":
+            assignments = save_store_owner_assignments(payload.get("assignments", []))
+            assigned_existing = assign_existing_unassigned_tasks(assignments, operator.get("user", "管理员"))
+            return json_bytes({"ok": True, "assignments": assignments, "assigned_existing": assigned_existing, "owners": operation_owner_directory()})
+        return json_bytes({"ok": False, "error": "店铺负责人接口不存在"}, status=404)
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
+def handle_admin_api(action, headers):
+    try:
+        operator = operator_from_token(token_from_headers(headers))
+        if not can_review_tasks(operator):
+            return json_bytes({"ok": False, "error": f"只有管理员可以执行{action}"}, status=403)
+        return json_bytes({"ok": True, "operator": operator})
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
+def handle_backup_api(action, headers, payload=None):
+    try:
+        operator = operator_from_token(token_from_headers(headers))
+        if not can_review_tasks(operator):
+            return json_bytes({"ok": False, "error": "只有管理员可以执行备份和恢复"}, status=403)
+        payload = payload or {}
+        if action == "CREATE":
+            return json_bytes({"ok": True, **create_operational_backup()})
+        if action == "RESTORE":
+            return json_bytes({"ok": True, **restore_operational_backup(payload.get("path", ""))})
+        return json_bytes({"ok": False, "error": "备份接口不存在"}, status=404)
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
 
 
 HTML_PAGE = r"""<!doctype html>
@@ -1371,8 +2113,22 @@ HTML_PAGE = r"""<!doctype html>
     .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
     .field label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
     .field input, .field textarea { width:100%; }
+    .owner-map-tools textarea { width:100%; min-height:132px; font-family:Consolas, "Microsoft YaHei", monospace; }
+    .task-summary { display:grid; grid-template-columns:repeat(4,minmax(140px,1fr)); gap:10px; margin-bottom:12px; }
+    .task-kpi { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; }
+    .task-kpi strong { display:block; font-size:22px; margin-top:4px; }
+    .task-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; align-items:center; margin-bottom:12px; }
+    .task-product { min-width:220px; }
+    .task-actions { display:flex; gap:6px; flex-wrap:wrap; }
+    .task-actions button { padding:7px 9px; }
+    .login-bar { background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:12px; display:grid; grid-template-columns:120px 160px 160px auto auto 1fr; gap:8px; align-items:center; }
+    .login-bar .identity { color:var(--muted); font-size:13px; }
+    .owner-entry { background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:12px; display:grid; grid-template-columns:auto minmax(260px,1fr) auto auto; gap:8px; align-items:center; }
+    .owner-entry input { width:100%; }
+    .backup-tools { margin-top:14px; display:grid; gap:10px; }
+    .backup-tools .row input { min-width:360px; flex:1; }
     @media (max-width:1180px) { .cards, .source-grid { grid-template-columns:repeat(2,minmax(240px,1fr)); } }
-    @media (max-width:760px) { .app { grid-template-columns:1fr; } aside { position:static; } .cards, .source-grid { grid-template-columns:1fr; } main { padding:16px; } header, .weekly-hero { align-items:flex-start; flex-direction:column; gap:12px; } .report-card { height:380px; } .weekly-source-card { height:350px; } }
+    @media (max-width:760px) { .app { grid-template-columns:1fr; } aside { position:static; } .cards, .source-grid, .task-summary, .task-filters, .owner-entry { grid-template-columns:1fr; } main { padding:16px; } header, .weekly-hero { align-items:flex-start; flex-direction:column; gap:12px; } .report-card { height:380px; } .weekly-source-card { height:350px; } }
   </style>
 </head>
 <body>
@@ -1381,10 +2137,10 @@ HTML_PAGE = r"""<!doctype html>
     <div class="brand">日常运营工作台 v2.0</div>
     <nav>
       <button class="active" data-tab="tasks">任务面板</button>
-      <button data-tab="weekly">每周工作流</button>
-      <button data-tab="rules">规则设置</button>
-      <button data-tab="search">基础数据查询</button>
-      <button data-tab="files">输出文件</button>
+      <button data-tab="weekly" data-admin-only="1">每周工作流</button>
+      <button data-tab="rules" data-admin-only="1">规则设置</button>
+      <button data-tab="search" data-admin-only="1">基础数据查询</button>
+      <button data-tab="files" data-admin-only="1">输出文件</button>
     </nav>
   </aside>
   <main>
@@ -1398,9 +2154,54 @@ HTML_PAGE = r"""<!doctype html>
         <button class="danger" onclick="shutdownWorkbench()">关闭工作台</button>
       </div>
     </header>
+    <div class="login-bar">
+      <select id="loginRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
+      <input id="loginUser" placeholder="登录身份" list="ownerOptions">
+      <datalist id="ownerOptions"></datalist>
+      <input id="loginPassword" placeholder="管理员/店长访问密码，可空" type="password">
+      <button class="primary" onclick="loginOperator()">登录身份</button>
+      <button class="secondary" onclick="logoutOperator()">退出身份</button>
+      <div class="identity" id="operatorIdentity">未登录：任务台账需要先登录</div>
+    </div>
+    <div class="owner-entry">
+      <strong>店长入口</strong>
+      <input id="ownerEntryLink" readonly placeholder="选择或填写负责人后生成店长入口链接，格式包含 role=owner&user=负责人">
+      <button class="secondary" onclick="updateOwnerEntryLink()">生成入口</button>
+      <button class="secondary" onclick="copyOwnerEntryLink()">复制入口</button>
+    </div>
 
     <section id="tasks" class="section active">
-      <div class="grid cards" id="reportCards"></div>
+      <div class="task-summary" id="taskSummary"></div>
+      <div class="task-summary" id="adminTaskQueue"></div>
+      <div class="task-summary" id="ownerTaskSummary"></div>
+      <div class="panel">
+        <h2>任务台账</h2>
+        <div class="task-filters">
+          <select id="taskRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
+          <input id="taskUser" placeholder="负责人姓名">
+          <select id="taskStatus"><option value="">全部状态</option><option>待店长处理</option><option>待管理员审核</option><option>已通过</option><option>已驳回</option><option>已完成</option></select>
+          <select id="taskPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option></select>
+          <select id="taskType"><option value="">全部类型</option><option>价格异常</option><option>库存异常</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
+          <input id="taskStore" placeholder="店铺">
+          <select id="taskNextHandler"><option value="">全部下一步</option><option>管理员</option><option>店长</option><option>无需处理</option></select>
+          <select id="taskPriority"><option value="">全部优先级</option><option>高</option><option>中</option><option>普通</option><option>低</option></select>
+          <label><input id="taskOpenOnly" type="checkbox"> 只看未完成</label>
+          <label><input id="taskOverdue" type="checkbox"> 只看超时</label>
+          <label><input id="taskUnassigned" type="checkbox"> 只看未分配</label>
+          <label><input id="taskReworked" type="checkbox"> 只看返工</label>
+          <button class="primary" onclick="loadTasks()">查询</button>
+          <button class="primary" data-admin-only="task-review" onclick="batchReviewTasks('通过')">批量通过</button>
+          <button class="danger" data-admin-only="task-review" onclick="batchReviewTasks('驳回')">批量驳回</button>
+          <button class="secondary" onclick="exportTasks()">导出</button>
+        </div>
+        <div class="status" id="taskStatusLine"></div>
+        <div style="overflow:auto; max-height:620px;">
+          <table>
+            <thead><tr><th>状态</th><th>下一步</th><th>类型</th><th>店铺/负责人</th><th>商品</th><th>系统建议</th><th>店长填写</th><th>管理员审核</th><th>操作</th></tr></thead>
+            <tbody id="taskRows"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <section id="weekly" class="section">
@@ -1446,6 +2247,16 @@ HTML_PAGE = r"""<!doctype html>
         </div>
         <div class="status" id="rulesStatus"></div>
       </div>
+      <div class="panel owner-map-tools" style="margin-top:14px;">
+        <h2>店铺负责人配置</h2>
+        <div class="muted" style="margin-bottom:12px;">用于 Shein 表格没有负责人、或导入表缺负责人时自动分配任务。每行格式：平台，店铺，负责人。</div>
+        <textarea id="storeOwnerMapText" placeholder="Temu，7，小琴&#10;Shein，琪琪，洁琳"></textarea>
+        <div class="row" style="margin-top:12px;">
+          <button class="primary" onclick="saveStoreOwners()">保存负责人配置</button>
+          <button class="secondary" onclick="loadStoreOwners()">重新读取</button>
+        </div>
+        <div class="status" id="storeOwnerStatus"></div>
+      </div>
     </section>
 
     <section id="search" class="section">
@@ -1475,6 +2286,16 @@ HTML_PAGE = r"""<!doctype html>
           <tbody id="outputRows"></tbody>
         </table>
       </div>
+      <div class="panel backup-tools">
+        <h2>数据备份</h2>
+        <div class="muted">备份只包含运营状态、规则、数据源和任务台账，不包含输出表、图片产物、打包产物、虚拟环境产物。</div>
+        <div class="row">
+          <button class="primary" onclick="createBackup()">生成备份</button>
+          <input id="restoreBackupPath" placeholder="粘贴要恢复的 .zip 备份文件完整路径">
+          <button class="danger" onclick="restoreBackup()">恢复备份</button>
+        </div>
+        <div class="status" id="backupStatus"></div>
+      </div>
     </section>
   </main>
 </div>
@@ -1482,23 +2303,204 @@ HTML_PAGE = r"""<!doctype html>
 let appStatus = null;
 let userRequestedShutdown = false;
 const reportRunMessages = {};
+let taskState = {summary:{}, tasks:[]};
+let ownerOptions = [];
+let operatorToken = localStorage.getItem('operatorToken') || '';
+let operatorSession = JSON.parse(localStorage.getItem('operatorSession') || 'null');
 const titles = {tasks:'任务面板', weekly:'每周工作流', rules:'规则设置', search:'基础数据查询', files:'输出文件'};
 document.querySelectorAll('nav button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById(btn.dataset.tab).classList.add('active');
-    document.getElementById('pageTitle').textContent = titles[btn.dataset.tab];
-  });
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 function fmtSize(n){ if(n>1048576) return (n/1048576).toFixed(1)+' MB'; if(n>1024) return (n/1024).toFixed(1)+' KB'; return n+' B'; }
-async function api(url, opts){ const r = await fetch(url, opts); const j = await r.json(); if(!r.ok || j.ok===false) throw new Error(j.error || '请求失败'); return j; }
+async function api(url, opts={}){
+  const next = {...opts, headers:{...(opts.headers || {})}};
+  if(operatorToken) next.headers['X-Operator-Token'] = operatorToken;
+  const r = await fetch(url, next);
+  const j = await r.json();
+  if(!r.ok || j.ok===false) {
+    const error = new Error(j.error || '请求失败');
+    error.status = r.status;
+    if(error.status === 401) clearOperatorSession();
+    throw error;
+  }
+  return j;
+}
+function authDownload(url){
+  if(!operatorToken) return url;
+  const next = new URL(url, window.location.origin);
+  next.searchParams.set('token', operatorToken);
+  return next.pathname + next.search;
+}
+function renderOperator(){
+  const el = document.getElementById('operatorIdentity');
+  if(!el) return;
+  const taskRole = document.getElementById('taskRole');
+  if(operatorSession){
+    el.textContent = `当前身份：${operatorSession.role === 'admin' ? '管理员' : '店长'} · ${operatorSession.user}`;
+    taskRole.value = operatorSession.role;
+    taskRole.disabled = operatorSession.role === 'owner';
+    document.getElementById('taskUser').value = operatorSession.user;
+    defaultOpenTasksForOwner();
+  } else {
+    el.textContent = '未登录：任务台账需要先登录';
+    if(taskRole) taskRole.disabled = false;
+  }
+  applyRoleVisibility();
+  updateOwnerEntryLink();
+}
+function defaultOpenTasksForOwner(){
+  const openOnly = document.getElementById('taskOpenOnly');
+  if(operatorSession?.role === 'owner' && openOnly) openOnly.checked = true;
+}
+function clearOperatorSession(){
+  localStorage.removeItem('operatorSession');
+  localStorage.removeItem('operatorToken');
+  operatorSession = null;
+  operatorToken = '';
+  renderOperator();
+}
+function switchTab(tab){
+  if(operatorSession?.role === 'owner' && tab !== 'tasks') tab = 'tasks';
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === tab));
+  document.getElementById('pageTitle').textContent = titles[tab] || titles.tasks;
+}
+function applyRoleVisibility(){
+  const ownerMode = operatorSession?.role === 'owner';
+  document.querySelectorAll('[data-admin-only]').forEach(el => { el.classList.toggle('hidden', ownerMode); });
+  if(ownerMode) switchTab('tasks');
+}
+function ownerEntryUrl(owner){
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.searchParams.set('role', 'owner');
+  url.searchParams.set('user', owner);
+  return url.toString();
+}
+function updateOwnerEntryLink(){
+  const input = document.getElementById('ownerEntryLink');
+  if(!input) return;
+  const owner = document.getElementById('taskUser')?.value.trim() || document.getElementById('loginUser')?.value.trim() || '';
+  input.value = owner ? ownerEntryUrl(owner) : '';
+}
+async function copyOwnerEntryLink(){
+  updateOwnerEntryLink();
+  const link = document.getElementById('ownerEntryLink')?.value || '';
+  const el = document.getElementById('operatorIdentity');
+  if(!link){ if(el) el.textContent = '请先填写负责人姓名，再生成店长入口'; return; }
+  if(navigator.clipboard) await navigator.clipboard.writeText(link);
+  if(el) el.textContent = '店长入口已复制';
+}
+function applyEntryParams(){
+  const params = new URLSearchParams(window.location.search);
+  const role = params.get('role');
+  const user = params.get('user');
+  if(role !== 'owner' || !user) return;
+  localStorage.removeItem('operatorSession');
+  localStorage.removeItem('operatorToken');
+  operatorSession = null;
+  operatorToken = '';
+  document.getElementById('loginRole').value = 'owner';
+  document.getElementById('loginUser').value = user;
+  document.getElementById('taskRole').value = 'owner';
+  document.getElementById('taskRole').disabled = true;
+  document.getElementById('taskUser').value = user;
+  document.getElementById('taskOpenOnly').checked = true;
+  const el = document.getElementById('operatorIdentity');
+  if(el) el.textContent = `请以店长身份登录：${user}`;
+  updateOwnerEntryLink();
+}
+async function loginOperator(){
+  const el = document.getElementById('operatorIdentity');
+  if(el) el.textContent = '正在登录...';
+  try {
+    const payload = {
+      role: document.getElementById('loginRole').value,
+      user: document.getElementById('loginUser').value.trim(),
+      password: document.getElementById('loginPassword').value
+    };
+    const res = await api('/api/session/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    operatorSession = res.session;
+    operatorToken = res.session.token;
+    localStorage.setItem('operatorSession', JSON.stringify(operatorSession));
+    localStorage.setItem('operatorToken', operatorToken);
+    document.getElementById('loginPassword').value = '';
+    renderOperator();
+    await refreshStatus();
+  } catch(e) {
+    document.getElementById('loginPassword').value = '';
+    if(el) el.innerHTML = `<span class="bad">登录失败：${esc(e.message)}</span>`;
+  }
+}
+async function logoutOperator(){
+  try {
+    if(operatorToken){
+      await api('/api/session/logout', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({})});
+    }
+  } catch(e) {
+    // 本地仍清掉身份，避免旧 token 继续留在共享浏览器里。
+  }
+  clearOperatorSession();
+  document.getElementById('loginPassword').value = '';
+  renderTaskSummary();
+  const tbody = document.getElementById('taskRows');
+  if(tbody) tbody.innerHTML = '<tr><td colspan="9" class="muted">请先登录身份。</td></tr>';
+}
+async function loadOwnerOptions(){
+  try {
+    const res = await api('/api/owners');
+    ownerOptions = res.owners || [];
+    const list = document.getElementById('ownerOptions');
+    if(list){
+      list.innerHTML = ownerOptions.map(item => `<option value="${esc(item.owner)}">${esc((item.stores || []).join('、'))}</option>`).join('');
+    }
+  } catch(e) {
+    ownerOptions = [];
+  }
+}
+function renderStoreOwners(assignments){
+  const el = document.getElementById('storeOwnerMapText');
+  if(!el) return;
+  el.value = (assignments || []).map(item => [item.platform || '', item.store || '', item.owner || ''].join('，')).join('\n');
+}
+function parseStoreOwnerText(){
+  const text = document.getElementById('storeOwnerMapText')?.value || '';
+  return text.split(/\n+/).map(line => {
+    const parts = line.split(/[,，\t]/).map(item => item.trim());
+    return {platform: parts[0] || '', store: parts[1] || '', owner: parts[2] || ''};
+  }).filter(item => item.store && item.owner);
+}
+async function loadStoreOwners(){
+  const st = document.getElementById('storeOwnerStatus');
+  try {
+    const res = await api('/api/store-owners');
+    renderStoreOwners(res.assignments || []);
+    if(st) st.textContent = `已读取 ${res.assignments?.length || 0} 条负责人配置`;
+  } catch(e){
+    if(st) st.innerHTML = `<span class="bad">${e.message}</span>`;
+  }
+}
+async function saveStoreOwners(){
+  const st = document.getElementById('storeOwnerStatus');
+  const assignments = parseStoreOwnerText();
+  if(st) st.textContent = '正在保存负责人配置...';
+  try {
+    const res = await api('/api/store-owners', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({assignments})});
+    renderStoreOwners(res.assignments || []);
+    await loadOwnerOptions();
+    updateOwnerEntryLink();
+    if(st) st.innerHTML = `<span class="ok">负责人配置已保存：</span>${res.assignments?.length || 0} 条；已补齐 ${res.assigned_existing || 0} 条未分配任务。后续生成任务会自动使用。`;
+  } catch(e){
+    if(st) st.innerHTML = `<span class="bad">${e.message}</span>`;
+  }
+}
 async function refreshStatus(){
   try {
     appStatus = await api('/api/status');
     document.getElementById('statusLine').textContent = `当前版本 ${appStatus.version || 'v2.0'}，Temu数据源 ${appStatus.temu_files} 个，Shein数据源 ${appStatus.shein_files} 个，ERP数据源 ${appStatus.erp_files} 个，基础库 ${appStatus.database.tables} 表 / ${appStatus.database.rows} 行`;
-    renderReports(); renderOutputs(); renderWeeklySources(); renderRules();
+    renderReports(); renderOutputs(); renderWeeklySources(); renderRules(); renderOperator(); loadTasks(false);
+    loadOwnerOptions();
+    loadStoreOwners();
     updateReportOutputCapacity();
   } catch(e) { document.getElementById('statusLine').textContent = e.message; }
 }
@@ -1568,13 +2570,14 @@ async function shutdownWorkbench(){
   }
 }
 function renderReports(){
-  const wrap = document.getElementById('reportCards'); wrap.innerHTML = '';
+  const wrap = document.getElementById('reportCards'); if(!wrap) return; wrap.innerHTML = '';
   Object.entries(appStatus.reports).forEach(([id, r], index) => {
     const card = document.createElement('div'); card.className='card report-card';
     card.innerHTML = `<div class="report-top">
         <div class="report-title-row"><h3>${esc(r.name)}</h3><div class="report-index">${index + 1}</div></div>
         <div class="muted report-desc">${esc(r.description)}</div>
         <div class="muted report-sources" title="${esc(r.sources)}">所需数据源：${esc(r.sources)}</div>
+        <div class="muted">${esc(reportTaskSummary(id))}</div>
       </div>
       <div class="report-body">
         <div class="report-actions"><input id="ver_${id}" value="V1"><button class="primary" onclick="runReport('${id}')">生成表格</button></div>
@@ -1591,6 +2594,13 @@ function renderReports(){
 }
 function reportOutputs(id){
   return (appStatus.outputs || []).filter(f => f.report === id);
+}
+function reportTaskSummary(id){
+  const item = appStatus?.report_tasks?.[id] || {};
+  const status = item.by_status || {};
+  const pendingReview = status['待管理员审核'] || 0;
+  const unhandled = status['待店长处理'] || 0;
+  return `已生成任务 ${item.total || 0} 条，待店长 ${unhandled} 条，待审核 ${pendingReview} 条`;
 }
 function shortModified(value){
   const text = String(value || '');
@@ -1610,7 +2620,7 @@ function renderReportOutputItems(id){
       <div class="report-output-name" title="${esc(f.name)}">${esc(f.name)}</div>
       <div class="report-output-time">${esc(shortModified(f.modified))} · ${fmtSize(f.size)}</div>
     </div>
-    <a class="download-link" href="${f.download}">下载</a>
+    <a class="download-link" href="${authDownload(f.download)}">下载</a>
   </div>`).join('');
 }
 function updateReportOutputCapacity(){
@@ -1622,12 +2632,16 @@ function updateReportOutputCapacity(){
     }
   });
 }
+function taskSyncSummary(sync){
+  sync = sync || {};
+  return `新增任务 ${sync.created || 0} 条，更新任务 ${sync.updated || 0} 条，导入明细 ${sync.imported_rows || 0} 行`;
+}
 async function runReport(id){
   const st = document.getElementById('st_'+id); st.textContent='正在生成...';
   try {
     const version = document.getElementById('ver_'+id).value || 'V1';
     const res = await api('/api/reports/run', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({report:id, version})});
-    reportRunMessages[id] = `<span class="ok">生成完成：</span><a href="${res.result.download}">${esc(res.result.file)}</a>`;
+    reportRunMessages[id] = `<span class="ok">生成完成：</span><a href="${authDownload(res.result.download)}">${esc(res.result.file)}</a><div class="muted">${esc(taskSyncSummary(res.result.task_sync))}</div>`;
     st.innerHTML = reportRunMessages[id];
     await refreshStatus();
   } catch(e) { st.innerHTML = `<span class="bad">${e.message}</span>`; }
@@ -1680,8 +2694,11 @@ function renderWeeklySources(){
     const id = 'weekly_file_' + g.key;
     const stid = 'weekly_st_' + g.key;
     const batchNames = (g.batch_files || []).length ? (g.batch_files || []).map(esc).join('、') : (latest ? esc(latest.name) : '暂无');
-    const pendingText = g.pending_count ? `待结束上传：${g.pending_count} 个文件` : '无待提交文件';
+    const pendingFiles = (g.pending_files || []).length ? `（${(g.pending_files || []).map(esc).join('、')}）` : '';
+    const pendingText = g.pending_count ? `待结束上传：${g.pending_count} 个文件${pendingFiles}` : '无待提交文件';
     const rowsText = g.total_rows !== '' ? g.total_rows : (latest && latest.rows !== '' ? latest.rows : '-');
+    const batchText = g.batch_id ? `批次：${esc(g.batch_id)}` : '批次：-';
+    const uploadText = g.uploaded_at ? `上传时间：${esc(g.uploaded_at)}` : '上传时间：-';
     const card = document.createElement('div'); card.className = 'weekly-source-card';
     card.innerHTML = `<div class="weekly-source-head">
         <div class="weekly-source-title"><h3>${esc(g.name)}</h3><span class="badge ${badgeClass(g.status)}">${esc(g.status)}</span></div>
@@ -1691,6 +2708,8 @@ function renderWeeklySources(){
         <div class="source-meta">
           <div class="muted source-meta-line" title="${batchNames}">最新文件：${batchNames}</div>
           <div class="muted source-meta-line">更新时间：${latest ? esc(latest.modified) : '-'}</div>
+          <div class="muted source-meta-line">${batchText}</div>
+          <div class="muted source-meta-line">${uploadText}</div>
           <div class="muted source-meta-line">记录数：${rowsText}</div>
           <div class="muted source-meta-line">${pendingText}</div>
         </div>
@@ -1709,16 +2728,270 @@ async function runWeeklyReports(){
     const res = await api('/api/weekly/run', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({})});
     const results = res.result.results || [];
     const okCount = results.filter(r => r.status === 'ok').length;
-    st.innerHTML = `<span class="ok">生成完成：</span>${okCount}/${results.length} 份成功`;
+    st.innerHTML = `<span class="ok">生成完成：</span>${okCount}/${results.length} 份成功；${esc(taskSyncSummary(res.result.task_sync))}`;
     results.forEach(r => {
       const item = document.createElement('div'); item.className = 'result-item';
       if(r.status === 'ok'){
-        item.innerHTML = `<span class="ok">${esc(r.file)}</span><div class="muted">${esc(appStatus.reports[r.report]?.name || r.report)}</div><a href="${r.download}">下载</a>`;
+        item.innerHTML = `<span class="ok">${esc(r.file)}</span><div class="muted">${esc(appStatus.reports[r.report]?.name || r.report)}</div><div class="muted">${esc(taskSyncSummary(r.task_sync))}</div><a href="${authDownload(r.download)}">下载</a>`;
       } else {
         item.innerHTML = `<span class="bad">${esc(r.name || r.report)} 生成失败</span><div class="muted">${esc(r.error)}</div>`;
       }
       list.appendChild(item);
     });
+    await refreshStatus();
+  } catch(e){ st.innerHTML = `<span class="bad">${e.message}</span>`; }
+}
+function taskQuery(){
+  const params = new URLSearchParams();
+  params.set('role', document.getElementById('taskRole')?.value || 'admin');
+  params.set('user', document.getElementById('taskUser')?.value.trim() || '');
+  params.set('status', document.getElementById('taskStatus')?.value || '');
+  params.set('platform', document.getElementById('taskPlatform')?.value || '');
+  params.set('task_type', document.getElementById('taskType')?.value || '');
+  params.set('store', document.getElementById('taskStore')?.value.trim() || '');
+  params.set('next_handler', document.getElementById('taskNextHandler')?.value || '');
+  params.set('priority', document.getElementById('taskPriority')?.value || '');
+  params.set('open_only', document.getElementById('taskOpenOnly')?.checked ? '1' : '');
+  params.set('overdue', document.getElementById('taskOverdue')?.checked ? '1' : '');
+  params.set('unassigned', document.getElementById('taskUnassigned')?.checked ? '1' : '');
+  params.set('reworked', document.getElementById('taskReworked')?.checked ? '1' : '');
+  return params;
+}
+async function loadTasks(showMessage=true){
+  const tbody = document.getElementById('taskRows');
+  if(!tbody) return;
+  const st = document.getElementById('taskStatusLine');
+  if(!operatorToken){ renderTaskSummary(); tbody.innerHTML = '<tr><td colspan="9" class="muted">请先登录身份。</td></tr>'; return; }
+  if(showMessage) st.textContent = '正在读取任务...';
+  try {
+    const res = await api('/api/tasks?' + taskQuery().toString());
+    taskState = {summary:res.summary || {}, tasks:res.tasks || []};
+    renderTaskSummary();
+    renderTaskRows();
+    st.textContent = `当前筛选 ${taskState.tasks.length} 条任务`;
+  } catch(e){
+    st.innerHTML = `<span class="bad">${e.message}</span>`;
+  }
+}
+function renderTaskSummary(){
+  const wrap = document.getElementById('taskSummary'); if(!wrap) return;
+  const summary = taskState.summary || {};
+  const status = summary.by_status || {};
+  const overdue = summary.overdue || {};
+  const nextHandler = summary.by_next_handler || {};
+  const cards = [
+    ['全部任务', summary.total || 0],
+    ['管理员待办', nextHandler['管理员'] || 0],
+    ['店长待办', nextHandler['店长'] || 0],
+    ['待店长处理', status['待店长处理'] || 0],
+    ['待管理员审核', status['待管理员审核'] || 0],
+    ['超时未处理', overdue.total || 0],
+    ['已通过', status['已通过'] || 0],
+    ['未分配', summary.unassigned || 0],
+    ['无需处理', nextHandler['无需处理'] || 0],
+  ];
+  wrap.innerHTML = cards.map(([label, value]) => `<div class="task-kpi"><span class="muted">${label}</span><strong>${value}</strong></div>`).join('');
+  renderAdminTaskQueue();
+  renderOwnerTaskSummary();
+}
+function renderAdminTaskQueue(){
+  const wrap = document.getElementById('adminTaskQueue'); if(!wrap) return;
+  const rows = taskState.summary?.admin_queue || [];
+  if(!rows.length){ wrap.innerHTML = ''; return; }
+  wrap.innerHTML = rows.map((item, index) => `<button class="task-kpi" type="button" data-queue-index="${index}" onclick="applyAdminQueueFilter(${index})"><span class="muted">管理员待办队列</span><strong>${item.count || 0}</strong><div>${esc(item.action || '')}</div><div class="muted">优先级：${esc(item.priority || '')}</div></button>`).join('');
+}
+function setTaskField(id, value){
+  const field = document.getElementById(id);
+  if(field) field.value = value || '';
+}
+function setTaskCheck(id, value){
+  const field = document.getElementById(id);
+  if(field) field.checked = Boolean(value);
+}
+function applyAdminQueueFilter(index){
+  const item = (taskState.summary?.admin_queue || [])[index];
+  if(!item) return;
+  const filters = item.filters || {};
+  setTaskField('taskRole', 'admin');
+  setTaskField('taskUser', '');
+  setTaskField('taskStatus', filters.status || '');
+  setTaskField('taskNextHandler', '');
+  setTaskField('taskPriority', '');
+  setTaskField('taskPlatform', '');
+  setTaskField('taskType', '');
+  setTaskField('taskStore', '');
+  setTaskCheck('taskOpenOnly', filters.open_only === '1');
+  setTaskCheck('taskOverdue', filters.overdue === '1');
+  setTaskCheck('taskUnassigned', filters.unassigned === '1');
+  setTaskCheck('taskReworked', filters.reworked === '1');
+  loadTasks();
+}
+function renderOwnerTaskSummary(){
+  const wrap = document.getElementById('ownerTaskSummary'); if(!wrap) return;
+  const ownerStatus = taskState.summary?.owner_status || {};
+  const rows = Object.values(ownerStatus).sort((a, b) => (b.total || 0) - (a.total || 0));
+  if(!rows.length){ wrap.innerHTML = ''; return; }
+  wrap.innerHTML = rows.map((item, index) => {
+    const status = item.by_status || {};
+    return `<button class="task-kpi" type="button" data-owner-index="${index}" onclick="applyOwnerSummaryFilter(${index})"><span class="muted">负责人待办：${esc(item.owner)}</span><strong>${item.total || 0}</strong><div class="muted">待店长 ${status['待店长处理'] || 0} / 待审核 ${status['待管理员审核'] || 0} / 超时 ${item.overdue || 0} / 返工 ${item.reworked || 0} / 已完成 ${status['已完成'] || 0}</div></button>`;
+  }).join('');
+}
+function applyOwnerSummaryFilter(index){
+  const ownerStatus = taskState.summary?.owner_status || {};
+  const rows = Object.values(ownerStatus).sort((a, b) => (b.total || 0) - (a.total || 0));
+  const item = rows[index];
+  if(!item) return;
+  setTaskField('taskRole', 'admin');
+  setTaskField('taskUser', item.owner === '未分配' ? '' : item.owner || '');
+  setTaskField('taskStatus', '');
+  setTaskField('taskNextHandler', '');
+  setTaskField('taskPriority', '');
+  setTaskField('taskPlatform', '');
+  setTaskField('taskType', '');
+  setTaskField('taskStore', '');
+  setTaskCheck('taskOpenOnly', true);
+  setTaskCheck('taskOverdue', false);
+  setTaskCheck('taskUnassigned', item.owner === '未分配');
+  setTaskCheck('taskReworked', false);
+  loadTasks();
+}
+function taskSourceText(task){
+  const source = [task.source_report, task.source_file].filter(Boolean).join(' / ');
+  const row = task.source_row ? ` #${task.source_row}` : '';
+  return `来源：${source || '-'}${row}`;
+}
+function canSubmitOwnerTask(task){
+  return task.owner && (task.status === '待店长处理' || task.status === '已驳回');
+}
+function canReviewTask(task){
+  return task.status === '待管理员审核';
+}
+function canMarkDoneTask(task){
+  return task.status === '已通过';
+}
+function canAssignTask(task){
+  return task.status !== '已完成';
+}
+function taskActionButtons(task){
+  const historyButton = `<button class="secondary" onclick="showTaskHistory('${task.id}')">查看记录</button>`;
+  const submitButton = !task.owner ? '<span class="muted">先指派负责人</span>' : canSubmitOwnerTask(task) ? `<button class="secondary" onclick="submitTask('${task.id}')">店长填写</button>` : '<span class="muted">无需店长填写</span>';
+  if(operatorSession && operatorSession.role === 'owner'){
+    return `${historyButton}${submitButton}<span class="muted">店长只能填写自己负责的任务</span>`;
+  }
+  const reviewButtons = canReviewTask(task) ? `<button class="primary" onclick="reviewTask('${task.id}','通过')">通过</button><button class="danger" onclick="reviewTask('${task.id}','驳回')">驳回</button>` : '<span class="muted">无需审核</span>';
+  const doneButton = canMarkDoneTask(task) ? `<button class="secondary" onclick="doneTask('${task.id}')">标记完成</button>` : '';
+  const assignButton = canAssignTask(task) ? `<button class="secondary" onclick="assignTask('${task.id}')">指派负责人</button>` : '';
+  return `${historyButton}${assignButton}${submitButton}${reviewButtons}${doneButton}`;
+}
+function renderTaskRows(){
+  const tbody = document.getElementById('taskRows'); if(!tbody) return;
+  if(!taskState.tasks.length){
+    tbody.innerHTML = '<tr><td colspan="9" class="muted">暂无任务。生成爆旺、低分、滞销或议价报表后，系统会自动写入任务台账。</td></tr>';
+    return;
+  }
+  tbody.innerHTML = taskState.tasks.map(task => `<tr>
+    <td><span class="badge ${task.status === '待管理员审核' ? 'warn' : task.status === '已通过' ? 'ok' : task.status === '已驳回' ? 'bad' : ''}">${esc(task.status)}</span></td>
+    <td>${esc(task.next_handler || '-')}<br><span class="muted">${esc(task.next_action || '')}</span><br><span class="badge ${task.priority === '高' ? 'bad' : task.priority === '中' ? 'warn' : task.priority === '低' ? 'ok' : ''}">${esc(task.priority || '普通')}</span><br><span class="muted">${esc(task.priority_reason || '')}</span></td>
+    <td>${esc(task.platform)}<br>${esc(task.task_type)}<br><span class="muted">${esc(taskSourceText(task))}</span></td>
+    <td>${esc(task.store)}<br><span class="muted">${esc(task.owner)}</span></td>
+    <td class="task-product"><strong>${esc(task.product_name || task.merchant_code || task.skc || task.spu)}</strong><br><span class="muted">${esc(task.merchant_code)} ${esc(task.skc)} ${esc(task.spu)}</span></td>
+    <td>${esc(task.system_action)}<br><span class="muted">${esc(task.task_detail || '')}</span></td>
+    <td>${esc(task.owner_action || '-')}<br><span class="muted">${esc(task.owner_remark || '')}</span><br><span class="muted">${task.owner_proof ? '凭证：' + esc(task.owner_proof) : ''}</span></td>
+    <td>${esc(task.admin_decision || '-')}<br><span class="muted">${esc(task.admin_remark || '')}</span></td>
+    <td><div class="task-actions">${taskActionButtons(task)}</div></td>
+  </tr>`).join('');
+}
+function showTaskHistory(id){
+  const task = (taskState.tasks || []).find(item => item.id === id);
+  if(!task) return;
+  const history = task.history || [];
+  const title = `操作记录：${task.product_name || task.merchant_code || task.skc || task.spu || task.id}`;
+  if(!history.length){ alert(`${title}\n暂无操作记录`); return; }
+  const lines = history.map(item => {
+    const nextAfter = [item.next_handler_after, item.next_action_after].filter(Boolean).join(' / ') || '-';
+    return `${item.time || ''} ${item.event || ''}\n操作人：${item.actor || '-'}\n动作：${item.action || '-'}\n备注：${item.remark || '-'}\n处理凭证：${item.proof || '-'}\n动作后状态：${item.status_after || '-'}\n动作后下一步：${nextAfter}`;
+  });
+  alert(`${title}\n\n${lines.join('\n\n')}`);
+}
+function showTaskError(e){
+  const st = document.getElementById('taskStatusLine');
+  if(st) st.innerHTML = `<span class="bad">${esc(e.message || '任务操作失败')}</span>`;
+}
+async function submitTask(id){
+  try {
+    const actor = document.getElementById('taskUser').value.trim() || prompt('填写人') || '';
+    if(!actor) return;
+    const action = prompt('处理动作，例如：已下架、申请退货、继续观察、同意议价');
+    if(!action) return;
+    const remark = prompt('处理备注，和处理凭证至少填一个') || '';
+    const proof = prompt('处理凭证，例如截图链接、后台单号，和备注至少填一个') || '';
+    if(!remark.trim() && !proof.trim()){ document.getElementById('taskStatusLine').textContent = '店长提交必须填写处理依据：备注或处理凭证至少填一个'; return; }
+    await api('/api/tasks/submit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, actor, action, remark, proof})});
+    await loadTasks();
+  } catch(e){ showTaskError(e); }
+}
+async function assignTask(id){
+  try {
+    const owner = prompt('指派给负责人');
+    if(!owner) return;
+    const remark = prompt('指派备注') || '';
+    await api('/api/tasks/assign', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, owner, remark})});
+    await loadTasks();
+  } catch(e){ showTaskError(e); }
+}
+async function reviewTask(id, decision){
+  try {
+    const admin = document.getElementById('taskUser').value.trim() || prompt('管理员') || '管理员';
+    const remark = prompt(decision === '驳回' ? '管理员审核：驳回原因（必填）' : `管理员审核：${decision}说明（必填）`) || '';
+    if(!remark.trim()){ document.getElementById('taskStatusLine').textContent = '管理员审核必须填写说明'; return; }
+    await api('/api/tasks/review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, admin, decision, remark})});
+    await loadTasks();
+  } catch(e){ showTaskError(e); }
+}
+async function batchReviewTasks(decision){
+  try {
+    const ids = (taskState.tasks || []).filter(task => task.status === '待管理员审核').map(task => task.id);
+    if(!ids.length){ document.getElementById('taskStatusLine').textContent = '当前筛选没有待管理员审核任务'; return; }
+    const remark = prompt(decision === '驳回' ? '批量驳回原因（必填）' : `批量${decision}说明（必填）`) || '';
+    if(!remark.trim()){ document.getElementById('taskStatusLine').textContent = '批量审核必须填写说明'; return; }
+    const res = await api('/api/tasks/batch-review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids, decision, remark})});
+    document.getElementById('taskStatusLine').textContent = `已批量${decision} ${res.count || 0} 条任务`;
+    await loadTasks(false);
+  } catch(e){ showTaskError(e); }
+}
+async function doneTask(id){
+  try {
+    const remark = prompt('完成确认说明（必填）') || '';
+    if(!remark.trim()){ document.getElementById('taskStatusLine').textContent = '标记完成必须填写确认说明'; return; }
+    await api('/api/tasks/done', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, remark})});
+    await loadTasks();
+  } catch(e){ showTaskError(e); }
+}
+async function exportTasks(){
+  try {
+    const payload = Object.fromEntries(taskQuery().entries());
+    const res = await api('/api/tasks/export', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    document.getElementById('taskStatusLine').innerHTML = `<span class="ok">已导出 ${res.rows} 条：</span><a href="${authDownload(res.download)}">${esc(res.file)}</a>`;
+    await refreshStatus();
+  } catch(e){ showTaskError(e); }
+}
+async function createBackup(){
+  const st = document.getElementById('backupStatus');
+  st.textContent = '正在生成备份...';
+  try {
+    const res = await api('/api/backup/create', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({})});
+    st.innerHTML = `<span class="ok">备份已生成：</span>${esc(res.path)}，共 ${res.count} 个文件。`;
+  } catch(e){ st.innerHTML = `<span class="bad">${e.message}</span>`; }
+}
+async function restoreBackup(){
+  const st = document.getElementById('backupStatus');
+  const path = document.getElementById('restoreBackupPath').value.trim();
+  if(!path){ st.textContent = '请先填写备份文件路径'; return; }
+  if(!confirm('恢复备份会覆盖当前运营状态和数据源，确认继续？')) return;
+  st.textContent = '正在恢复备份...';
+  try {
+    const res = await api('/api/backup/restore', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({path})});
+    st.innerHTML = `<span class="ok">恢复完成：</span>${res.count} 个文件。`;
     await refreshStatus();
   } catch(e){ st.innerHTML = `<span class="bad">${e.message}</span>`; }
 }
@@ -1744,7 +3017,7 @@ async function exportSearch(){
   if(!q){ st.textContent='请输入关键词'; return; }
   try {
     const res = await api('/api/search/export', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({q, limit:500})});
-    st.innerHTML = `<span class="ok">已导出 ${res.rows} 条：</span><a href="${res.download}">${res.file}</a>`;
+    st.innerHTML = `<span class="ok">已导出 ${res.rows} 条：</span><a href="${authDownload(res.download)}">${res.file}</a>`;
     await refreshStatus();
   } catch(e){ st.innerHTML=`<span class="bad">${e.message}</span>`; }
 }
@@ -1752,11 +3025,12 @@ function renderOutputs(){
   const body = document.getElementById('outputRows'); body.innerHTML='';
   appStatus.outputs.forEach(f => {
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td>${esc(f.name)}</td><td>${fmtSize(f.size)}</td><td>${f.modified}</td><td><a href="${f.download}">下载</a></td>`;
+    tr.innerHTML=`<td>${esc(f.name)}</td><td>${fmtSize(f.size)}</td><td>${f.modified}</td><td><a href="${authDownload(f.download)}">下载</a></td>`;
     body.appendChild(tr);
   });
 }
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+applyEntryParams();
 refreshStatus();
 </script>
 </body>
@@ -1797,17 +3071,29 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
             if parsed.path == "/":
                 self.send_payload(200, "text/html; charset=utf-8", HTML_PAGE.encode("utf-8"))
             elif parsed.path == "/api/status":
-                self.send_json({"ok": True, **data_status()})
+                self.send_payload(*handle_status_api(self.headers))
             elif parsed.path == "/api/rules":
-                self.send_json({"ok": True, "rules": load_rules()})
+                self.send_payload(*handle_rules_api("GET", self.headers))
             elif parsed.path == "/api/search":
                 params = parse_qs(parsed.query)
-                rows = search_database(params.get("q", [""])[0], params.get("limit", ["100"])[0])
-                self.send_json({"ok": True, "rows": rows})
+                self.send_payload(*handle_search_api("GET", self.headers, {
+                    "q": params.get("q", [""])[0],
+                    "limit": params.get("limit", ["100"])[0],
+                }))
+            elif parsed.path == "/api/tasks":
+                params = parse_qs(parsed.query)
+                status, content_type, body = handle_tasks_api("GET", self.headers, task_query_payload(params))
+                self.send_payload(status, content_type, body)
+            elif parsed.path == "/api/owners":
+                self.send_payload(*handle_owners_api(self.headers))
+            elif parsed.path == "/api/store-owners":
+                self.send_payload(*handle_store_owners_api("GET", self.headers))
             elif parsed.path == "/download":
                 self.handle_download(parsed)
             else:
                 self.send_json({"ok": False, "error": "接口不存在"}, 404)
+        except PermissionError as exc:
+            self.send_json({"ok": False, "error": str(exc)}, 401)
         except OSError as exc:
             if self.client_disconnected(exc):
                 return
@@ -1820,35 +3106,84 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/upload":
                 cancel_scheduled_shutdown()
+                if not self.require_admin_request("上传数据源"):
+                    return
                 self.handle_upload()
+            elif parsed.path == "/api/session/login":
+                cancel_scheduled_shutdown()
+                payload = self.read_json()
+                session = login_operator(payload.get("role", ""), payload.get("user", ""), payload.get("password", ""))
+                self.send_json({"ok": True, "session": session})
+            elif parsed.path == "/api/session/logout":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_session_logout(self.headers))
             elif parsed.path == "/api/reports/run":
                 cancel_scheduled_shutdown()
+                if not self.require_admin_request("生成报表"):
+                    return
                 payload = self.read_json()
                 result = run_report(payload.get("report"), payload.get("version", "V1"))
                 self.send_json({"ok": True, "result": result})
             elif parsed.path == "/api/weekly/run":
                 cancel_scheduled_shutdown()
+                if not self.require_admin_request("生成本周报表"):
+                    return
                 self.send_json({"ok": True, "result": run_weekly_reports()})
             elif parsed.path == "/api/rules":
                 cancel_scheduled_shutdown()
-                self.send_json({"ok": True, "rules": save_rules(self.read_json())})
+                self.send_payload(*handle_rules_api("POST_SAVE", self.headers, self.read_json()))
+            elif parsed.path == "/api/store-owners":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_store_owners_api("POST_SAVE", self.headers, self.read_json()))
             elif parsed.path == "/api/upload/finish-batch":
                 cancel_scheduled_shutdown()
+                if not self.require_admin_request("结束上传"):
+                    return
                 payload = self.read_json()
                 self.send_json({"ok": True, "source_state": finish_upload_batch(payload.get("category", ""))})
             elif parsed.path == "/api/upload/clear-batch":
                 cancel_scheduled_shutdown()
+                if not self.require_admin_request("清空待提交文件"):
+                    return
                 payload = self.read_json()
                 self.send_json({"ok": True, **clear_upload_batch(payload.get("category", ""))})
             elif parsed.path == "/api/search/export":
                 cancel_scheduled_shutdown()
+                if not self.require_admin_request("导出基础数据查询"):
+                    return
                 payload = self.read_json()
                 result = export_search(payload.get("q", ""), payload.get("limit", 500))
                 self.send_json({"ok": True, **result})
+            elif parsed.path == "/api/tasks/submit":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_tasks_api("POST_SUBMIT", self.headers, self.read_json()))
+            elif parsed.path == "/api/tasks/assign":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_tasks_api("POST_ASSIGN", self.headers, self.read_json()))
+            elif parsed.path == "/api/tasks/review":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_tasks_api("POST_REVIEW", self.headers, self.read_json()))
+            elif parsed.path == "/api/tasks/batch-review":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_tasks_api("POST_BATCH_REVIEW", self.headers, self.read_json()))
+            elif parsed.path == "/api/tasks/done":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_tasks_api("POST_DONE", self.headers, self.read_json()))
+            elif parsed.path == "/api/tasks/export":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_tasks_api("POST_EXPORT", self.headers, self.read_json()))
+            elif parsed.path == "/api/backup/create":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_backup_api("CREATE", self.headers, self.read_json()))
+            elif parsed.path == "/api/backup/restore":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_backup_api("RESTORE", self.headers, self.read_json()))
             elif parsed.path == "/api/client-close":
                 self.send_json({"ok": True, "message": "页面关闭通知已忽略，工作台保持运行"})
             elif parsed.path == "/api/shutdown":
                 cancel_scheduled_shutdown()
+                if not self.require_admin_request("关闭工作台"):
+                    return
                 self.send_json({"ok": True, "message": "工作台正在关闭"})
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
             else:
@@ -1864,6 +3199,13 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length) if length else b"{}"
         return json.loads(raw.decode("utf-8") or "{}")
+
+    def require_admin_request(self, action):
+        status, content_type, body = handle_admin_api(action, self.headers)
+        if status == 200:
+            return True
+        self.send_payload(status, content_type, body)
+        return False
 
     def handle_upload(self):
         form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": self.headers.get("Content-Type")})
@@ -1883,7 +3225,9 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
 
     def handle_download(self, parsed):
         params = parse_qs(parsed.query)
+        token = token_from_headers(getattr(self, "headers", {})) or params.get("token", [""])[0]
         name = unquote(params.get("path", [""])[0])
+        require_download_permission(token, name)
         path = (OUTPUT_DIR / Path(name).name).resolve()
         if OUTPUT_DIR.resolve() not in path.parents and path != OUTPUT_DIR.resolve():
             raise ValueError("下载路径不允许")
@@ -1913,8 +3257,10 @@ def main():
     server = None
     try:
         OUTPUT_DIR.mkdir(exist_ok=True)
-        server = ReusableThreadingHTTPServer((HOST, PORT), DailyOpsHandler)
-        print(f"日常运营工作台已启动：http://{HOST}:{PORT}")
+        host = configured_host()
+        server = ReusableThreadingHTTPServer((host, PORT), DailyOpsHandler)
+        print(f"日常运营工作台已启动：http://{host}:{PORT}")
+        print(access_hint(host, PORT))
         print("按 Ctrl+C 停止服务")
         server.serve_forever()
     except Exception as exc:

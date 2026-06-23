@@ -16,6 +16,7 @@ node_modules
 # Logs and generated output
 *.log
 outputs/
+运营备份/
 
 # Local business data and databases
 基础数据库/*
@@ -34,8 +35,22 @@ shein数据源表/
 *.csv
 
 # Windows/macOS packaged runtimes and archives
+build/
+dist/
+release/
+electron/assets/
+*.app/
+*.dmg
 *.zip
 *.7z
 *.rar
 *.exe
 *.msi
+
+# Generated image/icon assets
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.icns

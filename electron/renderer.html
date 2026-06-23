@@ -15,6 +15,7 @@
         </div>
         <button class="nav-item" data-page="overview">概览</button>
         <div class="nav-section">工作流</div>
+        <button class="nav-item" data-page="tasks">任务中心</button>
         <button class="nav-item" data-page="daily">每日工作流</button>
         <button class="nav-item active" data-page="weekly">每周工作流</button>
         <button class="nav-item" data-page="monthly">每月工作流</button>
@@ -98,6 +99,52 @@
           </div>
         </section>
 
+        <section class="page" id="tasksPage">
+          <div class="task-summary" id="taskSummary"></div>
+          <div class="task-summary" id="adminTaskQueue"></div>
+          <div class="task-summary" id="ownerTaskSummary"></div>
+          <div class="simple-panel task-panel">
+            <div class="panel-head">
+              <div>
+                <h2>任务台账</h2>
+                <p id="taskStatusLine">读取店长处理和管理员审核状态</p>
+              </div>
+              <div class="download-actions">
+                <button class="primary-button" id="batchApproveTasksBtn" data-admin-only="task-review">批量通过</button>
+                <button class="ghost-button danger-action" id="batchRejectTasksBtn" data-admin-only="task-review">批量驳回</button>
+                <button class="primary-button" id="exportTasksBtn">导出任务</button>
+              </div>
+            </div>
+            <div class="operator-strip">
+              <select id="operatorRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
+              <input id="operatorUser" placeholder="当前操作人" />
+              <button class="ghost-button" id="saveOperatorBtn">保存身份</button>
+              <span id="operatorHint">未设置身份时按管理员查看</span>
+            </div>
+            <div class="task-filters">
+              <select id="taskRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
+              <input id="taskUser" placeholder="负责人姓名" />
+              <select id="taskStatus"><option value="">全部状态</option><option>待店长处理</option><option>待管理员审核</option><option>已通过</option><option>已驳回</option><option>已完成</option></select>
+              <select id="taskPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option></select>
+              <select id="taskType"><option value="">全部类型</option><option>价格异常</option><option>库存异常</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
+              <input id="taskStore" placeholder="店铺" />
+              <select id="taskNextHandler"><option value="">全部下一步</option><option>管理员</option><option>店长</option><option>无需处理</option></select>
+              <select id="taskPriority"><option value="">全部优先级</option><option>高</option><option>中</option><option>普通</option><option>低</option></select>
+              <label><input id="taskOpenOnly" type="checkbox" /> 只看未完成</label>
+              <label><input id="taskOverdue" type="checkbox" /> 只看超时</label>
+              <label><input id="taskUnassigned" type="checkbox" /> 只看未分配</label>
+              <label><input id="taskReworked" type="checkbox" /> 只看返工</label>
+              <button class="ghost-button" id="loadTasksBtn">查询</button>
+            </div>
+            <div class="task-table">
+              <div class="task-row task-head">
+                <span>状态</span><span>下一步</span><span>类型</span><span>店铺/负责人</span><span>商品</span><span>系统建议</span><span>店长填写</span><span>管理员审核</span><span>操作</span>
+              </div>
+              <div id="taskRows"></div>
+            </div>
+          </div>
+        </section>
+
         <section class="page" id="reportsPage">
           <div class="simple-panel">
             <h2>生成报表</h2>
@@ -117,6 +164,16 @@
             <h2>规则设置</h2>
             <div id="rulesForm" class="rules-grid"></div>
             <button class="primary-button" id="saveRulesBtn">保存规则</button>
+          </div>
+          <div class="simple-panel owner-map-panel">
+            <h2>店铺负责人配置</h2>
+            <p>每行格式：平台，店铺，负责人。用于 Shein 表格没有负责人、或导入表缺负责人时自动分配任务。</p>
+            <textarea id="storeOwnerMapText" placeholder="Temu，7，小琴&#10;Shein，琪琪，洁琳"></textarea>
+            <div class="download-actions">
+              <button class="primary-button" id="saveStoreOwnersBtn">保存负责人配置</button>
+              <button class="ghost-button" id="loadStoreOwnersBtn">重新读取</button>
+            </div>
+            <p id="storeOwnerStatus">等待读取负责人配置</p>
           </div>
         </section>
 

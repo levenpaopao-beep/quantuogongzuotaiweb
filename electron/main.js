@@ -55,6 +55,25 @@ function runPython(command, args = [], input = "") {
   });
 }
 
+function taskPayload(payload = {}) {
+  return {
+    ...payload,
+    filters: payload.filters || {
+      role: payload.role || "admin",
+      user: payload.user || "",
+      status: payload.status || "",
+      task_type: payload.task_type || "",
+      store: payload.store || "",
+      platform: payload.platform || "",
+      overdue: payload.overdue || "",
+      unassigned: payload.unassigned || "",
+      next_handler: payload.next_handler || "",
+      reworked: payload.reworked || "",
+      open_only: payload.open_only || "",
+    },
+  };
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1488,
@@ -94,15 +113,26 @@ ipcMain.handle("api:status", () => runPython("status"));
 ipcMain.handle("api:outputs", (_event, limit) => runPython("outputs", [limit || 80]));
 ipcMain.handle("api:reports", () => runPython("reports"));
 ipcMain.handle("api:source-groups", () => runPython("source-groups"));
-ipcMain.handle("api:finish-upload", (_event, category) => runPython("finish-upload", [category]));
-ipcMain.handle("api:clear-upload", (_event, category) => runPython("clear-upload", [category]));
-ipcMain.handle("api:generate-weekly", () => runPython("generate-weekly"));
-ipcMain.handle("api:generate-report", (_event, reportId, version) => runPython("generate-report", [reportId, version || "V1"]));
+ipcMain.handle("api:finish-upload", (_event, category, payload) => runPython("finish-upload", [category], JSON.stringify(payload || {})));
+ipcMain.handle("api:clear-upload", (_event, category, payload) => runPython("clear-upload", [category], JSON.stringify(payload || {})));
+ipcMain.handle("api:generate-weekly", (_event, payload) => runPython("generate-weekly", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:generate-report", (_event, reportId, version, payload) => runPython("generate-report", [reportId, version || "V1"], JSON.stringify(payload || {})));
 ipcMain.handle("api:open-output", (_event, name) => runPython("open-output", [name]));
 ipcMain.handle("api:reveal-output", (_event, name) => runPython("reveal-output", [name]));
 ipcMain.handle("api:load-rules", () => runPython("load-rules"));
-ipcMain.handle("api:save-rules", (_event, rules) => runPython("save-rules", [], JSON.stringify(rules || {})));
-ipcMain.handle("api:search", (_event, query, limit) => runPython("search", [query, limit || 200]));
+ipcMain.handle("api:save-rules", (_event, payload) => runPython("save-rules", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:search", (_event, query, limit, payload) => runPython("search", [query, limit || 200], JSON.stringify(payload || {})));
+ipcMain.handle("api:tasks", (_event, payload) => runPython("tasks", [], JSON.stringify(taskPayload(payload || {}))));
+ipcMain.handle("api:submit-task", (_event, payload) => runPython("submit-task", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:assign-task", (_event, payload) => runPython("assign-task", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:review-task", (_event, payload) => runPython("review-task", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:batch-review-tasks", (_event, payload) => runPython("batch-review-tasks", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:done-task", (_event, payload) => runPython("done-task", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:export-tasks", (_event, payload) => runPython("export-tasks", [], JSON.stringify(taskPayload(payload || {}))));
+ipcMain.handle("api:store-owners", (_event, payload) => runPython("store-owners", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:save-store-owners", (_event, payload) => runPython("save-store-owners", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:create-backup", (_event, payload) => runPython("create-backup", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:restore-backup", (_event, payload) => runPython("restore-backup", [], JSON.stringify(payload || {})));
 
 ipcMain.handle("api:select-files", async (_event, group) => {
   const result = await dialog.showOpenDialog({
@@ -117,9 +147,9 @@ ipcMain.handle("api:select-files", async (_event, group) => {
   return result.filePaths;
 });
 
-ipcMain.handle("api:upload-source", (_event, group, filePaths) => {
+ipcMain.handle("api:upload-source", (_event, group, filePaths, payload) => {
   if (!filePaths || !filePaths.length) throw new Error("请先选择要上传的文件");
-  return runPython("import-source", [group.upload_target, ...filePaths]);
+  return runPython("import-source", [group.upload_target, ...filePaths], JSON.stringify(payload || {}));
 });
 
 ipcMain.handle("app:show-file", (_event, filePath) => shell.showItemInFolder(filePath));

@@ -13,6 +13,34 @@ def fail(exc):
     return {"ok": False, "error": str(exc), "traceback": traceback.format_exc()}
 
 
+def read_payload():
+    return json.loads(sys.stdin.read() or "{}")
+
+
+def require_admin(payload, action):
+    adapter.require_admin_payload(payload or {}, action)
+
+
+def task_payload(payload):
+    payload = dict(payload or {})
+    if "filters" not in payload:
+        payload["filters"] = {
+            "role": payload.get("role", "admin"),
+            "user": payload.get("user", ""),
+            "status": payload.get("status", ""),
+            "task_type": payload.get("task_type", ""),
+            "store": payload.get("store", ""),
+            "platform": payload.get("platform", ""),
+            "overdue": payload.get("overdue", ""),
+            "unassigned": payload.get("unassigned", ""),
+            "next_handler": payload.get("next_handler", ""),
+            "priority": payload.get("priority", ""),
+            "reworked": payload.get("reworked", ""),
+            "open_only": payload.get("open_only", ""),
+        }
+    return payload
+
+
 def command(argv):
     if not argv:
         raise ValueError("缺少命令")
@@ -30,16 +58,21 @@ def command(argv):
     if name == "import-source":
         if len(args) < 2:
             raise ValueError("import-source 需要分类和文件路径")
+        require_admin(read_payload(), "上传数据源")
         return ok(adapter.import_source_files(args[0], args[1:]))
     if name == "finish-upload":
+        require_admin(read_payload(), "结束上传")
         return ok(adapter.finish_upload(args[0]))
     if name == "clear-upload":
+        require_admin(read_payload(), "清空待提交文件")
         return ok(adapter.clear_upload(args[0]))
     if name == "generate-report":
         report_id = args[0]
         version = args[1] if len(args) > 1 else "V1"
+        require_admin(read_payload(), "生成报表")
         return ok(adapter.generate_report(report_id, version))
     if name == "generate-weekly":
+        require_admin(read_payload(), "生成本周报表")
         return ok(adapter.generate_weekly_reports())
     if name == "open-output":
         path = adapter.output_file_path(args[0])
@@ -52,14 +85,51 @@ def command(argv):
     if name == "load-rules":
         return ok(adapter.load_rules())
     if name == "save-rules":
-        payload = json.loads(sys.stdin.read() or "{}")
-        return ok(adapter.save_rules(payload))
+        payload = read_payload()
+        require_admin(payload, "维护规则")
+        return ok(adapter.save_rules(payload.get("rules", payload)))
     if name == "search":
         limit = int(args[1]) if len(args) > 1 else 200
+        require_admin(read_payload(), "查询基础数据")
         return ok(adapter.search(args[0], limit))
     if name == "export-search":
         limit = int(args[1]) if len(args) > 1 else 500
+        require_admin(read_payload(), "导出基础数据查询")
         return ok(adapter.export_search(args[0], limit))
+    if name == "tasks":
+        return ok(adapter.operation_tasks_payload(task_payload(read_payload())))
+    if name == "submit-task":
+        payload = read_payload()
+        return ok(adapter.submit_operation_task_payload(payload))
+    if name == "assign-task":
+        payload = read_payload()
+        return ok(adapter.assign_operation_task_payload(payload))
+    if name == "review-task":
+        payload = read_payload()
+        return ok(adapter.review_operation_task_payload(payload))
+    if name == "batch-review-tasks":
+        payload = read_payload()
+        return ok(adapter.review_operation_tasks_payload(payload))
+    if name == "done-task":
+        payload = read_payload()
+        return ok(adapter.mark_operation_task_done_payload(payload))
+    if name == "export-tasks":
+        payload = task_payload(read_payload())
+        return ok(adapter.export_operation_tasks_payload(payload))
+    if name == "store-owners":
+        require_admin(read_payload(), "读取负责人配置")
+        return ok(adapter.store_owners())
+    if name == "save-store-owners":
+        payload = read_payload()
+        return ok(adapter.save_store_owners_payload(payload))
+    if name == "create-backup":
+        require_admin(read_payload(), "生成备份")
+        return ok(adapter.create_backup())
+    if name == "restore-backup":
+        payload = read_payload()
+        require_admin(payload, "恢复备份")
+        backup_path = payload.get("path", args[0] if args else "")
+        return ok(adapter.restore_backup(backup_path))
     raise ValueError(f"未知命令：{name}")
 
 
