@@ -306,7 +306,7 @@ class OperationTaskStore:
             tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
             os.replace(tmp, self.path)
 
-    def list_tasks(self, role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", open_only="", now=None):
+    def list_tasks(self, role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only="", now=None):
         role = norm(role) or "admin"
         user = norm(user)
         rows = [public_task(row, now=now) for row in self.load()["tasks"]]
@@ -328,6 +328,8 @@ class OperationTaskStore:
             rows = [row for row in rows if not norm(row.get("owner"))]
         if next_handler:
             rows = [row for row in rows if norm(row.get("next_handler")) == norm(next_handler)]
+        if priority:
+            rows = [row for row in rows if norm(row.get("priority")) == norm(priority)]
         if norm(reworked) in {"1", "true", "是", "返工"}:
             rows = [row for row in rows if int(row.get("rejection_count") or 0) > 0]
         if norm(open_only) in {"1", "true", "是", "未完成", "待办"}:
@@ -702,7 +704,7 @@ class OperationTaskStore:
         style_task_sheet(summary_ws)
         criteria_ws = workbook.create_sheet("导出口径")
         criteria_ws.append(["字段", "值"])
-        for key in ["role", "user", "status", "task_type", "store", "platform", "overdue", "unassigned", "next_handler", "reworked", "open_only"]:
+        for key in ["role", "user", "status", "task_type", "store", "platform", "overdue", "unassigned", "next_handler", "priority", "reworked", "open_only"]:
             criteria_ws.append([key, norm(filters.get(key, ""))])
         criteria_ws.append(["rows", len(rows)])
         criteria_ws.append(["history_rows", history_rows])

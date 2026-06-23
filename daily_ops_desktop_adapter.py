@@ -84,8 +84,8 @@ def require_admin_payload(payload, action):
         raise PermissionError(f"只有管理员可以{action}")
 
 
-def operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", open_only=""):
-    rows = app.list_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked, open_only)
+def operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only=""):
+    rows = app.list_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, priority, reworked, open_only)
     return {"summary": app.summarize_operation_tasks(rows), "tasks": rows}
 
 
@@ -111,6 +111,7 @@ def operation_tasks_payload(payload):
         filters.get("overdue", ""),
         filters.get("unassigned", ""),
         filters.get("next_handler", ""),
+        filters.get("priority", ""),
         filters.get("reworked", ""),
         filters.get("open_only", ""),
     )
@@ -136,8 +137,8 @@ def mark_operation_task_done(task_id, actor, remark=""):
     return app.mark_operation_task_done(task_id, actor, remark)
 
 
-def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", open_only=""):
-    return app.export_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, reworked, open_only)
+def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only=""):
+    return app.export_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, priority, reworked, open_only)
 
 
 def export_operation_tasks_payload(payload):
@@ -152,6 +153,7 @@ def export_operation_tasks_payload(payload):
         filters.get("overdue", ""),
         filters.get("unassigned", ""),
         filters.get("next_handler", ""),
+        filters.get("priority", ""),
         filters.get("reworked", ""),
         filters.get("open_only", ""),
     )

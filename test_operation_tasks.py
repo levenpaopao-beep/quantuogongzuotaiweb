@@ -400,6 +400,11 @@ class OperationTaskStoreTest(unittest.TestCase):
                 now=datetime(2026, 6, 22, 12, 0, 0),
             )
             self.assertEqual([row["id"] for row in owner_queue], ["owner-normal"])
+            high_priority = daily_ops_tasks.OperationTaskStore(task_db).list_tasks(
+                priority="高",
+                now=datetime(2026, 6, 22, 12, 0, 0),
+            )
+            self.assertEqual({row["id"] for row in high_priority}, {"unassigned", "owner-overdue"})
 
             export_path = daily_ops_tasks.OperationTaskStore(task_db).export_tasks(root / "导出.xlsx", now=datetime(2026, 6, 22, 12, 0, 0))
             workbook = load_workbook(export_path, read_only=True, data_only=True)
@@ -418,6 +423,20 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(ws.cell(row=product_rows["未分配商品"], column=next_action_col).value, "指派负责人")
                 self.assertEqual(ws.cell(row=product_rows["未分配商品"], column=priority_col).value, "高")
                 self.assertEqual(ws.cell(row=product_rows["待审核商品"], column=next_action_col).value, "审核通过或驳回")
+            finally:
+                workbook.close()
+
+            export_path = daily_ops_tasks.OperationTaskStore(task_db).export_tasks(root / "高优先级.xlsx", tasks=high_priority, filters={"priority": "高"}, now=datetime(2026, 6, 22, 12, 0, 0))
+            workbook = load_workbook(export_path, read_only=True, data_only=True)
+            try:
+                ws = workbook["任务台账"]
+                self.assertEqual(ws.max_row, 3)
+                criteria_ws = workbook["导出口径"]
+                criteria = {
+                    criteria_ws.cell(row=row, column=1).value: criteria_ws.cell(row=row, column=2).value
+                    for row in range(2, criteria_ws.max_row + 1)
+                }
+                self.assertEqual(criteria["priority"], "高")
             finally:
                 workbook.close()
 

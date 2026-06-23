@@ -34,6 +34,7 @@ def task_payload(payload):
             "overdue": payload.get("overdue", ""),
             "unassigned": payload.get("unassigned", ""),
             "next_handler": payload.get("next_handler", ""),
+            "priority": payload.get("priority", ""),
             "reworked": payload.get("reworked", ""),
             "open_only": payload.get("open_only", ""),
         }
