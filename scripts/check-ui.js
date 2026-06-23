@@ -105,6 +105,28 @@ if (!todayGuideBody.includes("configuredStoreCount") || !todayGuideBody.includes
   ]);
 }
 
+if (!html.includes('id="todayWorkflowSteps"') || !html.includes('id="todayWorkflowTitle"')) {
+  fail("今日工作台缺少日常流程导航", [
+    "首屏需要直接告诉管理员和店长今天怎么操作，不能只显示状态卡片。",
+  ]);
+}
+const todayWorkflowBody = functionBody(renderer, "renderTodayWorkflow");
+if (!todayWorkflowBody.includes("店长每日流程") || !todayWorkflowBody.includes("管理员日常流程")) {
+  fail("今日工作流缺少角色化文案", [
+    "管理员和店长在同一个入口下必须看到不同的下一步操作说明。",
+  ]);
+}
+if (!todayWorkflowBody.includes("data-empty-page") || !todayWorkflowBody.includes("bindEmptyActions(wrap)")) {
+  fail("今日工作流按钮没有接入页面跳转", [
+    "流程卡片里的操作按钮必须能跳到对应模块，并带任务筛选状态。",
+  ]);
+}
+if (/radial-gradient\(/.test(fs.readFileSync(path.join(ROOT, "electron", "renderer.css"), "utf8"))) {
+  fail("界面背景仍有装饰光斑", [
+    "工作台是高频运营工具，背景应保持清爽，不使用离散渐变光斑作为装饰。",
+  ]);
+}
+
 const loadTasksBody = functionBody(renderer, "loadTasks");
 const renderTaskSummaryBody = functionBody(renderer, "renderTaskSummary");
 const renderTodayDashboardBody = functionBody(renderer, "renderTodayDashboard");

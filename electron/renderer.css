@@ -23,9 +23,9 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 12% 8%, rgba(255, 214, 107, .45), transparent 28%),
-    radial-gradient(circle at 88% 12%, rgba(155, 123, 255, .24), transparent 32%),
-    radial-gradient(circle at 72% 88%, rgba(53, 201, 223, .24), transparent 34%),
+    linear-gradient(135deg, rgba(255, 126, 182, .18) 0 18%, transparent 18% 100%),
+    linear-gradient(155deg, transparent 0 58%, rgba(53, 201, 223, .18) 58% 78%, transparent 78% 100%),
+    linear-gradient(180deg, #fffafe 0%, #f4fbff 46%, #f7f8ff 100%),
     var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -169,6 +169,7 @@ button { cursor: pointer; }
 .page-active { display: block; }
 
 .hero-strip,
+.workflow-panel,
 .page-intro,
 .today-card,
 .simple-panel,
@@ -178,6 +179,69 @@ button { cursor: pointer; }
   border-radius: 18px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
+}
+
+.workflow-panel {
+  margin-top: 14px;
+  padding: 18px;
+}
+.workflow-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.workflow-head h2 {
+  margin: 9px 0 0;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+.workflow-head p {
+  max-width: 520px;
+  text-align: right;
+}
+.workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.workflow-step {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 10px;
+  min-height: 104px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
+}
+.workflow-step-number {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--pink), var(--cyan));
+}
+.workflow-step strong {
+  display: block;
+  font-size: 14px;
+}
+.workflow-step span {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.workflow-step button {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
 }
 
 .hero-strip {
@@ -192,9 +256,10 @@ button { cursor: pointer; }
 .hero-strip::after {
   content: "";
   position: absolute;
-  inset: auto -70px -120px 40%;
-  height: 260px;
-  background: radial-gradient(circle, rgba(53,201,223,.25), transparent 65%);
+  inset: auto -40px 0 42%;
+  height: 88px;
+  background: linear-gradient(135deg, rgba(69, 214, 163, .22), rgba(53, 201, 223, .2));
+  transform: skewX(-18deg);
   pointer-events: none;
 }
 .hero-copy { position: relative; z-index: 1; max-width: 720px; }
@@ -1110,6 +1175,7 @@ label { color: var(--muted); font-size: 12px; }
   .module-grid { grid-template-columns: 1fr; }
   .span-2 { grid-column: span 1; }
   .span-3 { grid-column: span 1; }
+  .workflow-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .guide-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -1123,6 +1189,9 @@ label { color: var(--muted); font-size: 12px; }
   .global-operator { grid-template-columns: 1fr; }
   .metric-row, .task-summary, .report-grid, .rules-grid, .erp-settings-grid { grid-template-columns: 1fr; }
   .backup-actions { grid-template-columns: 1fr; }
+  .workflow-head { flex-direction: column; }
+  .workflow-head p { text-align: left; }
+  .workflow-steps { grid-template-columns: 1fr; }
   .guide-steps { grid-template-columns: 1fr; }
   .sales-entry { grid-template-columns: 1fr; }
   .platform-sales-row { grid-template-columns: 1fr 1fr; }

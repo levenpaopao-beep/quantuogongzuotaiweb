@@ -1054,6 +1054,7 @@ async function exportSales() {
 
 function renderTodayDashboard() {
   renderRoleCopy();
+  renderTodayWorkflow();
   const operator = currentOperator();
   const ownerMode = operator.role === "owner";
   const summary = state.taskOverview || state.taskSummary || {};
@@ -1135,6 +1136,40 @@ function renderTodayDashboard() {
     `;
   }
   renderTodayGuide();
+}
+
+function renderTodayWorkflow() {
+  const wrap = $("#todayWorkflowSteps");
+  if (!wrap) return;
+  const operator = currentOperator();
+  const ownerMode = operator.role === "owner";
+  const title = $("#todayWorkflowTitle");
+  const hint = $("#todayWorkflowHint");
+  if (title) title.textContent = ownerMode ? "店长每日流程" : "管理员日常流程";
+  if (hint) {
+    hint.textContent = ownerMode
+      ? "每天以销量填报为主；每周补齐导入和任务包，提交后等管理员确认。"
+      : "每天盯销量和异常；每周看导入缺口、推送任务包，最后确认归档。";
+  }
+  const steps = ownerMode ? [
+    ["01", "填写今日销量", "进入销量管理，只填写自己负责店铺；波动大时补原因。", "sales", "去填销量", ""],
+    ["02", "处理我的任务包", "商品任务按整包提交，备注或凭证至少填一个。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
+    ["03", "补齐每周导入", "数据导入页只看自己店铺缺什么，补完后管理员能看到。", "imports", "看缺口", 'data-focus="import-matrix"'],
+    ["04", "看经营结果", "回到经营报表查看自己店铺趋势和销量差异提醒。", "reports", "看报表", ""],
+  ] : [
+    ["01", "检查销量进度", "先看未填店铺和异常波动，提醒负责人补齐原因。", "sales", "看销量", ""],
+    ["02", "检查导入缺口", "按平台、店铺、数据类型看缺失矩阵，缺哪个店铺一眼定位。", "imports", "看矩阵", 'data-focus="import-matrix"'],
+    ["03", "推送商品任务", "按任务包推送给店长；任务多时可下载表格给店长处理。", "tasks", "推送任务", 'data-task-status="待推送" data-task-open-only="true"'],
+    ["04", "确认并归档", "店长整包处理后，管理员只需确认打勾，任务从待办消失。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
+  ];
+  wrap.innerHTML = steps.map(([number, titleText, body, page, action, attrs]) => `
+    <div class="workflow-step">
+      <div class="workflow-step-number">${number}</div>
+      <div><strong>${titleText}</strong><span>${body}</span></div>
+      <button class="ghost-button" data-empty-page="${page}" ${attrs}>${action}</button>
+    </div>
+  `).join("");
+  bindEmptyActions(wrap);
 }
 
 function guideTone(done, warn = false) {
