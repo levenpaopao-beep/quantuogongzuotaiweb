@@ -372,14 +372,23 @@ class OperationTaskStoreTest(unittest.TestCase):
             }
             self.assertEqual(rows["unassigned"]["next_handler"], "管理员")
             self.assertEqual(rows["unassigned"]["next_action"], "指派负责人")
+            self.assertEqual(rows["unassigned"]["priority"], "高")
+            self.assertEqual(rows["unassigned"]["priority_reason"], "未分配负责人")
             self.assertEqual(rows["owner-overdue"]["next_handler"], "管理员")
             self.assertEqual(rows["owner-overdue"]["next_action"], "跟进超时店长处理")
+            self.assertEqual(rows["owner-overdue"]["priority"], "高")
+            self.assertEqual(rows["owner-overdue"]["priority_reason"], "超时未处理")
             self.assertEqual(rows["owner-normal"]["next_handler"], "店长")
             self.assertEqual(rows["owner-normal"]["next_action"], "填写处理结果")
+            self.assertEqual(rows["owner-normal"]["priority"], "普通")
             self.assertEqual(rows["review"]["next_handler"], "管理员")
             self.assertEqual(rows["review"]["next_action"], "审核通过或驳回")
+            self.assertEqual(rows["review"]["priority"], "中")
+            self.assertEqual(rows["review"]["priority_reason"], "待管理员审核")
             self.assertEqual(rows["approved"]["next_handler"], "管理员")
             self.assertEqual(rows["approved"]["next_action"], "标记完成或归档")
+            self.assertEqual(rows["approved"]["priority"], "中")
+            self.assertEqual(rows["approved"]["priority_reason"], "待完成确认")
 
             admin_queue = daily_ops_tasks.OperationTaskStore(task_db).list_tasks(
                 next_handler="管理员",
@@ -399,11 +408,15 @@ class OperationTaskStoreTest(unittest.TestCase):
                 headers = [cell.value for cell in ws[1]]
                 self.assertIn("下一步处理人", headers)
                 self.assertIn("下一步动作", headers)
+                self.assertIn("处理优先级", headers)
+                self.assertIn("优先级原因", headers)
                 next_handler_col = headers.index("下一步处理人") + 1
                 next_action_col = headers.index("下一步动作") + 1
+                priority_col = headers.index("处理优先级") + 1
                 product_rows = {ws.cell(row=row, column=headers.index("货品名称") + 1).value: row for row in range(2, ws.max_row + 1)}
                 self.assertEqual(ws.cell(row=product_rows["未分配商品"], column=next_handler_col).value, "管理员")
                 self.assertEqual(ws.cell(row=product_rows["未分配商品"], column=next_action_col).value, "指派负责人")
+                self.assertEqual(ws.cell(row=product_rows["未分配商品"], column=priority_col).value, "高")
                 self.assertEqual(ws.cell(row=product_rows["待审核商品"], column=next_action_col).value, "审核通过或驳回")
             finally:
                 workbook.close()

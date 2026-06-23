@@ -26,6 +26,8 @@ TASK_COLUMNS = [
     ("status", "任务状态"),
     ("next_handler", "下一步处理人"),
     ("next_action", "下一步动作"),
+    ("priority", "处理优先级"),
+    ("priority_reason", "优先级原因"),
     ("store", "店铺"),
     ("owner", "负责人"),
     ("merchant_code", "商家编码"),
@@ -182,6 +184,25 @@ def task_next_step(row, now=None):
     return "管理员", "确认任务状态"
 
 
+def task_priority(row, now=None):
+    status = norm(row.get("status"))
+    if status == STATUS_DONE:
+        return "低", "已完成"
+    if task_overdue(row, now):
+        return "高", "超时未处理"
+    if status == STATUS_PENDING_OWNER and not norm(row.get("owner")):
+        return "高", "未分配负责人"
+    if status == STATUS_PENDING_REVIEW:
+        return "中", "待管理员审核"
+    if status == STATUS_APPROVED:
+        return "中", "待完成确认"
+    if status == STATUS_REJECTED:
+        return "中", "驳回待返工"
+    if status == STATUS_PENDING_OWNER:
+        return "普通", "待店长处理"
+    return "中", "状态待确认"
+
+
 def task_rejection_info(row):
     rejection_count = 0
     last_reason = ""
@@ -196,9 +217,12 @@ def public_task(row, now=None):
     item = dict(row)
     item.setdefault("history", [])
     next_handler, next_action = task_next_step(item, now=now)
+    priority, priority_reason = task_priority(item, now=now)
     rejection_count, last_rejection_reason = task_rejection_info(item)
     item["next_handler"] = next_handler
     item["next_action"] = next_action
+    item["priority"] = priority
+    item["priority_reason"] = priority_reason
     item["rejection_count"] = rejection_count
     item["last_rejection_reason"] = last_rejection_reason
     return item
@@ -601,6 +625,7 @@ class OperationTaskStore:
             export_row["is_overdue"] = "是" if task_overdue(row, now) else "否"
             export_row["overdue_days"] = task_age_days(row, now)
             export_row["next_handler"], export_row["next_action"] = task_next_step(row, now=now)
+            export_row["priority"], export_row["priority_reason"] = task_priority(row, now=now)
             export_row["rejection_count"], export_row["last_rejection_reason"] = task_rejection_info(row)
             ws.append([export_row.get(key, "") for key, _label in TASK_COLUMNS])
         style_task_sheet(ws)

@@ -2825,7 +2825,7 @@ function renderTaskRows(){
   }
   tbody.innerHTML = taskState.tasks.map(task => `<tr>
     <td><span class="badge ${task.status === '待管理员审核' ? 'warn' : task.status === '已通过' ? 'ok' : task.status === '已驳回' ? 'bad' : ''}">${esc(task.status)}</span></td>
-    <td>${esc(task.next_handler || '-')}<br><span class="muted">${esc(task.next_action || '')}</span></td>
+    <td>${esc(task.next_handler || '-')}<br><span class="muted">${esc(task.next_action || '')}</span><br><span class="badge ${task.priority === '高' ? 'bad' : task.priority === '中' ? 'warn' : task.priority === '低' ? 'ok' : ''}">${esc(task.priority || '普通')}</span><br><span class="muted">${esc(task.priority_reason || '')}</span></td>
     <td>${esc(task.platform)}<br>${esc(task.task_type)}<br><span class="muted">${esc(taskSourceText(task))}</span></td>
     <td>${esc(task.store)}<br><span class="muted">${esc(task.owner)}</span></td>
     <td class="task-product"><strong>${esc(task.product_name || task.merchant_code || task.skc || task.spu)}</strong><br><span class="muted">${esc(task.merchant_code)} ${esc(task.skc)} ${esc(task.spu)}</span></td>
