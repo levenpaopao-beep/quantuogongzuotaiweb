@@ -370,6 +370,8 @@ class OperationTaskStoreTest(unittest.TestCase):
                 row["id"]: row
                 for row in daily_ops_tasks.OperationTaskStore(task_db).list_tasks(now=datetime(2026, 6, 22, 12, 0, 0))
             }
+            ordered_rows = daily_ops_tasks.OperationTaskStore(task_db).list_tasks(now=datetime(2026, 6, 22, 12, 0, 0))
+            self.assertEqual([row["id"] for row in ordered_rows], ["unassigned", "owner-overdue", "approved", "review", "owner-normal"])
             self.assertEqual(rows["unassigned"]["next_handler"], "管理员")
             self.assertEqual(rows["unassigned"]["next_action"], "指派负责人")
             self.assertEqual(rows["unassigned"]["priority"], "高")

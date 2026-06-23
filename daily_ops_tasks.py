@@ -203,6 +203,13 @@ def task_priority(row, now=None):
     return "中", "状态待确认"
 
 
+def task_sort_key(row):
+    priority_order = {"高": 0, "中": 1, "普通": 2, "低": 3}
+    updated_at = parse_time(row.get("updated_at")) or parse_time(row.get("created_at"))
+    timestamp = updated_at.timestamp() if updated_at else 0
+    return (priority_order.get(norm(row.get("priority")), 9), -timestamp, norm(row.get("id")))
+
+
 def task_rejection_info(row):
     rejection_count = 0
     last_reason = ""
@@ -334,7 +341,7 @@ class OperationTaskStore:
             rows = [row for row in rows if int(row.get("rejection_count") or 0) > 0]
         if norm(open_only) in {"1", "true", "是", "未完成", "待办"}:
             rows = [row for row in rows if norm(row.get("status")) != STATUS_DONE]
-        return sorted(rows, key=lambda row: (row.get("status") != STATUS_PENDING_REVIEW, row.get("updated_at", "")), reverse=True)
+        return sorted(rows, key=task_sort_key)
 
     def summary(self, rows=None, now=None):
         rows = list(rows) if rows is not None else self.load()["tasks"]
