@@ -143,10 +143,10 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(log_ws.cell(row=review_row, column=log_headers.index("下一步动作") + 1).value, "标记完成或归档")
                 owner_ws = workbook["负责人汇总"]
                 owner_headers = [cell.value for cell in owner_ws[1]]
-                self.assertEqual(owner_headers, ["负责人", "任务总数", "待店长处理", "待管理员审核", "超时未处理", "返工任务", "已通过", "已驳回", "已完成"])
+                self.assertEqual(owner_headers, ["负责人", "任务总数", "待推送", "待店长处理", "待管理员审核", "超时未处理", "返工任务", "已通过", "已驳回", "已完成"])
                 owner_rows = {owner_ws.cell(row=row, column=1).value: row for row in range(2, owner_ws.max_row + 1)}
                 self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=2).value, 1)
-                self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=7).value, 1)
+                self.assertEqual(owner_ws.cell(row=owner_rows["小琴"], column=8).value, 1)
                 summary_ws = workbook["状态汇总"]
                 summary = {
                     summary_ws.cell(row=row, column=1).value: summary_ws.cell(row=row, column=2).value
@@ -1307,6 +1307,10 @@ class OperationTaskStoreTest(unittest.TestCase):
                 result = daily_ops_app.sync_report_tasks("temu_hot", report)
                 self.assertEqual(result["created"], 1)
 
+                admin_tasks = daily_ops_app.list_operation_tasks(role="admin")
+                self.assertEqual(admin_tasks[0]["status"], daily_ops_tasks.STATUS_PENDING_PUSH)
+                daily_ops_app.push_operation_tasks([admin_tasks[0]["id"]], "管理员", "确认推送")
+
                 tasks = daily_ops_app.list_operation_tasks(role="owner", user="小琴")
                 self.assertEqual(len(tasks), 1)
                 self.assertEqual(tasks[0]["task_type"], "爆旺冲突")
@@ -1426,6 +1430,10 @@ class OperationTaskStoreTest(unittest.TestCase):
 
                 sync = daily_ops_app.sync_report_tasks("shein_hot", report)
                 self.assertEqual(sync["created"], 1)
+
+                admin_rows = daily_ops_app.list_operation_tasks(role="admin")
+                self.assertEqual(admin_rows[0]["status"], daily_ops_tasks.STATUS_PENDING_PUSH)
+                daily_ops_app.push_operation_tasks([admin_rows[0]["id"]], "管理员", "确认推送")
 
                 status, _content_type, body = daily_ops_app.handle_tasks_api(
                     "GET",
@@ -1567,21 +1575,32 @@ class OperationTaskStoreTest(unittest.TestCase):
         html = daily_ops_app.HTML_PAGE
         self.assertIn("/api/tasks", html)
         self.assertIn("/api/tasks/submit", html)
+        self.assertIn("/api/tasks/batch-submit", html)
         self.assertIn("/api/tasks/review", html)
         self.assertIn("/api/tasks/batch-review", html)
+        self.assertIn("/api/tasks/batch-push", html)
         self.assertIn("/api/tasks/done", html)
         self.assertIn("/api/tasks/assign", html)
         self.assertIn("/api/tasks/export", html)
         self.assertIn("/api/store-owners", html)
-        self.assertIn("任务台账", html)
+        self.assertIn("数据总览", html)
+        self.assertIn("overviewStoreRows", html)
+        self.assertIn("renderOverview", html)
+        self.assertIn("任务包中心", html)
         self.assertIn("管理员审核", html)
         self.assertIn("批量通过", html)
+        self.assertIn("批量标记已处理", html)
         self.assertIn("标记完成", html)
         self.assertIn("指派负责人", html)
         self.assertIn("店铺负责人配置", html)
         self.assertIn("assigned_existing", html)
         self.assertIn("补齐", html)
         self.assertIn("taskActionButtons", html)
+        self.assertIn("packageActionButtons", html)
+        self.assertIn("submitTaskPackage", html)
+        self.assertIn("reviewTaskPackage", html)
+        self.assertIn("togglePackagePreview", html)
+        self.assertIn("batchSubmitTasks", html)
         self.assertIn("canSubmitOwnerTask", html)
         self.assertIn("canReviewTask", html)
         self.assertIn("canMarkDoneTask", html)
@@ -1589,7 +1608,6 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("待店长处理", html)
         self.assertIn("已驳回", html)
         self.assertIn("operatorSession.role === 'owner'", html)
-        self.assertIn("店长只能填写自己负责的任务", html)
         self.assertIn("data-admin-only", html)
         self.assertIn("data-admin-only=\"task-review\"", html)
         self.assertIn("applyRoleVisibility", html)
@@ -1616,10 +1634,14 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("taskUnassigned", html)
         self.assertIn("只看未分配", html)
         self.assertIn("taskPlatform", html)
+        self.assertIn("taskSearch", html)
+        self.assertIn("商家编码", html)
+        self.assertIn("SKC ID", html)
+        self.assertIn("SPU ID", html)
         self.assertIn("Temu", html)
         self.assertIn("Shein", html)
         self.assertIn("platform", html)
-        self.assertIn("先指派负责人", html)
+        self.assertIn("待指派", html)
         self.assertIn("驳回原因", html)
         self.assertIn("管理员审核必须填写说明", html)
         self.assertIn("批量审核必须填写说明", html)
@@ -1633,9 +1655,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         root = Path(__file__).resolve().parent
         preload = (root / "electron" / "preload.js").read_text(encoding="utf-8")
         main = (root / "electron" / "main.js").read_text(encoding="utf-8")
-        for text in ["tasks", "submitTask", "reviewTask", "batchReviewTasks", "doneTask", "assignTask", "exportTasks", "storeOwners", "saveStoreOwners"]:
+        for text in ["tasks", "submitTask", "batchSubmitTasks", "reviewTask", "batchReviewTasks", "doneTask", "assignTask", "exportTasks", "storeOwners", "saveStoreOwners"]:
             self.assertIn(text, preload)
-        for text in ["api:tasks", "api:submit-task", "api:review-task", "api:batch-review-tasks", "api:done-task", "api:assign-task", "api:export-tasks", "api:store-owners", "api:save-store-owners"]:
+        for text in ["api:tasks", "api:submit-task", "api:batch-submit-tasks", "api:review-task", "api:batch-review-tasks", "api:done-task", "api:assign-task", "api:export-tasks", "api:store-owners", "api:save-store-owners"]:
             self.assertIn(text, main)
         self.assertIn("payload.open_only", main)
 
@@ -1671,12 +1693,12 @@ class OperationTaskStoreTest(unittest.TestCase):
         html = (root / "electron" / "renderer.html").read_text(encoding="utf-8")
         js = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
         css = (root / "electron" / "renderer.css").read_text(encoding="utf-8")
-        for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "批量通过", "批量驳回", "标记完成", "指派负责人", "店铺负责人配置", "导出任务"]:
+        for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "批量标记已处理", "批量通过", "批量驳回", "标记完成", "指派负责人", "店铺负责人配置", "导出任务"]:
             self.assertIn(text, html + js)
         for text in ["价格异常", "库存异常"]:
             self.assertIn(text, html)
             self.assertIn(text, daily_ops_app.HTML_PAGE)
-        for text in ["renderTaskCenter", "loadTasks", "submitTask", "reviewTask", "batchReviewTasks", "doneTask", "assignTask", "loadStoreOwners", "saveStoreOwners", "exportTasks", "taskActionButtons", "renderOwnerTaskSummary"]:
+        for text in ["renderTaskCenter", "loadTasks", "submitTask", "batchSubmitTasks", "reviewTask", "batchReviewTasks", "doneTask", "assignTask", "loadStoreOwners", "saveStoreOwners", "exportTasks", "taskActionButtons", "renderOwnerTaskSummary"]:
             self.assertIn(text, js)
         self.assertIn("canSubmitOwnerTask", js)
         self.assertIn("canReviewTask", js)
@@ -1703,17 +1725,21 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("taskUnassigned", html)
         self.assertIn("只看未分配", html)
         self.assertIn("taskPlatform", html)
+        self.assertIn("taskSearch", html)
+        self.assertIn("商家编码", html)
+        self.assertIn("SKC ID", html)
+        self.assertIn("SPU ID", html)
         self.assertIn("Temu", html)
         self.assertIn("Shein", html)
         self.assertIn('platform: $("#taskPlatform")?.value || ""', js)
-        self.assertIn("先指派负责人", js)
+        self.assertIn("待指派", js)
         self.assertIn("驳回原因", js)
         self.assertIn("管理员审核必须填写说明", js)
         self.assertIn("批量审核必须填写说明", js)
         self.assertIn("备注或处理凭证至少填一个", js)
         self.assertIn("完成确认说明", js)
         self.assertIn("标记完成必须填写确认说明", js)
-        for text in ["operator.role === \"owner\"", "店长只能填写自己负责的任务"]:
+        for text in ["operator.role === \"owner\"", "data-owner-only"]:
             self.assertIn(text, js)
         for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
             self.assertIn(text, js)
@@ -1729,7 +1755,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         root = Path(__file__).resolve().parent
         html = daily_ops_app.HTML_PAGE
         renderer = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
-        for text in ["showTaskHistory", "查看记录", "操作记录", "处理凭证", "动作后状态", "动作后下一步"]:
+        for text in ["showTaskHistory", "记录", "操作记录", "处理凭证", "动作后状态", "动作后下一步"]:
             self.assertIn(text, html)
             self.assertIn(text, renderer)
 
@@ -2155,6 +2181,40 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(payload["count"], 2)
                 self.assertEqual([row["status"] for row in payload["tasks"]], [daily_ops_tasks.STATUS_APPROVED, daily_ops_tasks.STATUS_APPROVED])
 
+    def test_http_owner_can_batch_submit_own_selected_tasks(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        owner = daily_ops_app.login_operator("owner", "小琴", "")
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+        owner_headers = {"X-Operator-Token": owner["token"]}
+        admin_headers = {"X-Operator-Token": admin["token"]}
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "1", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "低分预警", "store": "3", "owner": "小琴", "merchant_code": "B", "source_report": "r", "source_row": 2},
+            ])
+            ids = [row["id"] for row in store.list_tasks(role="owner", user="小琴")]
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "POST_BATCH_SUBMIT",
+                    admin_headers,
+                    {"ids": ids, "action": "管理员代填", "remark": "不应允许"},
+                )
+                self.assertEqual(status, 403)
+
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "POST_BATCH_SUBMIT",
+                    owner_headers,
+                    {"ids": ids, "action": "已下架", "remark": "后台批量处理"},
+                )
+                self.assertEqual(status, 200)
+                payload = json.loads(body)
+                self.assertEqual(payload["count"], 2)
+                self.assertEqual({row["status"] for row in payload["tasks"]}, {daily_ops_tasks.STATUS_PENDING_REVIEW})
+
     def test_batch_reject_requires_admin_remark(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2171,6 +2231,156 @@ class OperationTaskStoreTest(unittest.TestCase):
             rejected = store.review_tasks([submitted["id"]], admin="管理员", decision="驳回", remark="处理截图不完整")
             self.assertEqual(rejected["tasks"][0]["status"], daily_ops_tasks.STATUS_REJECTED)
             self.assertEqual(rejected["tasks"][0]["admin_remark"], "处理截图不完整")
+
+    def test_owner_can_batch_submit_selected_tasks_atomically(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "1", "owner": "小琴", "merchant_code": "A", "skc": "SKC1", "spu": "SPU1", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "低分预警", "store": "3", "owner": "小琴", "merchant_code": "B", "skc": "SKC2", "spu": "SPU2", "source_report": "r", "source_row": 2},
+            ])
+            ids = [row["id"] for row in store.list_tasks(role="owner", user="小琴")]
+            result = store.submit_owner_actions(ids, actor="小琴", action="已下架", remark="后台批量处理")
+            self.assertEqual(result["count"], 2)
+            self.assertEqual({row["status"] for row in result["tasks"]}, {daily_ops_tasks.STATUS_PENDING_REVIEW})
+            self.assertEqual(result["tasks"][0]["history"][-1]["event"], "店长批量提交")
+
+            with self.assertRaises(ValueError):
+                store.submit_owner_actions(ids, actor="小琴", action="再次处理", remark="不应允许")
+
+    def test_task_packages_group_rows_by_owner_store_type_and_action(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "价格异常", "store": "二弟", "owner": "洁琳", "merchant_code": "A", "skc": "SKC1", "spu": "SPU1", "system_action": "低于成本价", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "价格异常", "store": "二弟", "owner": "洁琳", "merchant_code": "B", "skc": "SKC2", "spu": "SPU2", "system_action": "低于成本价", "source_report": "r", "source_row": 2},
+                {"platform": "Temu", "task_type": "滞销处理", "store": "二弟", "owner": "洁琳", "merchant_code": "C", "skc": "SKC3", "spu": "SPU3", "system_action": "老品滞销下架", "source_report": "r", "source_row": 3},
+            ])
+
+            packages = store.task_packages(store.list_tasks())
+
+            self.assertEqual(len(packages), 2)
+            self.assertEqual(packages[0]["store"], "二弟")
+            self.assertEqual(packages[0]["owner"], "洁琳")
+            self.assertEqual(packages[0]["task_type"], "价格异常")
+            self.assertEqual(packages[0]["system_action"], "低于成本价")
+            self.assertEqual(packages[0]["total"], 2)
+            self.assertEqual(packages[0]["pending_owner_count"], 2)
+            self.assertEqual(len(packages[0]["task_ids"]), 2)
+            self.assertEqual(packages[1]["task_type"], "滞销处理")
+            self.assertEqual(packages[1]["total"], 1)
+
+    def test_http_tasks_returns_task_packages_for_workbench_default_view(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+        headers = {"X-Operator-Token": admin["token"]}
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "价格异常", "store": "二弟", "owner": "洁琳", "merchant_code": "A", "system_action": "低于成本价", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "价格异常", "store": "二弟", "owner": "洁琳", "merchant_code": "B", "system_action": "低于成本价", "source_report": "r", "source_row": 2},
+            ])
+
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+                status, _content_type, body = daily_ops_app.handle_tasks_api("GET", headers, {"role": "admin", "open_only": "1"})
+
+            payload = json.loads(body)
+            self.assertEqual(status, 200)
+            self.assertEqual(len(payload["packages"]), 1)
+            self.assertEqual(payload["packages"][0]["store"], "二弟")
+            self.assertEqual(payload["packages"][0]["total"], 2)
+            self.assertEqual(len(payload["packages"][0]["task_ids"]), 2)
+
+    def test_generated_report_tasks_wait_for_admin_push_before_owner_sees_them(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "二弟", "owner": "洁琳", "merchant_code": "A", "source_report": "r", "source_row": 1},
+            ], default_status=daily_ops_tasks.STATUS_PENDING_PUSH)
+
+            admin_rows = store.list_tasks(role="admin")
+            owner_rows = store.list_tasks(role="owner", user="洁琳")
+            packages = store.task_packages(admin_rows)
+
+            self.assertEqual(admin_rows[0]["status"], daily_ops_tasks.STATUS_PENDING_PUSH)
+            self.assertEqual(owner_rows, [])
+            self.assertEqual(packages[0]["pending_push_count"], 1)
+            self.assertEqual(len(packages[0]["pushable_task_ids"]), 1)
+
+            pushed = store.push_tasks([admin_rows[0]["id"]], actor="管理员", remark="确认推送")
+            owner_rows = store.list_tasks(role="owner", user="洁琳")
+            self.assertEqual(pushed["count"], 1)
+            self.assertEqual(owner_rows[0]["status"], daily_ops_tasks.STATUS_PENDING_OWNER)
+            self.assertEqual(owner_rows[0]["history"][-1]["event"], "管理员推送")
+
+    def test_http_admin_can_batch_push_task_package(self):
+        daily_ops_app.OPERATOR_SESSIONS.clear()
+        admin = daily_ops_app.login_operator("admin", "管理员", "")
+        headers = {"X-Operator-Token": admin["token"]}
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "价格异常", "store": "二弟", "owner": "洁琳", "merchant_code": "A", "system_action": "低于成本价", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "价格异常", "store": "二弟", "owner": "洁琳", "merchant_code": "B", "system_action": "低于成本价", "source_report": "r", "source_row": 2},
+            ], default_status=daily_ops_tasks.STATUS_PENDING_PUSH)
+            ids = [row["id"] for row in store.list_tasks(role="admin")]
+
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+                status, _content_type, body = daily_ops_app.handle_tasks_api(
+                    "POST_BATCH_PUSH",
+                    headers,
+                    {"ids": ids, "remark": "确认推送"},
+                )
+
+            payload = json.loads(body)
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["count"], 2)
+            self.assertEqual(
+                {row["status"] for row in daily_ops_tasks.OperationTaskStore(task_db).list_tasks(role="owner", user="洁琳")},
+                {daily_ops_tasks.STATUS_PENDING_OWNER},
+            )
+
+    def test_operation_overview_groups_workbench_counts_by_store(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            store = daily_ops_tasks.OperationTaskStore(task_db)
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "低分预警", "store": "二弟", "owner": "洁琳", "merchant_code": "A", "system_action": "低分下架", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "议价审核", "store": "二弟", "owner": "洁琳", "merchant_code": "B", "system_action": "同意议价", "source_report": "r", "source_row": 2},
+                {"platform": "Temu", "task_type": "滞销处理", "store": "四弟", "owner": "小琴", "merchant_code": "C", "system_action": "老品滞销下架", "source_report": "r", "source_row": 3},
+            ])
+
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+                overview = daily_ops_app.operation_overview()
+
+            self.assertEqual(overview["task_total"], 3)
+            self.assertEqual(overview["package_total"], 3)
+            by_store = {row["store"]: row for row in overview["stores"]}
+            self.assertEqual(by_store["二弟"]["owner"], "洁琳")
+            self.assertEqual(by_store["二弟"]["low_score_count"], 1)
+            self.assertEqual(by_store["二弟"]["bargain_count"], 1)
+            self.assertEqual(by_store["四弟"]["slow_count"], 1)
+
+    def test_owner_batch_submit_rejects_other_owner_without_partial_update(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "1", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "低分预警", "store": "2", "owner": "洁琳", "merchant_code": "B", "source_report": "r", "source_row": 2},
+            ])
+            ids = [row["id"] for row in store.list_tasks()]
+            with self.assertRaises(ValueError):
+                store.submit_owner_actions(ids, actor="小琴", action="已处理", remark="不能混选")
+            self.assertEqual({row["status"] for row in store.list_tasks()}, {daily_ops_tasks.STATUS_PENDING_OWNER})
 
     def test_http_task_export_can_filter_overdue_tasks(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
@@ -2391,6 +2601,9 @@ class OperationTaskStoreTest(unittest.TestCase):
                 owner_headers = {"X-Operator-Token": owner["token"]}
                 admin_headers = {"X-Operator-Token": admin["token"]}
 
+                admin_rows = daily_ops_app.list_operation_tasks(role="admin")
+                daily_ops_app.push_operation_tasks([row["id"] for row in admin_rows], "管理员", "确认推送")
+
                 status, _content_type, body = daily_ops_app.handle_tasks_api("GET", owner_headers, {"role": "admin", "user": "洁琳"})
                 self.assertEqual(status, 200)
                 owner_payload = json.loads(body)
@@ -2420,14 +2633,14 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(status, 200)
                 exported = json.loads(body)
                 self.assertEqual(exported["rows"], 1)
-                self.assertEqual(exported["history_rows"], 3)
+                self.assertEqual(exported["history_rows"], 4)
 
                 exported_path = output_dir / exported["file"]
                 exported_book = load_workbook(exported_path, read_only=True, data_only=True)
                 try:
                     self.assertEqual(exported_book.sheetnames, ["任务台账", "操作记录", "负责人汇总", "状态汇总", "管理员待办队列", "导出口径"])
                     self.assertEqual(exported_book["任务台账"].max_row, 2)
-                    self.assertEqual(exported_book["操作记录"].max_row, 4)
+                    self.assertEqual(exported_book["操作记录"].max_row, 5)
                     self.assertEqual(exported_book["负责人汇总"].max_row, 2)
                     self.assertEqual(exported_book["状态汇总"].cell(row=2, column=1).value, "任务总数")
                     self.assertEqual(exported_book["状态汇总"].cell(row=2, column=2).value, 1)
@@ -2440,7 +2653,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                     self.assertEqual(criteria["user"], "小琴")
                     self.assertEqual(criteria["next_handler"], "管理员")
                     self.assertEqual(criteria["rows"], 1)
-                    self.assertEqual(criteria["history_rows"], 3)
+                    self.assertEqual(criteria["history_rows"], 4)
                 finally:
                     exported_book.close()
 
@@ -2570,7 +2783,8 @@ class OperationTaskStoreTest(unittest.TestCase):
                 {"platform": "Temu", "task_type": "爆旺冲突", "store": "7", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
                 {"platform": "Shein", "task_type": "爆旺冲突", "store": "琪琪", "owner": "洁琳", "merchant_code": "B", "source_report": "r", "source_row": 2},
             ])
-            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
+                 patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", root / "store_owner_map.json"):
                 status, _content_type, body = daily_ops_app.handle_owners_api()
                 payload = json.loads(body)
                 self.assertEqual(status, 200)

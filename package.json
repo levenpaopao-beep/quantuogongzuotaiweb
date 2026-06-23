@@ -5,10 +5,17 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
+    "doctor": "node scripts/doctor.js",
+    "check:ui": "node scripts/check-ui.js",
+    "check:cli": "node scripts/check-cli.js",
+    "test": "node scripts/check-python-tests.js",
+    "check:ready": "node scripts/check-ready.js",
+    "check:release": "node scripts/check-release.js",
+    "prestart": "node scripts/doctor.js",
     "start": "electron ."
   },
   "devDependencies": {
-    "electron": "^33.4.11",
+    "electron": "^42.4.1",
     "lucide-static": "^0.468.0"
   }
 }

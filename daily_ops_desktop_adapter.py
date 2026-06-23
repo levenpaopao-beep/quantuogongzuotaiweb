@@ -4,6 +4,12 @@ import sys
 from pathlib import Path
 
 import daily_ops_app as app
+from daily_ops_import_matrix import build_import_matrix
+from daily_ops_sales import DailySalesStore
+from daily_ops_sales_compare import aggregate_source_sales, compare_sales
+
+
+SALES_DB_PATH = app.ROOT / "基础数据库" / "daily_sales.json"
 
 
 def status():
@@ -84,9 +90,9 @@ def require_admin_payload(payload, action):
         raise PermissionError(f"只有管理员可以{action}")
 
 
-def operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only=""):
-    rows = app.list_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, priority, reworked, open_only)
-    return {"summary": app.summarize_operation_tasks(rows), "tasks": rows}
+def operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only="", search=""):
+    rows = app.list_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, priority, reworked, open_only, search)
+    return {"summary": app.summarize_operation_tasks(rows), "packages": app.package_operation_tasks(rows), "tasks": rows}
 
 
 def desktop_task_filters(payload):
@@ -114,11 +120,20 @@ def operation_tasks_payload(payload):
         filters.get("priority", ""),
         filters.get("reworked", ""),
         filters.get("open_only", ""),
+        filters.get("search", ""),
     )
 
 
 def submit_operation_task(task_id, actor, action, remark="", proof=""):
     return app.submit_operation_task(task_id, actor, action, remark, proof)
+
+
+def submit_operation_tasks(task_ids, actor, action, remark="", proof=""):
+    return app.submit_operation_tasks(task_ids, actor, action, remark, proof)
+
+
+def push_operation_tasks(task_ids, actor, remark=""):
+    return app.push_operation_tasks(task_ids, actor, remark)
 
 
 def assign_operation_task(task_id, actor, owner, remark=""):
@@ -133,12 +148,28 @@ def review_operation_tasks(task_ids, admin, decision, remark=""):
     return app.review_operation_tasks(task_ids, admin, decision, remark)
 
 
+def confirm_operation_tasks(task_ids, admin, remark=""):
+    return app.confirm_operation_tasks(task_ids, admin, remark)
+
+
+def task_suppressions():
+    return app.list_task_suppressions()
+
+
+def suppress_operation_tasks(task_ids, actor="管理员", reason="", duration="永久"):
+    return app.suppress_operation_tasks(task_ids, actor, reason, duration)
+
+
 def mark_operation_task_done(task_id, actor, remark=""):
     return app.mark_operation_task_done(task_id, actor, remark)
 
 
-def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only=""):
-    return app.export_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, priority, reworked, open_only)
+def mark_operation_tasks_done(task_ids, actor, remark=""):
+    return app.mark_operation_tasks_done(task_ids, actor, remark)
+
+
+def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only="", search=""):
+    return app.export_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, priority, reworked, open_only, search)
 
 
 def export_operation_tasks_payload(payload):
@@ -156,6 +187,7 @@ def export_operation_tasks_payload(payload):
         filters.get("priority", ""),
         filters.get("reworked", ""),
         filters.get("open_only", ""),
+        filters.get("search", ""),
     )
 
 
@@ -164,6 +196,18 @@ def submit_operation_task_payload(payload):
     if operator_role(payload) != "owner":
         raise PermissionError("只有店长可以填写处理结果")
     return submit_operation_task(payload.get("id", ""), operator_user(payload, payload.get("actor", "")), payload.get("action", ""), payload.get("remark", ""), payload.get("proof", ""))
+
+
+def submit_operation_tasks_payload(payload):
+    payload = payload or {}
+    if operator_role(payload) != "owner":
+        raise PermissionError("只有店长可以批量填写处理结果")
+    return submit_operation_tasks(payload.get("ids", []), operator_user(payload, payload.get("actor", "")), payload.get("action", ""), payload.get("remark", ""), payload.get("proof", ""))
+
+
+def push_operation_tasks_payload(payload):
+    require_admin_payload(payload, "推送任务")
+    return push_operation_tasks(payload.get("ids", []), operator_user(payload), payload.get("remark", ""))
 
 
 def assign_operation_task_payload(payload):
@@ -181,9 +225,29 @@ def review_operation_tasks_payload(payload):
     return review_operation_tasks(payload.get("ids", []), operator_user(payload), payload.get("decision", ""), payload.get("remark", ""))
 
 
+def confirm_operation_tasks_payload(payload):
+    require_admin_payload(payload, "确认完成任务")
+    return confirm_operation_tasks(payload.get("ids", []), operator_user(payload), payload.get("remark", ""))
+
+
+def task_suppressions_payload(payload):
+    require_admin_payload(payload or {}, "查看屏蔽清单")
+    return task_suppressions()
+
+
+def suppress_operation_tasks_payload(payload):
+    require_admin_payload(payload, "屏蔽任务")
+    return suppress_operation_tasks(payload.get("ids", []), operator_user(payload), payload.get("reason", ""), payload.get("duration", "永久"))
+
+
 def mark_operation_task_done_payload(payload):
     require_admin_payload(payload, "标记完成")
     return mark_operation_task_done(payload.get("id", ""), operator_user(payload), payload.get("remark", ""))
+
+
+def mark_operation_tasks_done_payload(payload):
+    require_admin_payload(payload, "批量标记完成")
+    return mark_operation_tasks_done(payload.get("ids", []), operator_user(payload), payload.get("remark", ""))
 
 
 def store_owners():
@@ -200,6 +264,70 @@ def save_store_owners_payload(payload):
     payload = payload or {}
     require_admin_payload(payload, "维护负责人配置")
     return save_store_owners(payload.get("assignments", []), operator_user(payload))
+
+
+def sales_payload(payload):
+    payload = payload or {}
+    role = operator_role(payload)
+    user = operator_user(payload, "")
+    return DailySalesStore(SALES_DB_PATH).daily_payload(app.load_store_owner_assignments(), role, user, payload.get("date", ""))
+
+
+def submit_sales_payload(payload):
+    payload = payload or {}
+    role = operator_role(payload)
+    user = operator_user(payload)
+    return DailySalesStore(SALES_DB_PATH).submit(
+        app.load_store_owner_assignments(),
+        role=role,
+        user=user,
+        day=payload.get("date", ""),
+        platform=payload.get("platform", ""),
+        store=payload.get("store", ""),
+        sales=payload.get("sales", ""),
+        remark=payload.get("remark", ""),
+    )
+
+
+def import_matrix_payload(payload):
+    payload = payload or {}
+    role = operator_role(payload)
+    user = operator_user(payload, "")
+    return build_import_matrix(app.load_store_owner_assignments(), app.source_group_status(), role, user)
+
+
+def export_sales_payload(payload):
+    payload = payload or {}
+    role = operator_role(payload)
+    user = operator_user(payload, "")
+    return DailySalesStore(SALES_DB_PATH).export_daily_workbook(app.load_store_owner_assignments(), app.OUTPUT_DIR, role, user, payload.get("date", ""))
+
+
+def sales_compare_payload(payload):
+    payload = payload or {}
+    role = operator_role(payload)
+    user = operator_user(payload, "")
+    sales_payload_data = DailySalesStore(SALES_DB_PATH).daily_payload(app.load_store_owner_assignments(), role, user, payload.get("date", ""))
+    source_sales = aggregate_source_sales({
+        "Temu": app.temu_sales_files(),
+        "Shein": app.shein_platform_files(),
+    })
+    rows = compare_sales(sales_payload_data.get("entries", []), source_sales)
+    source_platforms = [platform for platform, stores in source_sales.items() if stores]
+    return {
+        "date": sales_payload_data.get("date"),
+        "summary": {
+            "checked": sum(1 for item in sales_payload_data.get("entries", []) if item.get("submitted")),
+            "alerts": len(rows),
+            "source_platforms": sorted(source_platforms),
+        },
+        "rows": rows,
+    }
+
+
+def erp_sync_payload(payload):
+    require_admin_payload(payload or {}, "同步ERP基础数据")
+    return app.sync_erp_base_data()
 
 
 def create_backup():

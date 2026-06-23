@@ -9,6 +9,12 @@ const APP_NAME = "PETCIRCLE 运营工作台";
 const PNG_ICON = path.join(__dirname, "assets", "petcircle-app-icon.png");
 const ICNS_ICON = path.join(__dirname, "assets", "petcircle-app-icon.icns");
 
+function appIcon() {
+  if (process.platform === "darwin" && fs.existsSync(ICNS_ICON)) return ICNS_ICON;
+  if (fs.existsSync(PNG_ICON)) return PNG_ICON;
+  return undefined;
+}
+
 function bundledPython() {
   const home = os.homedir();
   const candidates = [
@@ -25,6 +31,15 @@ function pythonEnv() {
     env.PYTHONPATH = env.PYTHONPATH ? `${sitePackages}${path.delimiter}${env.PYTHONPATH}` : sitePackages;
   }
   return env;
+}
+
+function nodeRuntime() {
+  const candidates = [
+    process.env.npm_node_execpath,
+    path.join(os.homedir(), ".cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"),
+    "node",
+  ].filter(Boolean);
+  return candidates.find((candidate) => candidate === "node" || fs.existsSync(candidate)) || "node";
 }
 
 function runPython(command, args = [], input = "") {
@@ -55,6 +70,29 @@ function runPython(command, args = [], input = "") {
   });
 }
 
+function runNodeScript(scriptName) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(nodeRuntime(), [path.join(ROOT, "scripts", scriptName)], {
+      cwd: ROOT,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      const output = `${stdout}${stderr ? `\n${stderr}` : ""}`.trim();
+      if (code !== 0) {
+        reject(new Error(output || "自检执行失败"));
+        return;
+      }
+      resolve({ output });
+    });
+  });
+}
+
 function taskPayload(payload = {}) {
   return {
     ...payload,
@@ -68,8 +106,10 @@ function taskPayload(payload = {}) {
       overdue: payload.overdue || "",
       unassigned: payload.unassigned || "",
       next_handler: payload.next_handler || "",
+      priority: payload.priority || "",
       reworked: payload.reworked || "",
       open_only: payload.open_only || "",
+      search: payload.search || "",
     },
   };
 }
@@ -81,7 +121,7 @@ function createWindow() {
     minWidth: 1180,
     minHeight: 760,
     title: APP_NAME,
-    icon: process.platform === "darwin" ? ICNS_ICON : PNG_ICON,
+    icon: appIcon(),
     backgroundColor: "#f5f6f8",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 18, y: 18 },
@@ -124,15 +164,29 @@ ipcMain.handle("api:save-rules", (_event, payload) => runPython("save-rules", []
 ipcMain.handle("api:search", (_event, query, limit, payload) => runPython("search", [query, limit || 200], JSON.stringify(payload || {})));
 ipcMain.handle("api:tasks", (_event, payload) => runPython("tasks", [], JSON.stringify(taskPayload(payload || {}))));
 ipcMain.handle("api:submit-task", (_event, payload) => runPython("submit-task", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:batch-submit-tasks", (_event, payload) => runPython("batch-submit-tasks", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:push-tasks", (_event, payload) => runPython("push-tasks", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:assign-task", (_event, payload) => runPython("assign-task", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:review-task", (_event, payload) => runPython("review-task", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:batch-review-tasks", (_event, payload) => runPython("batch-review-tasks", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:confirm-tasks", (_event, payload) => runPython("confirm-tasks", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:task-suppressions", (_event, payload) => runPython("task-suppressions", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:suppress-tasks", (_event, payload) => runPython("suppress-tasks", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:done-task", (_event, payload) => runPython("done-task", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:done-tasks", (_event, payload) => runPython("done-tasks", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:export-tasks", (_event, payload) => runPython("export-tasks", [], JSON.stringify(taskPayload(payload || {}))));
 ipcMain.handle("api:store-owners", (_event, payload) => runPython("store-owners", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:save-store-owners", (_event, payload) => runPython("save-store-owners", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:sales", (_event, payload) => runPython("sales", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:submit-sales", (_event, payload) => runPython("submit-sales", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:export-sales", (_event, payload) => runPython("export-sales", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:sales-compare", (_event, payload) => runPython("sales-compare", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:import-matrix", (_event, payload) => runPython("import-matrix", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:erp-sync", (_event, payload) => runPython("erp-sync", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:create-backup", (_event, payload) => runPython("create-backup", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:restore-backup", (_event, payload) => runPython("restore-backup", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:run-doctor", () => runNodeScript("doctor.js"));
+ipcMain.handle("api:run-ready-check", () => runNodeScript("check-ready.js"));
 
 ipcMain.handle("api:select-files", async (_event, group) => {
   const result = await dialog.showOpenDialog({
@@ -145,6 +199,19 @@ ipcMain.handle("api:select-files", async (_event, group) => {
   });
   if (result.canceled || !result.filePaths.length) return [];
   return result.filePaths;
+});
+
+ipcMain.handle("api:select-backup", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "选择运营状态备份",
+    properties: ["openFile"],
+    filters: [
+      { name: "备份文件", extensions: ["zip"] },
+      { name: "所有文件", extensions: ["*"] },
+    ],
+  });
+  if (result.canceled || !result.filePaths.length) return "";
+  return result.filePaths[0];
 });
 
 ipcMain.handle("api:upload-source", (_event, group, filePaths, payload) => {

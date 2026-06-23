@@ -10,6 +10,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 
+STATUS_PENDING_PUSH = "待推送"
 STATUS_PENDING_OWNER = "待店长处理"
 STATUS_OWNER_SUBMITTED = "店长已填写"
 STATUS_PENDING_REVIEW = "待管理员审核"
@@ -118,6 +119,8 @@ def parse_time(value):
 def task_overdue(row, now=None):
     now = now or datetime.now()
     status = norm(row.get("status"))
+    if status == STATUS_PENDING_PUSH:
+        return False
     if status == STATUS_PENDING_OWNER:
         start = parse_time(row.get("created_at")) or parse_time(row.get("updated_at"))
         return bool(start and (now - start).total_seconds() >= OWNER_OVERDUE_DAYS * 86400)
@@ -163,6 +166,10 @@ def task_identity(row):
 
 def task_next_step(row, now=None):
     status = norm(row.get("status"))
+    if status == STATUS_PENDING_PUSH:
+        if not norm(row.get("owner")):
+            return "管理员", "指派负责人后推送"
+        return "管理员", "确认推送给店长"
     if status == STATUS_PENDING_OWNER:
         if not norm(row.get("owner")):
             return "管理员", "指派负责人"
@@ -190,6 +197,10 @@ def task_priority(row, now=None):
         return "低", "已完成"
     if task_overdue(row, now):
         return "高", "超时未处理"
+    if status == STATUS_PENDING_PUSH and not norm(row.get("owner")):
+        return "高", "待指派后推送"
+    if status == STATUS_PENDING_PUSH:
+        return "中", "待管理员推送"
     if status == STATUS_PENDING_OWNER and not norm(row.get("owner")):
         return "高", "未分配负责人"
     if status == STATUS_PENDING_REVIEW:
@@ -210,6 +221,41 @@ def task_sort_key(row):
     return (priority_order.get(norm(row.get("priority")), 9), -timestamp, norm(row.get("id")))
 
 
+def task_package_id(row):
+    parts = [
+        norm(row.get("owner")) or "未分配",
+        norm(row.get("platform")),
+        norm(row.get("store")),
+        norm(row.get("task_type")),
+        norm(row.get("system_action")) or norm(row.get("next_action")),
+    ]
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
+def task_package_sort_key(package):
+    priority_order = {"高": 0, "中": 1, "普通": 2, "低": 3}
+    status_order = {
+        STATUS_PENDING_REVIEW: 0,
+        STATUS_PENDING_PUSH: 1,
+        STATUS_REJECTED: 2,
+        STATUS_PENDING_OWNER: 3,
+        STATUS_APPROVED: 4,
+        STATUS_DONE: 5,
+    }
+    updated_at = parse_time(package.get("updated_at")) or parse_time(package.get("created_at"))
+    timestamp = updated_at.timestamp() if updated_at else 0
+    return (
+        priority_order.get(norm(package.get("priority")), 9),
+        status_order.get(norm(package.get("main_status")), 9),
+        -int(package.get("total") or 0),
+        -timestamp,
+        norm(package.get("owner")),
+        norm(package.get("store")),
+        norm(package.get("task_type")),
+        norm(package.get("system_action")),
+    )
+
+
 def admin_queue_summary(rows, now=None):
     specs = [
         ("assign_owner", "指派负责人", "高", {"unassigned": "1", "open_only": "1"}),
@@ -217,6 +263,7 @@ def admin_queue_summary(rows, now=None):
         ("owner_overdue", "跟进超时店长处理", "高", {"status": STATUS_PENDING_OWNER, "overdue": "1", "open_only": "1"}),
         ("rejected_overdue", "跟进驳回返工超时", "高", {"status": STATUS_REJECTED, "overdue": "1", "open_only": "1"}),
         ("review_pending", "审核通过或驳回", "中", {"status": STATUS_PENDING_REVIEW, "open_only": "1"}),
+        ("push_pending", "确认推送给店长", "中", {"status": STATUS_PENDING_PUSH, "open_only": "1"}),
         ("mark_done", "标记完成或归档", "中", {"status": STATUS_APPROVED, "open_only": "1"}),
     ]
     counts = {key: 0 for key, _action, _priority, _filters in specs}
@@ -225,7 +272,7 @@ def admin_queue_summary(rows, now=None):
         if status == STATUS_DONE:
             continue
         overdue = task_overdue(row, now)
-        if status == STATUS_PENDING_OWNER and not norm(row.get("owner")):
+        if status in {STATUS_PENDING_PUSH, STATUS_PENDING_OWNER} and not norm(row.get("owner")):
             counts["assign_owner"] += 1
         elif status == STATUS_PENDING_REVIEW and overdue:
             counts["review_overdue"] += 1
@@ -235,6 +282,8 @@ def admin_queue_summary(rows, now=None):
             counts["rejected_overdue"] += 1
         elif status == STATUS_PENDING_REVIEW:
             counts["review_pending"] += 1
+        elif status == STATUS_PENDING_PUSH:
+            counts["push_pending"] += 1
         elif status == STATUS_APPROVED:
             counts["mark_done"] += 1
     return [
@@ -274,7 +323,7 @@ def public_task(row, now=None):
 
 
 def can_update_generated_owner(task):
-    if task.get("status") != STATUS_PENDING_OWNER:
+    if task.get("status") not in {STATUS_PENDING_PUSH, STATUS_PENDING_OWNER}:
         return False
     for item in task.get("history") or []:
         if norm(item.get("event")) in {"任务指派", "自动指派"}:
@@ -359,6 +408,7 @@ class OperationTaskStore:
             if not user:
                 return []
             rows = [row for row in rows if norm(row.get("owner")) == user]
+            rows = [row for row in rows if norm(row.get("status")) != STATUS_PENDING_PUSH]
         if status:
             rows = [row for row in rows if norm(row.get("status")) == norm(status)]
         if task_type:
@@ -427,6 +477,93 @@ class OperationTaskStore:
             "admin_queue": admin_queue_summary(rows, now=now),
         }
 
+    def task_packages(self, rows=None, now=None):
+        rows = list(rows) if rows is not None else self.list_tasks(now=now)
+        grouped = {}
+        for row in rows:
+            item = grouped.setdefault(task_package_id(row), {
+                "id": task_package_id(row),
+                "owner": norm(row.get("owner")) or "未分配",
+                "platform": norm(row.get("platform")),
+                "store": norm(row.get("store")),
+                "task_type": norm(row.get("task_type")),
+                "system_action": norm(row.get("system_action")) or norm(row.get("next_action")),
+                "total": 0,
+                "task_ids": [],
+                "pushable_task_ids": [],
+                "submittable_task_ids": [],
+                "reviewable_task_ids": [],
+                "done_task_ids": [],
+                "by_status": {},
+                "source_reports": set(),
+                "source_files": set(),
+                "sample_tasks": [],
+                "created_at": "",
+                "updated_at": "",
+                "overdue_count": 0,
+                "reworked_count": 0,
+                "priority": "低",
+                "priority_reason": "",
+                "main_status": "",
+                "next_handler": "",
+                "next_action": "",
+            })
+            status = norm(row.get("status"))
+            item["total"] += 1
+            item["task_ids"].append(row.get("id", ""))
+            item["by_status"][status] = item["by_status"].get(status, 0) + 1
+            if row.get("source_report"):
+                item["source_reports"].add(norm(row.get("source_report")))
+            if row.get("source_file"):
+                item["source_files"].add(norm(row.get("source_file")))
+            if len(item["sample_tasks"]) < 8:
+                item["sample_tasks"].append(row)
+            if status == STATUS_PENDING_PUSH and norm(row.get("owner")):
+                item["pushable_task_ids"].append(row.get("id", ""))
+            if status in {STATUS_PENDING_OWNER, STATUS_REJECTED} and norm(row.get("owner")):
+                item["submittable_task_ids"].append(row.get("id", ""))
+            if status == STATUS_PENDING_REVIEW:
+                item["reviewable_task_ids"].append(row.get("id", ""))
+            if status == STATUS_APPROVED:
+                item["done_task_ids"].append(row.get("id", ""))
+            if task_overdue(row, now):
+                item["overdue_count"] += 1
+            if task_rejection_info(row)[0] > 0:
+                item["reworked_count"] += 1
+            created = norm(row.get("created_at"))
+            updated = norm(row.get("updated_at"))
+            if created and (not item["created_at"] or created < item["created_at"]):
+                item["created_at"] = created
+            if updated and updated > item["updated_at"]:
+                item["updated_at"] = updated
+            priority, priority_reason = task_priority(row, now=now)
+            if task_package_sort_key({"priority": priority, "main_status": status, "total": item["total"], "updated_at": updated}) < task_package_sort_key(item):
+                item["priority"] = priority
+                item["priority_reason"] = priority_reason
+            if not item["main_status"] or item["by_status"].get(status, 0) > item["by_status"].get(item["main_status"], 0):
+                item["main_status"] = status
+            next_handler, next_action = task_next_step(row, now=now)
+            if not item["next_handler"] or next_handler == "管理员":
+                item["next_handler"] = next_handler
+                item["next_action"] = next_action
+
+        result = []
+        for item in grouped.values():
+            item["pending_push_count"] = item["by_status"].get(STATUS_PENDING_PUSH, 0)
+            item["pending_owner_count"] = item["by_status"].get(STATUS_PENDING_OWNER, 0) + item["by_status"].get(STATUS_REJECTED, 0)
+            item["pending_review_count"] = item["by_status"].get(STATUS_PENDING_REVIEW, 0)
+            item["approved_count"] = item["by_status"].get(STATUS_APPROVED, 0)
+            item["done_count"] = item["by_status"].get(STATUS_DONE, 0)
+            item["source_reports"] = sorted(item["source_reports"])
+            item["source_files"] = sorted(item["source_files"])
+            item["task_ids"] = [task_id for task_id in item["task_ids"] if task_id]
+            item["pushable_task_ids"] = [task_id for task_id in item.get("pushable_task_ids", []) if task_id]
+            item["submittable_task_ids"] = [task_id for task_id in item["submittable_task_ids"] if task_id]
+            item["reviewable_task_ids"] = [task_id for task_id in item["reviewable_task_ids"] if task_id]
+            item["done_task_ids"] = [task_id for task_id in item["done_task_ids"] if task_id]
+            result.append(item)
+        return sorted(result, key=task_package_sort_key)
+
     def owner_directory(self):
         owners = {}
         for row in self.load()["tasks"]:
@@ -451,7 +588,7 @@ class OperationTaskStore:
             })
         return sorted(result, key=lambda row: (-row["task_count"], row["owner"]))
 
-    def upsert_generated_tasks(self, rows):
+    def upsert_generated_tasks(self, rows, default_status=STATUS_PENDING_OWNER):
         payload = self.load()
         tasks = payload["tasks"]
         existing = {row.get("id"): row for row in tasks}
@@ -499,7 +636,7 @@ class OperationTaskStore:
                     "id": row_id,
                     "platform": row.get("platform", ""),
                     "task_type": row.get("task_type", ""),
-                    "status": STATUS_PENDING_OWNER,
+                    "status": row.get("status") or default_status,
                     "store": row.get("store", ""),
                     "owner": row.get("owner", ""),
                     "merchant_code": row.get("merchant_code", ""),
@@ -532,6 +669,38 @@ class OperationTaskStore:
                 created += 1
         self.save(payload)
         return {"created": created, "updated": updated, "total": len(tasks)}
+
+    def push_tasks(self, task_ids, actor="管理员", remark=""):
+        ids = []
+        seen = set()
+        for task_id in task_ids or []:
+            task_id = norm(task_id)
+            if task_id and task_id not in seen:
+                ids.append(task_id)
+                seen.add(task_id)
+        if not ids:
+            raise ValueError("请选择要推送给店长的任务")
+        payload = self.load()
+        by_id = {row.get("id"): row for row in payload["tasks"]}
+        tasks = []
+        for task_id in ids:
+            task = by_id.get(task_id)
+            if not task:
+                raise KeyError("任务不存在")
+            if norm(task.get("status")) != STATUS_PENDING_PUSH:
+                raise ValueError("只有待推送任务可以推送给店长")
+            if not norm(task.get("owner")):
+                raise ValueError("待推送任务必须先指派负责人")
+            tasks.append(task)
+        timestamp = now_text()
+        for task in tasks:
+            task["status"] = STATUS_PENDING_OWNER
+            task["next_handler"] = "店长"
+            task["next_action"] = "填写处理结果"
+            task["updated_at"] = timestamp
+            task.setdefault("history", []).append(history_entry(task, actor, "管理员推送", "推送给店长", norm(remark), time=timestamp))
+        self.save(payload)
+        return {"count": len(tasks), "tasks": [public_task(task) for task in tasks]}
 
     def require_task(self, task_id):
         payload = self.load()
@@ -587,6 +756,56 @@ class OperationTaskStore:
         task.setdefault("history", []).append(history_entry(task, actor, "店长提交", action, remark, time=timestamp, proof=proof))
         self.save(payload)
         return public_task(task)
+
+    def submit_owner_actions(self, task_ids, actor, action, remark="", proof=""):
+        ids = []
+        seen = set()
+        for task_id in task_ids or []:
+            task_id = norm(task_id)
+            if task_id and task_id not in seen:
+                ids.append(task_id)
+                seen.add(task_id)
+        if not ids:
+            raise ValueError("请选择要批量处理的任务")
+        action = norm(action)
+        if not action:
+            raise ValueError("店长处理动作不能为空")
+        remark = norm(remark)
+        proof = norm(proof)
+        if not remark and not proof:
+            raise ValueError("店长提交必须填写处理依据：备注或处理凭证至少填一个")
+        actor = norm(actor)
+        payload = self.load()
+        by_id = {row.get("id"): row for row in payload["tasks"]}
+        tasks = []
+        for task_id in ids:
+            task = by_id.get(task_id)
+            if not task:
+                raise KeyError("任务不存在")
+            owner = norm(task.get("owner"))
+            if not owner:
+                raise ValueError("未分配负责人任务不能填写处理结果，请先指派负责人")
+            if actor != owner:
+                raise ValueError("只能由任务负责人填写处理结果")
+            if task.get("status") not in {STATUS_PENDING_OWNER, STATUS_REJECTED}:
+                raise ValueError("只有待店长处理或已驳回的任务可以由店长填写")
+            tasks.append(task)
+        timestamp = now_text()
+        for task in tasks:
+            task["owner_action"] = action
+            task["owner_remark"] = remark
+            task["owner_proof"] = proof
+            task["owner_submitted_by"] = actor
+            task["owner_submitted_at"] = timestamp
+            task["status"] = STATUS_PENDING_REVIEW
+            task["admin_decision"] = ""
+            task["admin_remark"] = ""
+            task["admin_reviewed_by"] = ""
+            task["admin_reviewed_at"] = ""
+            task["updated_at"] = timestamp
+            task.setdefault("history", []).append(history_entry(task, actor, "店长批量提交", action, remark, time=timestamp, proof=proof))
+        self.save(payload)
+        return {"count": len(tasks), "tasks": [public_task(task) for task in tasks]}
 
     def review_task(self, task_id, admin, decision, remark=""):
         payload, task = self.require_task(task_id)
@@ -647,6 +866,42 @@ class OperationTaskStore:
         self.save(payload)
         return {"count": len(tasks), "tasks": [public_task(task) for task in tasks]}
 
+    def confirm_review_tasks(self, task_ids, admin, remark=""):
+        ids = []
+        seen = set()
+        for task_id in task_ids or []:
+            task_id = norm(task_id)
+            if task_id and task_id not in seen:
+                ids.append(task_id)
+                seen.add(task_id)
+        if not ids:
+            raise ValueError("请选择要确认完成的任务")
+        remark = norm(remark) or "管理员确认店长已处理"
+        payload = self.load()
+        by_id = {row.get("id"): row for row in payload["tasks"]}
+        tasks = []
+        for task_id in ids:
+            task = by_id.get(task_id)
+            if not task:
+                raise KeyError("任务不存在")
+            if task.get("status") != STATUS_PENDING_REVIEW:
+                raise ValueError("只有待管理员审核的任务可以确认完成")
+            tasks.append(task)
+        timestamp = now_text()
+        for task in tasks:
+            task["admin_decision"] = "确认完成"
+            task["admin_remark"] = remark
+            task["admin_reviewed_by"] = norm(admin)
+            task["admin_reviewed_at"] = timestamp
+            task["status"] = STATUS_DONE
+            task["completed_by"] = norm(admin)
+            task["completed_at"] = timestamp
+            task["completed_remark"] = remark
+            task["updated_at"] = timestamp
+            task.setdefault("history", []).append(history_entry(task, admin, "管理员确认", "确认完成", remark, time=timestamp))
+        self.save(payload)
+        return {"count": len(tasks), "tasks": [public_task(task) for task in tasks]}
+
     def mark_done(self, task_id, actor, remark=""):
         payload, task = self.require_task(task_id)
         if task.get("status") != STATUS_APPROVED:
@@ -662,6 +917,41 @@ class OperationTaskStore:
         task.setdefault("history", []).append(history_entry(task, actor, "标记完成", STATUS_DONE, remark, time=timestamp))
         self.save(payload)
         return public_task(task)
+
+    def mark_done_tasks(self, task_ids, actor, remark=""):
+        ids = []
+        seen = set()
+        for task_id in task_ids or []:
+            task_id = norm(task_id)
+            if task_id and task_id not in seen:
+                ids.append(task_id)
+                seen.add(task_id)
+        if not ids:
+            raise ValueError("请选择要标记完成的任务")
+        remark = norm(remark)
+        if not remark:
+            raise ValueError("标记完成必须填写确认说明")
+        payload = self.load()
+        by_id = {row.get("id"): row for row in payload["tasks"]}
+        rows = []
+        for task_id in ids:
+            task = by_id.get(task_id)
+            if not task:
+                raise KeyError("任务不存在")
+            if task.get("status") != STATUS_APPROVED:
+                raise ValueError("只有已通过的任务可以标记完成")
+            rows.append(task)
+        timestamp = now_text()
+        actor = norm(actor)
+        for task in rows:
+            task["status"] = STATUS_DONE
+            task["completed_by"] = actor
+            task["completed_at"] = timestamp
+            task["completed_remark"] = remark
+            task["updated_at"] = timestamp
+            task.setdefault("history", []).append(history_entry(task, actor, "批量标记完成", STATUS_DONE, remark, time=timestamp))
+        self.save(payload)
+        return {"count": len(rows), "tasks": [public_task(task) for task in rows]}
 
     def export_tasks(self, output_path, tasks=None, filters=None, now=None):
         rows = list(tasks) if tasks is not None else self.list_tasks()
@@ -710,13 +1000,14 @@ class OperationTaskStore:
                 ])
         style_task_sheet(log_ws)
         owner_ws = workbook.create_sheet("负责人汇总")
-        owner_ws.append(["负责人", "任务总数", STATUS_PENDING_OWNER, STATUS_PENDING_REVIEW, "超时未处理", "返工任务", STATUS_APPROVED, STATUS_REJECTED, STATUS_DONE])
+        owner_ws.append(["负责人", "任务总数", STATUS_PENDING_PUSH, STATUS_PENDING_OWNER, STATUS_PENDING_REVIEW, "超时未处理", "返工任务", STATUS_APPROVED, STATUS_REJECTED, STATUS_DONE])
         owner_rows = sorted(summary.get("owner_status", {}).values(), key=lambda item: (-item.get("total", 0), item.get("owner", "")))
         for item in owner_rows:
             status = item.get("by_status", {})
             owner_ws.append([
                 item.get("owner", ""),
                 item.get("total", 0),
+                status.get(STATUS_PENDING_PUSH, 0),
                 status.get(STATUS_PENDING_OWNER, 0),
                 status.get(STATUS_PENDING_REVIEW, 0),
                 item.get("overdue", 0),
@@ -731,7 +1022,7 @@ class OperationTaskStore:
         summary_ws.append(["任务总数", summary.get("total", 0)])
         summary_ws.append(["超时未处理", summary.get("overdue", {}).get("total", 0)])
         summary_ws.append(["未分配", summary.get("unassigned", 0)])
-        for status in [STATUS_PENDING_OWNER, STATUS_PENDING_REVIEW, STATUS_APPROVED, STATUS_REJECTED, STATUS_DONE]:
+        for status in [STATUS_PENDING_PUSH, STATUS_PENDING_OWNER, STATUS_PENDING_REVIEW, STATUS_APPROVED, STATUS_REJECTED, STATUS_DONE]:
             summary_ws.append([status, summary.get("by_status", {}).get(status, 0)])
         summary_ws.append(["", ""])
         summary_ws.append(["任务类型", "数量"])
@@ -785,6 +1076,7 @@ def locked_task_store_method(method):
 
 for _method_name in [
     "upsert_generated_tasks",
+    "push_tasks",
     "assign_task",
     "submit_owner_action",
     "review_task",

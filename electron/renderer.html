@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PETCIRCLE 运营工作台</title>
+    <title>PETCIRCLE 日常运营工作台</title>
     <link rel="stylesheet" href="./renderer.css" />
   </head>
   <body>
@@ -11,50 +11,223 @@
       <aside class="sidebar">
         <div class="brand">
           <img class="brand-logo" src="./assets/petcircle-app-icon.png" alt="PETCIRCLE logo" />
-          <div class="brand-title">PETCIRCLE 运营工作台</div>
+          <div>
+            <div class="brand-title">PETCIRCLE</div>
+            <div class="brand-subtitle">日常运营工作台</div>
+          </div>
         </div>
-        <button class="nav-item" data-page="overview">概览</button>
-        <div class="nav-section">工作流</div>
-        <button class="nav-item" data-page="tasks">任务中心</button>
-        <button class="nav-item" data-page="daily">每日工作流</button>
-        <button class="nav-item active" data-page="weekly">每周工作流</button>
-        <button class="nav-item" data-page="monthly">每月工作流</button>
-        <div class="nav-section">数据管理</div>
-        <button class="nav-item" data-page="weekly">数据源管理</button>
-        <button class="nav-item" data-page="search">基础数据查询</button>
-        <div class="nav-section">报表管理</div>
-        <button class="nav-item" data-page="reports">报表模板</button>
-        <button class="nav-item" data-page="outputs">报表历史</button>
-        <div class="nav-section">系统管理</div>
-        <button class="nav-item" data-page="rules">规则设置</button>
-        <button class="nav-item" data-page="logs">操作日志</button>
+
+        <nav class="nav-list">
+          <button class="nav-item active" data-page="today"><span>今日工作台</span><em>今天要做什么</em></button>
+          <button class="nav-item" data-page="sales"><span>销量管理</span><em>填报、补填、月结</em></button>
+          <button class="nav-item" data-page="tasks"><span>商品任务</span><em>任务包处理</em></button>
+          <button class="nav-item" data-page="imports"><span>数据导入</span><em>批次、体检、缺失</em></button>
+          <button class="nav-item" data-page="reports"><span>经营报表</span><em>平台、店铺、导出</em></button>
+          <button class="nav-item" data-page="masterdata"><span>基础资料</span><em>平台、店铺、负责人</em></button>
+          <button class="nav-item" data-page="rules"><span>系统设置</span><em>规则、ERP、备份</em></button>
+        </nav>
+
         <div class="operator">
           <div class="avatar">OP</div>
           <div>
             <div class="operator-name">运营同学</div>
-            <div class="operator-role">运营组</div>
+            <div class="operator-role">按身份展示数据</div>
           </div>
         </div>
       </aside>
 
       <main class="workspace">
         <header class="titlebar">
-          <div></div>
-          <h1><img class="title-logo" src="./assets/petcircle-app-icon.png" alt="" />PETCIRCLE 运营工作台</h1>
+          <div>
+            <div class="eyebrow">每天先看这里</div>
+            <h1 id="pageTitle">今日工作台</h1>
+          </div>
           <div class="top-actions">
+            <div class="global-operator">
+              <select id="operatorRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
+              <input id="operatorUser" placeholder="当前操作人" />
+              <button class="ghost-button" id="saveOperatorBtn">切换视角</button>
+              <span id="operatorHint">按管理员查看全部数据</span>
+            </div>
             <button class="icon-action" id="refreshBtn">刷新</button>
             <button class="icon-action" data-page="rules">设置</button>
-            <button class="icon-action">帮助</button>
           </div>
         </header>
 
-        <section class="page page-active" id="weeklyPage">
-          <div class="segmented">
-            <button class="segment active" data-mode="sources">数据源</button>
-            <button class="segment" data-mode="reports">生成报表</button>
-            <button class="segment" data-mode="outputs">输出记录</button>
+        <section class="page page-active" id="todayPage">
+          <div class="hero-strip">
+            <div class="hero-copy">
+              <span class="pill">今日优先级</span>
+              <h2>先确认销量，再处理任务包。</h2>
+              <p>管理员看全部平台和店铺；店长只看自己负责的数据。每个卡片都指向下一步动作。</p>
+              <div class="hero-actions">
+                <button class="primary-button" data-page="sales">填写今日销量</button>
+                <button class="ghost-button" data-page="tasks">处理商品任务</button>
+              </div>
+            </div>
+            <img class="hero-mascot" src="./assets/petcircle-app-icon.png" alt="" />
           </div>
 
+          <div class="today-grid">
+            <section class="today-card span-3">
+              <div class="panel-head">
+                <div>
+                  <h2>开始使用清单</h2>
+                  <p>按顺序完成初始化和每日动作，系统会自动更新状态。</p>
+                </div>
+                <button class="ghost-button" id="todayGuideRefreshBtn">重新检查</button>
+              </div>
+              <div class="guide-steps" id="todayGuideSteps"></div>
+            </section>
+
+            <section class="today-card span-2">
+              <div class="panel-head">
+                <div>
+                  <h2>今日销量填报进度</h2>
+                  <p>每天必须先确认的平台店铺销量。</p>
+                </div>
+                <button class="ghost-button" data-page="sales">进入销量管理</button>
+              </div>
+              <div class="metric-row" id="todaySalesMetrics">
+                <div class="metric-card"><span>应填店铺</span><strong>0</strong><small>等待配置</small></div>
+                <div class="metric-card ok"><span>已填写</span><strong>0</strong><small>今日完成</small></div>
+                <div class="metric-card warn"><span>未填写</span><strong>0</strong><small>需要提醒</small></div>
+                <div class="metric-card danger"><span>异常波动</span><strong>0</strong><small>待核对</small></div>
+              </div>
+              <div class="action-list" id="todaySalesActions"></div>
+            </section>
+
+            <section class="today-card">
+              <h2>今日待我处理</h2>
+              <div class="stack-list" id="todayActionList"></div>
+            </section>
+
+            <section class="today-card span-2">
+              <div class="panel-head">
+                <div>
+                  <h2>商品任务风险</h2>
+                  <p>待推送、待勾选、重复出现和超时任务。</p>
+                </div>
+                <button class="ghost-button" data-page="tasks">查看任务包</button>
+              </div>
+              <div class="task-summary compact" id="taskSummary"></div>
+            </section>
+
+            <section class="today-card">
+              <h2>经营快照</h2>
+              <div class="snapshot-list" id="todaySnapshot">
+                <div><span>今日总销量</span><strong>待填报</strong></div>
+                <div><span>平台汇总</span><strong>Temu / Shein / 速卖通 / TK / Ozon</strong></div>
+                <div><span>Excel 总表</span><strong>月结后导出</strong></div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="page" id="salesPage">
+          <div class="page-intro">
+            <div>
+              <span class="pill">每日主流程</span>
+              <h2>销量管理</h2>
+              <p>店长每天手动填写平台店铺销量；管理员负责异常核对、锁定、月结和总表导出。</p>
+            </div>
+            <button class="primary-button" id="loadSalesHeaderBtn">刷新今日清单</button>
+          </div>
+          <div class="module-grid">
+            <section class="simple-panel soft-panel">
+              <h2>今日填报清单</h2>
+              <div class="sales-tools">
+                <input id="salesDate" type="date" />
+                <button class="ghost-button" id="loadSalesBtn">读取日期</button>
+              </div>
+              <div class="sales-entry-list" id="salesEntryList"></div>
+            </section>
+            <section class="simple-panel">
+              <h2>异常与补填</h2>
+              <div class="flow-list">
+                <div><strong>7 天内补填</strong><span>店长可直接提交，系统保留修改记录。</span></div>
+                <div><strong>超 7 天补填</strong><span>提交申请，管理员确认后写入。</span></div>
+                <div><strong>异常波动</strong><span>超过 50% 会提示原因，不阻止提交。</span></div>
+                <div><strong>锁定/月结</strong><span>锁定后只能管理员更正。</span></div>
+              </div>
+            </section>
+          </div>
+          <div class="simple-panel">
+            <div class="panel-head">
+              <div>
+                <h2>销量台账视图</h2>
+                <p id="salesStatusLine">读取平台、店铺、日期、状态、修改记录和月结口径。</p>
+              </div>
+              <button class="ghost-button" id="exportSalesBtn">导出销量明细</button>
+            </div>
+            <div class="matrix-placeholder sales-ledger">
+              <div>平台</div><div>店铺</div><div>今日销量</div><div>状态</div><div>异常</div><div>操作</div>
+              <div id="salesLedgerRows" class="matrix-body"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="tasksPage">
+          <div class="page-intro">
+            <div>
+              <span class="pill">整包处理</span>
+              <h2>商品任务</h2>
+              <p>管理员按任务类型确认推送；店长按任务包整包处理；管理员最后勾选完成。</p>
+            </div>
+            <div class="download-actions">
+              <button class="primary-button" id="batchPushTasksBtn" data-admin-only="task-push">批量推送</button>
+              <button class="primary-button" id="batchSubmitTasksBtn" data-owner-only="task-submit">整包已处理</button>
+              <button class="primary-button" id="batchApproveTasksBtn" data-admin-only="task-review">批量确认</button>
+              <button class="ghost-button" id="suppressTasksBtn" data-admin-only="task-suppress">屏蔽不再提示</button>
+              <button class="primary-button" id="exportTasksBtn">下载任务表</button>
+            </div>
+          </div>
+
+          <div class="task-summary" id="adminTaskQueue"></div>
+          <div class="task-summary" id="ownerTaskSummary"></div>
+
+          <div class="simple-panel task-panel">
+            <div class="panel-head">
+              <div>
+                <h2>任务包台账</h2>
+                <p id="taskStatusLine">读取任务包状态</p>
+              </div>
+            </div>
+            <div class="task-filters">
+              <select id="taskRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
+              <input id="taskUser" placeholder="负责人姓名" />
+              <input id="taskSearch" placeholder="店铺 / 商家编码 / SKC / SPU / 商品名" />
+              <select id="taskStatus"><option value="">全部状态</option><option>待推送</option><option>待店长处理</option><option value="待管理员审核">待管理员确认</option><option value="已通过">已确认</option><option value="已驳回">已返工</option><option>已完成</option></select>
+              <select id="taskPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option><option>速卖通</option><option>TK</option><option>Ozon</option></select>
+              <select id="taskType"><option value="">全部类型</option><option>价格异常</option><option>库存异常</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
+              <input id="taskStore" placeholder="店铺" />
+              <select id="taskNextHandler"><option value="">全部下一步</option><option>管理员</option><option>店长</option><option>无需处理</option></select>
+              <select id="taskPriority"><option value="">全部优先级</option><option>高</option><option>中</option><option>普通</option><option>低</option></select>
+              <label><input id="taskOpenOnly" type="checkbox" /> 只看未完成</label>
+              <label><input id="taskOverdue" type="checkbox" /> 只看超时</label>
+              <label><input id="taskUnassigned" type="checkbox" /> 只看未分配</label>
+              <label><input id="taskReworked" type="checkbox" /> 只看返工</label>
+              <button class="ghost-button" id="loadTasksBtn">查询</button>
+            </div>
+            <div class="task-package-list" id="taskPackageRows"></div>
+            <div class="task-table">
+              <div class="task-row task-head">
+                <span><input type="checkbox" id="taskSelectAll" /></span><span>状态</span><span>优先级</span><span>平台</span><span>店铺</span><span>负责人</span><span>任务类型</span><span>商品名称</span><span>商家编码</span><span>SKC ID</span><span>SPU ID</span><span>系统建议</span><span>异常明细</span><span>来源</span><span>店长处理</span><span>管理员确认</span><span>操作</span>
+              </div>
+              <div id="taskRows"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="importPage">
+          <div class="page-intro">
+            <div>
+              <span class="pill">每周两批次</span>
+              <h2>数据导入</h2>
+              <p>店长可上传自己店铺的数据；管理员看平台、店铺、批次、数据类型的缺失矩阵。</p>
+            </div>
+            <button class="primary-button" id="generateWeeklyBtn">生成就绪报表/任务</button>
+          </div>
           <div class="workbench-grid">
             <section class="panel source-panel">
               <div class="panel-head">
@@ -62,7 +235,7 @@
                   <h2>数据源状态</h2>
                   <p id="statusSummary">正在读取数据源状态</p>
                 </div>
-                <button class="ghost-button" id="batchButton">批量操作⌄</button>
+                <button class="ghost-button" id="focusImportMatrixBtn">查看缺失矩阵</button>
               </div>
               <div class="source-table">
                 <div class="table-row table-head">
@@ -76,115 +249,209 @@
                 <div id="sourceRows"></div>
               </div>
               <div class="sync-card">
-                <strong>数据源同步提醒</strong>
+                <strong>导入提醒</strong>
                 <span id="syncHint">所有已启用的数据源均已检查完成</span>
-                <button class="ghost-button">查看同步日志</button>
+                <button class="ghost-button" id="loadImportMatrixBtn">刷新缺失矩阵</button>
               </div>
             </section>
 
             <aside class="panel queue-panel">
-              <div class="panel-head">
-                <div>
-                  <h2>本周完成状态</h2>
-                  <p id="reportCount">本周生成队列 · 共 0 个报表</p>
-                </div>
+              <h2>缺失矩阵</h2>
+              <p id="importMatrixSummary">按平台 + 店铺 + 数据类型检查。</p>
+              <div class="import-matrix import-matrix-real">
+                <div>平台</div><div>店铺</div><div>负责人</div><div>缺失/待提交</div><div>状态</div>
+                <div id="importMatrixRows" class="matrix-body"></div>
               </div>
-              <div class="queue-progress" id="completionSummary">
-                <span>已完成 0</span>
-                <span>未完成 0</span>
-              </div>
-              <div id="reportQueue" class="queue-list"></div>
-              <button class="primary-wide" id="generateWeeklyBtn">生成所有就绪报表</button>
+              <div class="queue-list" id="reportQueue"></div>
             </aside>
           </div>
         </section>
 
-        <section class="page" id="tasksPage">
-          <div class="task-summary" id="taskSummary"></div>
-          <div class="task-summary" id="adminTaskQueue"></div>
-          <div class="task-summary" id="ownerTaskSummary"></div>
-          <div class="simple-panel task-panel">
-            <div class="panel-head">
-              <div>
-                <h2>任务台账</h2>
-                <p id="taskStatusLine">读取店长处理和管理员审核状态</p>
+        <section class="page" id="reportsPage">
+          <div class="page-intro">
+            <div>
+              <span class="pill">月结导出</span>
+              <h2>经营报表</h2>
+              <p>管理员按平台优先看总览；店长按自己店铺看趋势。Excel 总表是结果导出，不再手工维护公式。</p>
+            </div>
+          </div>
+          <div class="report-layout">
+            <div class="simple-panel">
+              <h2>平台经营看板</h2>
+              <div class="metric-row" id="reportSalesMetrics">
+                <div class="metric-card"><span>今日总销量</span><strong>待填报</strong><small>手填主口径</small></div>
+                <div class="metric-card"><span>未填店铺</span><strong>待填报</strong><small>每日销量口径</small></div>
+                <div class="metric-card"><span>异常波动</span><strong>待填报</strong><small>50% 阈值提醒</small></div>
+              </div>
+              <div class="platform-sales-list" id="platformSalesList"></div>
+              <div class="sales-compare-panel">
+                <div class="panel-head">
+                  <div>
+                    <h2>销量差异提醒</h2>
+                    <p id="salesCompareSummary">按 5% 且 20 件阈值，交叉对比手填销量和导入销量日均。</p>
+                  </div>
+                  <button class="ghost-button" id="loadSalesCompareBtn">重新比对</button>
+                </div>
+                <div id="salesCompareRows" class="output-list"></div>
+              </div>
+            </div>
+            <div class="simple-panel">
+              <h2>生成报表</h2>
+              <div id="reportCards" class="report-grid"></div>
+            </div>
+            <div class="simple-panel">
+              <h2>输出记录</h2>
+              <div id="outputRows" class="output-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="masterDataPage">
+          <div class="page-intro">
+            <div>
+              <span class="pill">责任链唯一</span>
+              <h2>基础资料</h2>
+              <p>平台、店铺、负责人、屏蔽清单在这里维护；店铺只绑定一个负责人。</p>
+            </div>
+          </div>
+          <div class="module-grid">
+            <section class="simple-panel">
+              <h2>平台与店铺</h2>
+              <div class="flow-list">
+                <div><strong>内置平台</strong><span>Temu / Shein / 速卖通 / TK / Ozon</span></div>
+                <div><strong>店铺归属</strong><span>一个店铺只属于一个平台。</span></div>
+                <div><strong>每日填销量</strong><span>店铺可单独开启或停用填报。</span></div>
+              </div>
+            </section>
+            <section class="simple-panel owner-map-panel">
+              <h2>店铺负责人配置</h2>
+              <p>负责人变更后，历史保留原负责人，新任务按新负责人走；关闭每日填报后，该店铺不进入每日销量待填清单。</p>
+              <div class="platform-chip-row">
+                <span>平台</span><div id="platformChipList" class="platform-chip-list"><strong>Temu</strong><strong>Shein</strong><strong>速卖通</strong><strong>TK</strong><strong>Ozon</strong></div>
+              </div>
+              <div class="platform-add-row">
+                <input id="newPlatformInput" placeholder="新增平台名称" />
+                <button class="ghost-button" id="addPlatformBtn">新增平台</button>
+              </div>
+              <div class="store-owner-table">
+                <div class="store-owner-row store-owner-head">
+                  <span>启用</span><span>每日填报</span><span>平台</span><span>店铺</span><span>负责人</span><span>操作</span>
+                </div>
+                <div id="storeOwnerRows"></div>
               </div>
               <div class="download-actions">
-                <button class="primary-button" id="batchApproveTasksBtn" data-admin-only="task-review">批量通过</button>
-                <button class="ghost-button danger-action" id="batchRejectTasksBtn" data-admin-only="task-review">批量驳回</button>
-                <button class="primary-button" id="exportTasksBtn">导出任务</button>
+                <button class="ghost-button" id="addStoreOwnerBtn">新增店铺</button>
+                <button class="primary-button" id="saveStoreOwnersBtn">保存店铺配置</button>
+                <button class="ghost-button" id="loadStoreOwnersBtn">重新读取</button>
               </div>
-            </div>
-            <div class="operator-strip">
-              <select id="operatorRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
-              <input id="operatorUser" placeholder="当前操作人" />
-              <button class="ghost-button" id="saveOperatorBtn">保存身份</button>
-              <span id="operatorHint">未设置身份时按管理员查看</span>
-            </div>
-            <div class="task-filters">
-              <select id="taskRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
-              <input id="taskUser" placeholder="负责人姓名" />
-              <select id="taskStatus"><option value="">全部状态</option><option>待店长处理</option><option>待管理员审核</option><option>已通过</option><option>已驳回</option><option>已完成</option></select>
-              <select id="taskPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option></select>
-              <select id="taskType"><option value="">全部类型</option><option>价格异常</option><option>库存异常</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
-              <input id="taskStore" placeholder="店铺" />
-              <select id="taskNextHandler"><option value="">全部下一步</option><option>管理员</option><option>店长</option><option>无需处理</option></select>
-              <select id="taskPriority"><option value="">全部优先级</option><option>高</option><option>中</option><option>普通</option><option>低</option></select>
-              <label><input id="taskOpenOnly" type="checkbox" /> 只看未完成</label>
-              <label><input id="taskOverdue" type="checkbox" /> 只看超时</label>
-              <label><input id="taskUnassigned" type="checkbox" /> 只看未分配</label>
-              <label><input id="taskReworked" type="checkbox" /> 只看返工</label>
-              <button class="ghost-button" id="loadTasksBtn">查询</button>
-            </div>
-            <div class="task-table">
-              <div class="task-row task-head">
-                <span>状态</span><span>下一步</span><span>类型</span><span>店铺/负责人</span><span>商品</span><span>系统建议</span><span>店长填写</span><span>管理员审核</span><span>操作</span>
-              </div>
-              <div id="taskRows"></div>
-            </div>
+              <details class="compat-editor">
+                <summary>批量文本编辑</summary>
+                <textarea id="storeOwnerMapText" placeholder="Temu，7，小琴，启用，每日填报&#10;Shein，琪琪，洁琳，启用，每日填报"></textarea>
+              </details>
+              <p id="storeOwnerStatus">等待读取负责人配置</p>
+            </section>
           </div>
-        </section>
-
-        <section class="page" id="reportsPage">
-          <div class="simple-panel">
-            <h2>生成报表</h2>
-            <div id="reportCards" class="report-grid"></div>
-          </div>
-        </section>
-
-        <section class="page" id="outputsPage">
-          <div class="simple-panel">
-            <h2>输出记录</h2>
-            <div id="outputRows" class="output-list"></div>
-          </div>
-        </section>
-
-        <section class="page" id="rulesPage">
-          <div class="simple-panel">
-            <h2>规则设置</h2>
-            <div id="rulesForm" class="rules-grid"></div>
-            <button class="primary-button" id="saveRulesBtn">保存规则</button>
-          </div>
-          <div class="simple-panel owner-map-panel">
-            <h2>店铺负责人配置</h2>
-            <p>每行格式：平台，店铺，负责人。用于 Shein 表格没有负责人、或导入表缺负责人时自动分配任务。</p>
-            <textarea id="storeOwnerMapText" placeholder="Temu，7，小琴&#10;Shein，琪琪，洁琳"></textarea>
-            <div class="download-actions">
-              <button class="primary-button" id="saveStoreOwnersBtn">保存负责人配置</button>
-              <button class="ghost-button" id="loadStoreOwnersBtn">重新读取</button>
-            </div>
-            <p id="storeOwnerStatus">等待读取负责人配置</p>
-          </div>
-        </section>
-
-        <section class="page" id="searchPage">
           <div class="simple-panel">
             <h2>基础数据查询</h2>
             <div class="search-bar"><input id="searchInput" placeholder="输入 SKU、SKC、店铺或负责人" /><button id="searchBtn">查询</button></div>
             <div id="searchRows" class="output-list"></div>
           </div>
+          <div class="simple-panel" data-admin-only="task-suppressions">
+            <h2>任务屏蔽清单</h2>
+            <p>用于处理每周反复出现但管理员判断暂不需要再提示的 SKC/SPU/商家编码。</p>
+            <div id="taskSuppressionRows" class="output-list"></div>
+          </div>
+        </section>
+
+        <section class="page" id="rulesPage">
+          <div class="page-intro">
+            <div>
+              <span class="pill">低频配置</span>
+              <h2>系统设置</h2>
+              <p>放规则阈值、ERP 接口、批次时间、备份恢复和日志。</p>
+            </div>
+          </div>
+          <div class="module-grid">
+            <section class="simple-panel">
+              <h2>字段与判断规则</h2>
+              <div id="rulesForm" class="rules-grid"></div>
+              <button class="primary-button" id="saveRulesBtn">保存规则</button>
+            </section>
+            <section class="simple-panel">
+              <h2>ERP 接口设置</h2>
+              <div class="erp-settings-grid" id="erpSettingsForm">
+                <label>接口服务商<input data-erp-field="provider" placeholder="旺店通" /></label>
+                <label>接口地址<input data-erp-field="base_url" placeholder="https://api.wangdian.cn/openapi2" /></label>
+                <label>AppKey<input data-erp-field="app_key" placeholder="应用 AppKey" /></label>
+                <label>AppSecret<input data-erp-field="app_secret" type="password" placeholder="应用密钥" /></label>
+                <label>SID<input data-erp-field="sid" placeholder="店铺/账号 SID" /></label>
+                <label>Token<input data-erp-field="token" type="password" placeholder="授权 Token" /></label>
+                <label>店铺/仓库编码<input data-erp-field="shop_no" placeholder="宠物圈仓库对应编码" /></label>
+                <label>同步天数<input data-erp-field="sync_days" type="number" min="1" max="30" placeholder="7" /></label>
+                <label>商品接口<input data-erp-field="product_endpoint" placeholder="vip_api_goods_query.php" /></label>
+                <label>库存接口<input data-erp-field="stock_endpoint" placeholder="api_goods_stock_change_query.php" /></label>
+                <label class="check-line"><input data-erp-field="enabled" type="checkbox" /> 启用 ERP 接口</label>
+                <label class="check-line"><input data-erp-field="auto_sync" type="checkbox" /> 自动同步</label>
+                <label class="check-line"><input data-erp-field="manual_sync_first" type="checkbox" /> 手动同步为主</label>
+                <label class="span-2">同步范围<input data-erp-field="sync_scope" placeholder="商品信息，库存数据，商家编码，尺码规格" /></label>
+              </div>
+              <div class="download-actions">
+                <button class="primary-button" id="saveErpSettingsBtn">保存 ERP 设置</button>
+                <button class="primary-button" id="manualErpSyncBtn">立即同步商品和库存</button>
+                <button class="ghost-button" id="testErpSettingsBtn">本地校验</button>
+              </div>
+              <p id="erpSettingsStatus">等待读取 ERP 设置</p>
+            </section>
+            <section class="simple-panel">
+              <h2>运营状态备份</h2>
+              <p>备份只包含规则、任务台账、负责人配置、数据源和基础数据库；不包含输出表、图片产物、打包产物、虚拟环境产物。</p>
+              <div class="backup-actions">
+                <button class="primary-button" id="createBackupBtn">生成备份</button>
+                <input id="restoreBackupPath" placeholder="粘贴要恢复的 .zip 备份文件完整路径" />
+                <button class="ghost-button" id="selectBackupBtn">选择文件</button>
+                <button class="ghost-button danger-action" id="restoreBackupBtn">恢复备份</button>
+              </div>
+              <p id="backupStatus">建议在每周大批量导入前、规则调整前、管理员确认大量任务前先生成备份。</p>
+            </section>
+            <section class="simple-panel" data-admin-only="system-check">
+              <h2>系统自检</h2>
+              <p>检查桌面运行环境、表格依赖、界面按钮绑定、管理员/店长角色权限、核心只读接口和业务测试。</p>
+              <div class="download-actions">
+                <button class="primary-button" id="runDoctorBtn">运行自检</button>
+                <button class="ghost-button" id="runReadyCheckBtn">交付检查</button>
+              </div>
+              <div class="check-result" id="doctorResult">
+                <strong>等待自检</strong>
+                <span>建议在交付电脑、更新版本、批量导入前运行一次。</span>
+              </div>
+              <div class="check-result" id="readyCheckResult">
+                <strong>等待交付检查</strong>
+                <span>交付检查会额外检查依赖安全和 git 提交范围，只检查不删除文件。</span>
+              </div>
+            </section>
+          </div>
         </section>
       </main>
+    </div>
+    <div id="taskDialog" class="dialog-backdrop hidden" aria-hidden="true">
+      <section class="task-dialog" role="dialog" aria-modal="true" aria-labelledby="taskDialogTitle">
+        <div class="dialog-head">
+          <div>
+            <span class="pill" id="taskDialogPill">任务操作</span>
+            <h2 id="taskDialogTitle">处理任务</h2>
+            <p id="taskDialogDesc">填写本次处理信息。</p>
+          </div>
+          <button class="tool-button" type="button" data-dialog-close>关闭</button>
+        </div>
+        <div id="taskDialogContext" class="dialog-context"></div>
+        <form id="taskDialogForm" class="dialog-form">
+          <div id="taskDialogFields" class="dialog-fields"></div>
+          <div class="dialog-actions">
+            <button class="ghost-button" type="button" data-dialog-close>取消</button>
+            <button class="primary-button" type="submit" id="taskDialogSubmit">提交</button>
+          </div>
+        </form>
+      </section>
     </div>
     <div id="toast" class="toast"></div>
     <script src="./renderer.js"></script>

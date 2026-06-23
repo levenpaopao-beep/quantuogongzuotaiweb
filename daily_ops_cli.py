@@ -101,6 +101,12 @@ def command(argv):
     if name == "submit-task":
         payload = read_payload()
         return ok(adapter.submit_operation_task_payload(payload))
+    if name == "batch-submit-tasks":
+        payload = read_payload()
+        return ok(adapter.submit_operation_tasks_payload(payload))
+    if name == "push-tasks":
+        payload = read_payload()
+        return ok(adapter.push_operation_tasks_payload(payload))
     if name == "assign-task":
         payload = read_payload()
         return ok(adapter.assign_operation_task_payload(payload))
@@ -110,9 +116,21 @@ def command(argv):
     if name == "batch-review-tasks":
         payload = read_payload()
         return ok(adapter.review_operation_tasks_payload(payload))
+    if name == "confirm-tasks":
+        payload = read_payload()
+        return ok(adapter.confirm_operation_tasks_payload(payload))
+    if name == "task-suppressions":
+        payload = read_payload()
+        return ok(adapter.task_suppressions_payload(payload))
+    if name == "suppress-tasks":
+        payload = read_payload()
+        return ok(adapter.suppress_operation_tasks_payload(payload))
     if name == "done-task":
         payload = read_payload()
         return ok(adapter.mark_operation_task_done_payload(payload))
+    if name == "done-tasks":
+        payload = read_payload()
+        return ok(adapter.mark_operation_tasks_done_payload(payload))
     if name == "export-tasks":
         payload = task_payload(read_payload())
         return ok(adapter.export_operation_tasks_payload(payload))
@@ -122,6 +140,18 @@ def command(argv):
     if name == "save-store-owners":
         payload = read_payload()
         return ok(adapter.save_store_owners_payload(payload))
+    if name == "sales":
+        return ok(adapter.sales_payload(read_payload()))
+    if name == "submit-sales":
+        return ok(adapter.submit_sales_payload(read_payload()))
+    if name == "export-sales":
+        return ok(adapter.export_sales_payload(read_payload()))
+    if name == "sales-compare":
+        return ok(adapter.sales_compare_payload(read_payload()))
+    if name == "import-matrix":
+        return ok(adapter.import_matrix_payload(read_payload()))
+    if name == "erp-sync":
+        return ok(adapter.erp_sync_payload(read_payload()))
     if name == "create-backup":
         require_admin(read_payload(), "生成备份")
         return ok(adapter.create_backup())

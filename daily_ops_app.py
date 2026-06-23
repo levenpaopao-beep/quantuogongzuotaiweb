@@ -23,6 +23,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 import daily_ops_tasks
+import daily_ops_task_suppression
 import update_shein_summary_30d_skc as raw_xlsx
 
 
@@ -38,6 +39,7 @@ DB_PATH = ROOT / "基础数据库" / "project_base_data.sqlite"
 DATA_SOURCE_MANIFEST = ROOT / "基础数据库" / "data_source_manifest.json"
 RULES_FILE = ROOT / "基础数据库" / "report_rules.json"
 TASK_DB_PATH = ROOT / "基础数据库" / "operation_tasks.json"
+TASK_SUPPRESSION_FILE = ROOT / "基础数据库" / "operation_task_suppressions.json"
 STORE_OWNER_MAP_FILE = ROOT / "基础数据库" / "store_owner_map.json"
 OWNER_FILE = ROOT / "店铺负责人对应表.xlsx"
 
@@ -168,6 +170,28 @@ DEFAULT_RULES = {
         "old_slow_min_days": 180,
         "group_by": "店铺+SPU",
         "sales30_total_equals": 0,
+    },
+    "erp_api": {
+        "provider": "旺店通",
+        "enabled": False,
+        "auto_sync": False,
+        "manual_sync_first": True,
+        "base_url": "https://api.wangdian.cn/openapi2",
+        "product_endpoint": "vip_api_goods_query.php",
+        "stock_endpoint": "api_goods_stock_change_query.php",
+        "shop_no": "",
+        "sync_days": 7,
+        "page_size": 100,
+        "stock_limit": 100,
+        "app_key": "",
+        "app_secret": "",
+        "sid": "",
+        "token": "",
+        "sync_scope": ["商品信息", "库存数据", "商家编码", "尺码规格"],
+        "last_tested_at": "",
+        "last_manual_sync_at": "",
+        "last_manual_sync_status": "",
+        "last_manual_sync_message": "",
     },
 }
 
@@ -365,6 +389,7 @@ def task_query_payload(params):
         "overdue": params.get("overdue", [""])[0],
         "unassigned": params.get("unassigned", [""])[0],
         "reworked": params.get("reworked", [""])[0],
+        "search": params.get("search", [""])[0],
     }
 
 
@@ -402,6 +427,7 @@ def backup_output_dir():
 def backup_source_paths():
     paths = [
         TASK_DB_PATH,
+        TASK_SUPPRESSION_FILE,
         RULES_FILE,
         DATA_SOURCE_MANIFEST,
         STORE_OWNER_MAP_FILE,
@@ -598,9 +624,17 @@ def normalize_store_owner_assignment(row):
     platform = norm(row.get("platform", ""))
     store = norm(row.get("store", ""))
     owner = norm(row.get("owner", ""))
-    if not store or not owner:
+    if not platform or not store or not owner:
         return None
-    return {"platform": platform, "store": store, "owner": owner}
+    enabled = row.get("enabled", True)
+    daily_required = row.get("daily_required", row.get("requires_daily_sales", True))
+    return {
+        "platform": platform,
+        "store": store,
+        "owner": owner,
+        "enabled": enabled not in {False, "false", "False", "0", 0, "否", "停用"},
+        "daily_required": daily_required not in {False, "false", "False", "0", 0, "否", "不填"},
+    }
 
 
 def load_store_owner_assignments():
@@ -630,6 +664,19 @@ def load_store_owner_assignments():
     return assignments
 
 
+def validate_store_owner_assignments(assignments):
+    store_platforms = {}
+    for item in assignments:
+        store = norm(item.get("store", ""))
+        platform = norm(item.get("platform", ""))
+        if not store:
+            continue
+        existing = store_platforms.get(store)
+        if existing and existing != platform:
+            raise ValueError(f"店铺“{store}”已经归属平台“{existing}”，不能同时归属“{platform}”")
+        store_platforms[store] = platform
+
+
 def save_store_owner_assignments(rows):
     assignments = []
     seen = set()
@@ -644,6 +691,7 @@ def save_store_owner_assignments(rows):
             continue
         seen.add(key)
         assignments.append(item)
+    validate_store_owner_assignments(assignments)
     path = Path(STORE_OWNER_MAP_FILE)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"assignments": assignments, "updated_at": now_text()}, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -787,6 +835,20 @@ def save_rules(payload):
     RULES_FILE.parent.mkdir(exist_ok=True)
     RULES_FILE.write_text(json.dumps(rules, ensure_ascii=False, indent=2), encoding="utf-8")
     return rules
+
+
+def sync_erp_base_data():
+    import daily_ops_erp
+
+    rules = load_rules()
+    settings = rules.get("erp_api", {})
+    result = daily_ops_erp.manual_sync(settings, ERP_DIR)
+    settings["last_manual_sync_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    settings["last_manual_sync_status"] = result.get("status", "")
+    settings["last_manual_sync_message"] = result.get("message", "")
+    rules["erp_api"] = settings
+    save_rules(rules)
+    return result
 
 
 def readable_row_count(path):
@@ -1007,6 +1069,7 @@ def data_status():
         "outputs": recent_outputs(80),
         "database": {"exists": db_ok, "tables": db_tables, "rows": db_rows, "path": str(DB_PATH)},
         "tasks": operation_task_summary(),
+        "overview": operation_overview(),
         "report_tasks": report_task_summary(),
         "reports": REPORTS,
         "rules": load_rules(),
@@ -1023,6 +1086,7 @@ def public_status(payload):
     safe["upload_targets"] = {}
     safe["report_tasks"] = {}
     safe["tasks"] = {}
+    safe["overview"] = {}
     database = dict(safe.get("database") or {})
     database["path"] = ""
     safe["database"] = database
@@ -1700,6 +1764,10 @@ def operation_task_store():
     return daily_ops_tasks.OperationTaskStore(TASK_DB_PATH)
 
 
+def task_suppression_store():
+    return daily_ops_task_suppression.TaskSuppressionStore(TASK_SUPPRESSION_FILE)
+
+
 def assign_existing_unassigned_tasks(assignments, actor="管理员"):
     store = operation_task_store()
     with store._lock:
@@ -1747,8 +1815,10 @@ def sync_report_tasks(report_id, workbook_path):
     batch_id = Path(workbook_path).stem
     rows = [{**row, "source_batch_id": batch_id} for row in rows]
     rows = apply_store_owner_mapping(rows)
-    result = operation_task_store().upsert_generated_tasks(rows)
+    rows, suppressed = task_suppression_store().filter_rows(rows)
+    result = operation_task_store().upsert_generated_tasks(rows, default_status=daily_ops_tasks.STATUS_PENDING_PUSH)
     result["imported_rows"] = len(rows)
+    result["suppressed_rows"] = len(suppressed)
     return result
 
 
@@ -1777,8 +1847,110 @@ def report_task_summary():
     return result
 
 
+def operation_overview():
+    rows = operation_task_store().list_tasks()
+    summary = operation_task_store().summary(rows)
+    packages = operation_task_store().task_packages(rows)
+    stores = {}
+    owners = {}
+    for row in rows:
+        store_name = norm(row.get("store")) or "未填写店铺"
+        owner = norm(row.get("owner")) or "未分配"
+        task_type = norm(row.get("task_type"))
+        status = norm(row.get("status"))
+        store = stores.setdefault(store_name, {
+            "store": store_name,
+            "owner": owner,
+            "owners": set(),
+            "task_total": 0,
+            "open_count": 0,
+            "pending_push_count": 0,
+            "pending_owner_count": 0,
+            "pending_review_count": 0,
+            "done_count": 0,
+            "low_score_count": 0,
+            "bargain_count": 0,
+            "slow_count": 0,
+            "price_count": 0,
+            "overdue_count": 0,
+        })
+        store["owners"].add(owner)
+        store["task_total"] += 1
+        if status != daily_ops_tasks.STATUS_DONE:
+            store["open_count"] += 1
+        if status == daily_ops_tasks.STATUS_PENDING_PUSH:
+            store["pending_push_count"] += 1
+        if status in {daily_ops_tasks.STATUS_PENDING_OWNER, daily_ops_tasks.STATUS_REJECTED}:
+            store["pending_owner_count"] += 1
+        if status == daily_ops_tasks.STATUS_PENDING_REVIEW:
+            store["pending_review_count"] += 1
+        if status == daily_ops_tasks.STATUS_DONE:
+            store["done_count"] += 1
+        if "低分" in task_type:
+            store["low_score_count"] += 1
+        if "议价" in task_type or "核价" in task_type:
+            store["bargain_count"] += 1
+        if "滞销" in task_type:
+            store["slow_count"] += 1
+        if "价格" in task_type or "申报价" in task_type:
+            store["price_count"] += 1
+        if daily_ops_tasks.task_overdue(row):
+            store["overdue_count"] += 1
+
+        owner_item = owners.setdefault(owner, {
+            "owner": owner,
+            "stores": set(),
+            "task_total": 0,
+            "open_count": 0,
+            "pending_review_count": 0,
+            "overdue_count": 0,
+        })
+        owner_item["stores"].add(store_name)
+        owner_item["task_total"] += 1
+        if status != daily_ops_tasks.STATUS_DONE:
+            owner_item["open_count"] += 1
+        if status == daily_ops_tasks.STATUS_PENDING_REVIEW:
+            owner_item["pending_review_count"] += 1
+        if daily_ops_tasks.task_overdue(row):
+            owner_item["overdue_count"] += 1
+
+    package_by_store = {}
+    for package in packages:
+        store_name = norm(package.get("store")) or "未填写店铺"
+        package_by_store[store_name] = package_by_store.get(store_name, 0) + 1
+    store_rows = []
+    for store in stores.values():
+        owners_list = sorted(store.pop("owners"))
+        store["owner"] = "、".join([item for item in owners_list if item != "未分配"]) or "未分配"
+        store["package_count"] = package_by_store.get(store["store"], 0)
+        store_rows.append(store)
+    owner_rows = []
+    for item in owners.values():
+        item["stores"] = sorted(item["stores"])
+        item["store_count"] = len(item["stores"])
+        owner_rows.append(item)
+    store_rows.sort(key=lambda row: (-row["open_count"], -row["task_total"], row["store"]))
+    owner_rows.sort(key=lambda row: (-row["open_count"], row["owner"]))
+    return {
+        "task_total": summary.get("total", 0),
+        "package_total": len(packages),
+        "open_total": sum(1 for row in rows if norm(row.get("status")) != daily_ops_tasks.STATUS_DONE),
+        "pending_push_total": summary.get("by_status", {}).get(daily_ops_tasks.STATUS_PENDING_PUSH, 0),
+        "pending_owner_total": summary.get("by_status", {}).get(daily_ops_tasks.STATUS_PENDING_OWNER, 0) + summary.get("by_status", {}).get(daily_ops_tasks.STATUS_REJECTED, 0),
+        "pending_review_total": summary.get("by_status", {}).get(daily_ops_tasks.STATUS_PENDING_REVIEW, 0),
+        "unassigned_total": summary.get("unassigned", 0),
+        "overdue_total": summary.get("overdue", {}).get("total", 0),
+        "stores": store_rows,
+        "owners": owner_rows,
+    }
+
+
 def summarize_operation_tasks(rows):
     return operation_task_store().summary(rows)
+
+
+def package_operation_tasks(rows):
+    return operation_task_store().task_packages(rows)
 
 
 def operation_owner_directory():
@@ -1797,10 +1969,21 @@ def operation_owner_directory():
     return sorted(owners.values(), key=lambda row: (-row["task_count"], row["owner"]))
 
 
-def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only=""):
-    return operation_task_store().list_tasks(
+def filter_operation_task_search(rows, search=""):
+    keyword = norm(search)
+    if not keyword:
+        return rows
+    fields = ["store", "owner", "merchant_code", "skc", "spu", "product_name", "task_type", "system_action", "task_detail"]
+    return [
+        row for row in rows
+        if any(keyword in norm(row.get(field)) for field in fields)
+    ]
+
+
+def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only="", search=""):
+    rows = operation_task_store().list_tasks(
         role=role,
-        user=user,
+        user=user if norm(role) != "admin" else "",
         status=status,
         task_type=task_type,
         store=store,
@@ -1812,14 +1995,25 @@ def list_operation_tasks(role="admin", user="", status="", task_type="", store="
         reworked=reworked,
         open_only=open_only,
     )
+    if norm(role) == "admin" and norm(user):
+        rows = [row for row in rows if norm(row.get("owner")) == norm(user)]
+    return filter_operation_task_search(rows, search)
 
 
 def submit_operation_task(task_id, actor, action, remark="", proof=""):
     return operation_task_store().submit_owner_action(task_id, actor, action, remark, proof)
 
 
+def submit_operation_tasks(task_ids, actor, action, remark="", proof=""):
+    return operation_task_store().submit_owner_actions(task_ids, actor, action, remark, proof)
+
+
 def assign_operation_task(task_id, actor, owner, remark=""):
     return operation_task_store().assign_task(task_id, actor, owner, remark)
+
+
+def push_operation_tasks(task_ids, actor, remark=""):
+    return operation_task_store().push_tasks(task_ids, actor, remark)
 
 
 def review_operation_task(task_id, admin, decision, remark=""):
@@ -1830,8 +2024,54 @@ def review_operation_tasks(task_ids, admin, decision, remark=""):
     return operation_task_store().review_tasks(task_ids, admin, decision, remark)
 
 
+def confirm_operation_tasks(task_ids, admin, remark=""):
+    return operation_task_store().confirm_review_tasks(task_ids, admin, remark)
+
+
+def list_task_suppressions():
+    return {"items": task_suppression_store().list_items()}
+
+
+def suppress_operation_tasks(task_ids, actor="管理员", reason="", duration="永久"):
+    ids = [norm(task_id) for task_id in task_ids or [] if norm(task_id)]
+    if not ids:
+        raise ValueError("请选择要屏蔽的任务")
+    store = operation_task_store()
+    with store._lock:
+        payload = store.load()
+        by_id = {row.get("id"): row for row in payload.get("tasks", [])}
+        rows = []
+        for task_id in ids:
+            task = by_id.get(task_id)
+            if not task:
+                raise KeyError("任务不存在")
+            rows.append(task)
+        suppression = task_suppression_store().add_from_rows(rows, actor, reason, duration)
+        timestamp = now_text()
+        for task in rows:
+            task["status"] = daily_ops_tasks.STATUS_DONE
+            task["completed_by"] = norm(actor)
+            task["completed_at"] = timestamp
+            task["completed_remark"] = norm(reason) or "管理员屏蔽，不再重复提示"
+            task["updated_at"] = timestamp
+            task.setdefault("history", []).append(daily_ops_tasks.history_entry(
+                task,
+                norm(actor) or "管理员",
+                "任务屏蔽",
+                "加入屏蔽清单",
+                norm(reason) or "不再重复提示",
+                time=timestamp,
+            ))
+        store.save(payload)
+    return {"count": len(rows), "suppression": suppression}
+
+
 def mark_operation_task_done(task_id, actor, remark=""):
     return operation_task_store().mark_done(task_id, actor, remark)
+
+
+def mark_operation_tasks_done(task_ids, actor, remark=""):
+    return operation_task_store().mark_done_tasks(task_ids, actor, remark)
 
 
 def operation_task_export_title(filters):
@@ -1851,8 +2091,8 @@ def operation_task_export_title(filters):
     return "-".join(parts)
 
 
-def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only=""):
-    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned, next_handler=next_handler, priority=priority, reworked=reworked, open_only=open_only)
+def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only="", search=""):
+    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned, next_handler=next_handler, priority=priority, reworked=reworked, open_only=open_only, search=search)
     history_rows = sum(len(row.get("history") or []) for row in rows)
     filters = {
         "role": role,
@@ -1867,6 +2107,7 @@ def export_operation_tasks(role="admin", user="", status="", task_type="", store
         "priority": priority,
         "reworked": reworked,
         "open_only": open_only,
+        "search": search,
     }
     out = output_path(operation_task_export_title(filters), "V1")
     operation_task_store().export_tasks(out, rows, filters=filters)
@@ -1898,8 +2139,9 @@ def handle_tasks_api(action, headers, payload):
                 priority=payload.get("priority", ""),
                 reworked=payload.get("reworked", ""),
                 open_only=payload.get("open_only", ""),
+                search=payload.get("search", ""),
             )
-            return json_bytes({"ok": True, "operator": operator, "summary": summarize_operation_tasks(rows), "tasks": rows})
+            return json_bytes({"ok": True, "operator": operator, "summary": summarize_operation_tasks(rows), "packages": package_operation_tasks(rows), "tasks": rows})
         if action == "POST_SUBMIT":
             task_id = payload.get("id", "")
             if operator.get("role") != "owner":
@@ -1909,11 +2151,21 @@ def handle_tasks_api(action, headers, payload):
                 return json_bytes({"ok": False, "error": "不能处理其他负责人的任务"}, status=403)
             task = submit_operation_task(task_id, operator.get("user", ""), payload.get("action", ""), payload.get("remark", ""), payload.get("proof", ""))
             return json_bytes({"ok": True, "task": task})
+        if action == "POST_BATCH_SUBMIT":
+            if operator.get("role") != "owner":
+                return json_bytes({"ok": False, "error": "只有店长可以批量填写处理结果"}, status=403)
+            result = submit_operation_tasks(payload.get("ids", []), operator.get("user", ""), payload.get("action", ""), payload.get("remark", ""), payload.get("proof", ""))
+            return json_bytes({"ok": True, **result})
         if action == "POST_ASSIGN":
             if not can_review_tasks(operator):
                 return json_bytes({"ok": False, "error": "只有管理员可以指派任务"}, status=403)
             task = assign_operation_task(payload.get("id", ""), operator.get("user", "管理员"), payload.get("owner", ""), payload.get("remark", ""))
             return json_bytes({"ok": True, "task": task})
+        if action == "POST_BATCH_PUSH":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以推送任务"}, status=403)
+            result = push_operation_tasks(payload.get("ids", []), operator.get("user", "管理员"), payload.get("remark", ""))
+            return json_bytes({"ok": True, **result})
         if action == "POST_REVIEW":
             if not can_review_tasks(operator):
                 return json_bytes({"ok": False, "error": "只有管理员可以审核"}, status=403)
@@ -1944,6 +2196,7 @@ def handle_tasks_api(action, headers, payload):
                 priority=payload.get("priority", ""),
                 reworked=payload.get("reworked", ""),
                 open_only=payload.get("open_only", ""),
+                search=payload.get("search", ""),
             )
             grant_download(token, result.get("file", ""))
             return json_bytes({"ok": True, **result})
@@ -2077,7 +2330,7 @@ HTML_PAGE = r"""<!doctype html>
     textarea { min-height:72px; padding:8px 10px; resize:vertical; }
     input[type=file] { height:auto; padding:8px; }
     .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .hidden { display:none; }
+    .hidden { display:none !important; }
     table { width:100%; border-collapse:collapse; background:#fff; }
     th, td { border-bottom:1px solid var(--line); padding:9px 10px; text-align:left; vertical-align:top; font-size:13px; }
     th { background:#eef3f8; font-weight:700; }
@@ -2114,13 +2367,61 @@ HTML_PAGE = r"""<!doctype html>
     .field label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
     .field input, .field textarea { width:100%; }
     .owner-map-tools textarea { width:100%; min-height:132px; font-family:Consolas, "Microsoft YaHei", monospace; }
-    .task-summary { display:grid; grid-template-columns:repeat(4,minmax(140px,1fr)); gap:10px; margin-bottom:12px; }
+    .overview-grid { display:grid; grid-template-columns:repeat(7,minmax(120px,1fr)); gap:8px; margin-bottom:12px; }
+    .overview-card { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; }
+    .overview-card span { display:block; color:var(--muted); font-size:12px; }
+    .overview-card strong { display:block; font-size:24px; margin-top:5px; }
+    .overview-layout { display:grid; grid-template-columns:minmax(0,2fr) minmax(280px,1fr); gap:12px; align-items:start; }
+    .overview-table-wrap { overflow:auto; max-height:560px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+    .overview-table { min-width:980px; table-layout:fixed; }
+    .overview-table th { position:sticky; top:0; z-index:1; }
+    .overview-table td { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .overview-side { display:grid; gap:12px; }
+    .task-dashboard-actions { display:flex; justify-content:flex-end; margin:-4px 0 6px; }
+    .task-dashboard-actions button { height:28px; padding:0 10px; }
+    .task-summary { display:grid; grid-template-columns:repeat(9,minmax(90px,1fr)); gap:6px; margin-bottom:8px; }
     .task-kpi { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; }
     .task-kpi strong { display:block; font-size:22px; margin-top:4px; }
-    .task-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; align-items:center; margin-bottom:12px; }
-    .task-product { min-width:220px; }
-    .task-actions { display:flex; gap:6px; flex-wrap:wrap; }
-    .task-actions button { padding:7px 9px; }
+    body.task-dashboard-collapsed #adminTaskQueue,
+    body.task-dashboard-collapsed #ownerTaskSummary { display:none !important; }
+    body.task-dashboard-collapsed .task-kpi { padding:6px 10px; min-height:34px; }
+    body.task-dashboard-collapsed .task-kpi span { font-size:12px; }
+    body.task-dashboard-collapsed .task-kpi strong { display:inline; font-size:16px; margin:0 0 0 6px; }
+    body:not(.task-dashboard-collapsed) .task-summary { grid-template-columns:repeat(3,minmax(180px,1fr)); }
+    .task-filters { display:grid; grid-template-columns:220px 110px 110px 118px 118px 128px repeat(4,auto) 92px 92px 92px 92px; gap:6px; align-items:center; margin-bottom:10px; }
+    .task-filters input, .task-filters select { height:30px; padding:0 8px; font-size:13px; }
+    .task-filters label { white-space:nowrap; font-size:13px; color:#334155; display:flex; align-items:center; gap:4px; }
+    .task-filters button { height:30px; padding:0 10px; }
+    .task-table-wrap { overflow:auto; max-height:680px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+    .package-toolbar { position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:10px; padding:8px 10px; border-bottom:1px solid var(--line); background:#f8fbff; font-size:13px; }
+    .package-board { display:grid; gap:8px; padding:10px; min-width:980px; }
+    .package-card { border:1px solid var(--line); border-radius:8px; background:#fff; padding:10px 12px; display:grid; grid-template-columns:34px minmax(220px,1.3fr) minmax(120px,.7fr) minmax(120px,.7fr) minmax(160px,1fr) minmax(170px,1fr); gap:10px; align-items:center; }
+    .package-card:hover { border-color:#b9c8da; box-shadow:0 1px 4px rgba(15,23,42,.05); }
+    .package-title { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    .package-title strong { font-size:15px; }
+    .package-metric { display:grid; gap:3px; min-width:0; }
+    .package-metric span { color:var(--muted); font-size:12px; }
+    .package-metric strong { font-size:18px; }
+    .package-meta { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#334155; font-size:13px; }
+    .package-card .task-actions { justify-content:flex-end; }
+    .task-ledger { min-width:1320px; border:0; table-layout:fixed; }
+    .task-ledger th { position:sticky; top:0; z-index:1; white-space:nowrap; height:34px; padding:6px 8px; background:#edf3f9; }
+    .task-ledger th, .task-ledger td { vertical-align:middle; line-height:1.25; }
+    .task-ledger td { height:36px; padding:5px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .task-ledger td.copy-cell { font-family:Consolas, "Microsoft YaHei", monospace; }
+    .task-select { width:34px; text-align:center; }
+    .task-actions { display:flex; gap:4px; flex-wrap:nowrap; align-items:center; }
+    .task-actions button { height:26px; padding:0 7px; border-radius:5px; white-space:nowrap; font-size:12px; }
+    .task-actions .muted { white-space:nowrap; }
+    .package-main { font-weight:700; }
+    .package-sub { color:var(--muted); font-size:12px; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .package-counts { display:flex; gap:4px; flex-wrap:wrap; }
+    .package-preview-row td { background:#fbfcfe; height:auto; white-space:normal; padding:8px 10px; }
+    .package-preview-card { grid-column:2 / -1; border-top:1px solid var(--line); padding-top:8px; }
+    .package-preview { display:grid; gap:4px; }
+    .package-preview-line { display:grid; grid-template-columns:110px 120px 120px 1fr 82px; gap:8px; font-size:12px; color:#334155; align-items:center; }
+    .package-preview-head { font-weight:700; color:#1f2937; }
+    .package-preview-line button { height:24px; padding:0 7px; font-size:12px; border-radius:5px; }
     .login-bar { background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:12px; display:grid; grid-template-columns:120px 160px 160px auto auto 1fr; gap:8px; align-items:center; }
     .login-bar .identity { color:var(--muted); font-size:13px; }
     .owner-entry { background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:12px; display:grid; grid-template-columns:auto minmax(260px,1fr) auto auto; gap:8px; align-items:center; }
@@ -2128,15 +2429,17 @@ HTML_PAGE = r"""<!doctype html>
     .backup-tools { margin-top:14px; display:grid; gap:10px; }
     .backup-tools .row input { min-width:360px; flex:1; }
     @media (max-width:1180px) { .cards, .source-grid { grid-template-columns:repeat(2,minmax(240px,1fr)); } }
-    @media (max-width:760px) { .app { grid-template-columns:1fr; } aside { position:static; } .cards, .source-grid, .task-summary, .task-filters, .owner-entry { grid-template-columns:1fr; } main { padding:16px; } header, .weekly-hero { align-items:flex-start; flex-direction:column; gap:12px; } .report-card { height:380px; } .weekly-source-card { height:350px; } }
+    @media (max-width:1180px) { .overview-layout { grid-template-columns:1fr; } .overview-grid { grid-template-columns:repeat(3,minmax(120px,1fr)); } }
+    @media (max-width:760px) { .app { grid-template-columns:1fr; } aside { position:static; } .cards, .source-grid, .task-summary, .task-filters, .owner-entry, .overview-grid { grid-template-columns:1fr; } main { padding:16px; } header, .weekly-hero { align-items:flex-start; flex-direction:column; gap:12px; } .report-card { height:380px; } .weekly-source-card { height:350px; } }
   </style>
 </head>
-<body>
+<body class="task-dashboard-collapsed">
 <div class="app">
   <aside>
     <div class="brand">日常运营工作台 v2.0</div>
     <nav>
-      <button class="active" data-tab="tasks">任务面板</button>
+      <button class="active" data-tab="overview" data-admin-only="1">数据总览</button>
+      <button data-tab="tasks">任务包中心</button>
       <button data-tab="weekly" data-admin-only="1">每周工作流</button>
       <button data-tab="rules" data-admin-only="1">规则设置</button>
       <button data-tab="search" data-admin-only="1">基础数据查询</button>
@@ -2146,7 +2449,7 @@ HTML_PAGE = r"""<!doctype html>
   <main>
     <header>
       <div>
-        <h1 id="pageTitle">任务面板</h1>
+        <h1 id="pageTitle">数据总览</h1>
         <div class="muted" id="statusLine">正在读取状态...</div>
       </div>
       <div class="row">
@@ -2163,43 +2466,87 @@ HTML_PAGE = r"""<!doctype html>
       <button class="secondary" onclick="logoutOperator()">退出身份</button>
       <div class="identity" id="operatorIdentity">未登录：任务台账需要先登录</div>
     </div>
-    <div class="owner-entry">
+    <div class="owner-entry" data-admin-only="1">
       <strong>店长入口</strong>
       <input id="ownerEntryLink" readonly placeholder="选择或填写负责人后生成店长入口链接，格式包含 role=owner&user=负责人">
       <button class="secondary" onclick="updateOwnerEntryLink()">生成入口</button>
       <button class="secondary" onclick="copyOwnerEntryLink()">复制入口</button>
     </div>
 
-    <section id="tasks" class="section active">
+    <section id="overview" class="section active" data-admin-only="1">
+      <div class="overview-grid" id="overviewCards"></div>
+      <div class="overview-layout">
+        <div class="panel">
+          <h2>店铺维度总览</h2>
+          <div class="overview-table-wrap">
+            <table class="overview-table">
+              <thead><tr><th>店铺</th><th>负责人</th><th>任务包</th><th>待办明细</th><th>待店长</th><th>待审核</th><th>低分</th><th>议价</th><th>滞销</th><th>价格异常</th><th>超时</th></tr></thead>
+              <tbody id="overviewStoreRows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="overview-side">
+          <div class="panel">
+            <h2>负责人待办</h2>
+            <div class="overview-table-wrap">
+              <table>
+                <thead><tr><th>负责人</th><th>店铺</th><th>待办</th><th>待审核</th><th>超时</th></tr></thead>
+                <tbody id="overviewOwnerRows"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel">
+            <h2>数据源状态</h2>
+            <div id="overviewSourceRows" class="result-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tasks" class="section">
       <div class="task-summary" id="taskSummary"></div>
-      <div class="task-summary" id="adminTaskQueue"></div>
-      <div class="task-summary" id="ownerTaskSummary"></div>
+      <div class="task-dashboard-actions" data-admin-only="1"><button class="secondary" id="taskDashboardToggle" onclick="toggleTaskDashboard()">展开看板</button></div>
+      <div class="task-summary" id="adminTaskQueue" data-admin-only="1"></div>
+      <div class="task-summary" id="ownerTaskSummary" data-admin-only="1"></div>
       <div class="panel">
-        <h2>任务台账</h2>
-        <div class="task-filters">
-          <select id="taskRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
-          <input id="taskUser" placeholder="负责人姓名">
-          <select id="taskStatus"><option value="">全部状态</option><option>待店长处理</option><option>待管理员审核</option><option>已通过</option><option>已驳回</option><option>已完成</option></select>
+        <h2 id="taskPanelTitle">任务包中心</h2>
+        <select id="taskRole" class="hidden"><option value="admin">管理员</option><option value="owner">店长</option></select>
+        <input id="taskUser" class="hidden" placeholder="负责人姓名">
+        <div class="task-filters" data-admin-only="1">
+          <input id="taskSearch" placeholder="店铺 / 商家编码 / SKC / SPU / 商品名">
+          <input id="taskAdminOwner" placeholder="负责人">
+          <input id="taskStore" placeholder="店铺">
+          <select id="taskStatus"><option value="">全部状态</option><option>待推送</option><option>待店长处理</option><option>待管理员审核</option><option>已通过</option><option>已驳回</option><option>已完成</option></select>
           <select id="taskPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option></select>
           <select id="taskType"><option value="">全部类型</option><option>价格异常</option><option>库存异常</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
-          <input id="taskStore" placeholder="店铺">
-          <select id="taskNextHandler"><option value="">全部下一步</option><option>管理员</option><option>店长</option><option>无需处理</option></select>
-          <select id="taskPriority"><option value="">全部优先级</option><option>高</option><option>中</option><option>普通</option><option>低</option></select>
           <label><input id="taskOpenOnly" type="checkbox"> 只看未完成</label>
           <label><input id="taskOverdue" type="checkbox"> 只看超时</label>
           <label><input id="taskUnassigned" type="checkbox"> 只看未分配</label>
           <label><input id="taskReworked" type="checkbox"> 只看返工</label>
           <button class="primary" onclick="loadTasks()">查询</button>
+          <button class="primary" data-admin-only="task-push" onclick="batchPushTasks()">批量推送</button>
           <button class="primary" data-admin-only="task-review" onclick="batchReviewTasks('通过')">批量通过</button>
           <button class="danger" data-admin-only="task-review" onclick="batchReviewTasks('驳回')">批量驳回</button>
           <button class="secondary" onclick="exportTasks()">导出</button>
         </div>
+        <div class="task-filters hidden" data-owner-only="1">
+          <input id="taskOwnerSearch" placeholder="店铺 / 商家编码 / SKC / SPU / 商品名">
+          <input id="taskOwnerStore" placeholder="店铺">
+          <select id="taskOwnerType"><option value="">全部类型</option><option>价格异常</option><option>库存异常</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
+          <select id="taskOwnerPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option></select>
+          <select id="taskOwnerStatus"><option value="">全部状态</option><option>待店长处理</option><option>待管理员审核</option><option>已通过</option><option>已驳回</option><option>已完成</option></select>
+          <label><input id="taskOwnerOpenOnly" type="checkbox" checked> 只看未完成</label>
+          <button class="primary" onclick="loadTasks()">查询</button>
+          <button class="primary" onclick="batchSubmitTasks()">批量标记已处理</button>
+          <button class="secondary" onclick="exportTasks()">导出</button>
+        </div>
         <div class="status" id="taskStatusLine"></div>
-        <div style="overflow:auto; max-height:620px;">
-          <table>
-            <thead><tr><th>状态</th><th>下一步</th><th>类型</th><th>店铺/负责人</th><th>商品</th><th>系统建议</th><th>店长填写</th><th>管理员审核</th><th>操作</th></tr></thead>
-            <tbody id="taskRows"></tbody>
-          </table>
+        <div class="task-table-wrap">
+          <div class="package-toolbar">
+            <label><input type="checkbox" id="taskSelectAll" onclick="toggleAllTaskSelection(this.checked)"> 全选当前可操作包</label>
+            <span class="muted">一块就是一个店铺、负责人、任务类型、处理动作的任务包；点“导出”下载完整处理表。</span>
+          </div>
+          <div id="taskRows" class="package-board"></div>
         </div>
       </div>
     </section>
@@ -2303,11 +2650,12 @@ HTML_PAGE = r"""<!doctype html>
 let appStatus = null;
 let userRequestedShutdown = false;
 const reportRunMessages = {};
-let taskState = {summary:{}, tasks:[]};
+let taskState = {summary:{}, packages:[], tasks:[]};
+let expandedTaskPackageId = "";
 let ownerOptions = [];
 let operatorToken = localStorage.getItem('operatorToken') || '';
 let operatorSession = JSON.parse(localStorage.getItem('operatorSession') || 'null');
-const titles = {tasks:'任务面板', weekly:'每周工作流', rules:'规则设置', search:'基础数据查询', files:'输出文件'};
+const titles = {overview:'数据总览', tasks:'任务包中心', weekly:'每周工作流', rules:'规则设置', search:'基础数据查询', files:'输出文件'};
 document.querySelectorAll('nav button').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
@@ -2340,6 +2688,8 @@ function renderOperator(){
     taskRole.value = operatorSession.role;
     taskRole.disabled = operatorSession.role === 'owner';
     document.getElementById('taskUser').value = operatorSession.user;
+    const adminOwner = document.getElementById('taskAdminOwner');
+    if(adminOwner && operatorSession.role === 'admin' && !adminOwner.value) adminOwner.value = '';
     defaultOpenTasksForOwner();
   } else {
     el.textContent = '未登录：任务台账需要先登录';
@@ -2350,7 +2700,11 @@ function renderOperator(){
 }
 function defaultOpenTasksForOwner(){
   const openOnly = document.getElementById('taskOpenOnly');
-  if(operatorSession?.role === 'owner' && openOnly) openOnly.checked = true;
+  const ownerOpenOnly = document.getElementById('taskOwnerOpenOnly');
+  if(operatorSession?.role === 'owner'){
+    if(openOnly) openOnly.checked = true;
+    if(ownerOpenOnly) ownerOpenOnly.checked = true;
+  }
 }
 function clearOperatorSession(){
   localStorage.removeItem('operatorSession');
@@ -2360,6 +2714,7 @@ function clearOperatorSession(){
   renderOperator();
 }
 function switchTab(tab){
+  if(!operatorSession && tab === 'overview') tab = 'tasks';
   if(operatorSession?.role === 'owner' && tab !== 'tasks') tab = 'tasks';
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === tab));
@@ -2368,7 +2723,53 @@ function switchTab(tab){
 function applyRoleVisibility(){
   const ownerMode = operatorSession?.role === 'owner';
   document.querySelectorAll('[data-admin-only]').forEach(el => { el.classList.toggle('hidden', ownerMode); });
+  document.querySelectorAll('[data-owner-only]').forEach(el => { el.classList.toggle('hidden', !ownerMode); });
+  const title = document.getElementById('taskPanelTitle');
+  if(title) title.textContent = ownerMode ? '我的任务包' : '管理员任务包中心';
+  if(ownerMode) document.body.classList.add('task-dashboard-collapsed');
+  updateTaskDashboardToggle();
   if(ownerMode) switchTab('tasks');
+}
+function updateTaskDashboardToggle(){
+  const btn = document.getElementById('taskDashboardToggle');
+  if(btn) btn.textContent = document.body.classList.contains('task-dashboard-collapsed') ? '展开看板' : '收起看板';
+}
+function toggleTaskDashboard(){
+  document.body.classList.toggle('task-dashboard-collapsed');
+  updateTaskDashboardToggle();
+}
+function renderOverview(){
+  const overview = appStatus?.overview || {};
+  const cards = document.getElementById('overviewCards');
+  if(cards){
+    const items = [
+      ['任务包', overview.package_total || 0],
+      ['明细总数', overview.task_total || 0],
+      ['未完成', overview.open_total || 0],
+      ['待店长', overview.pending_owner_total || 0],
+      ['待审核', overview.pending_review_total || 0],
+      ['未分配', overview.unassigned_total || 0],
+      ['超时', overview.overdue_total || 0],
+    ];
+    cards.innerHTML = items.map(([label, value]) => `<div class="overview-card"><span>${label}</span><strong>${value}</strong></div>`).join('');
+  }
+  const storeRows = document.getElementById('overviewStoreRows');
+  if(storeRows){
+    const rows = overview.stores || [];
+    storeRows.innerHTML = rows.length ? rows.map(row => `<tr>
+      <td>${esc(row.store || '-')}</td><td>${esc(row.owner || '-')}</td><td>${row.package_count || 0}</td><td>${row.open_count || 0}</td><td>${row.pending_owner_count || 0}</td><td>${row.pending_review_count || 0}</td><td>${row.low_score_count || 0}</td><td>${row.bargain_count || 0}</td><td>${row.slow_count || 0}</td><td>${row.price_count || 0}</td><td>${row.overdue_count || 0}</td>
+    </tr>`).join('') : '<tr><td colspan="11" class="muted">暂无店铺任务数据。</td></tr>';
+  }
+  const ownerRows = document.getElementById('overviewOwnerRows');
+  if(ownerRows){
+    const rows = overview.owners || [];
+    ownerRows.innerHTML = rows.length ? rows.map(row => `<tr><td>${esc(row.owner || '-')}</td><td>${row.store_count || 0}</td><td>${row.open_count || 0}</td><td>${row.pending_review_count || 0}</td><td>${row.overdue_count || 0}</td></tr>`).join('') : '<tr><td colspan="5" class="muted">暂无负责人待办。</td></tr>';
+  }
+  const sourceRows = document.getElementById('overviewSourceRows');
+  if(sourceRows){
+    const groups = appStatus?.source_groups || [];
+    sourceRows.innerHTML = groups.length ? groups.map(item => `<div class="result-item"><strong>${esc(item.name || '')}</strong><div class="muted">${esc(item.status || '')} · 文件 ${item.count || 0} · 记录 ${item.total_rows || '-'}</div></div>`).join('') : '<div class="muted">暂无数据源状态。</div>';
+  }
 }
 function ownerEntryUrl(owner){
   const url = new URL(window.location.href);
@@ -2498,7 +2899,7 @@ async function refreshStatus(){
   try {
     appStatus = await api('/api/status');
     document.getElementById('statusLine').textContent = `当前版本 ${appStatus.version || 'v2.0'}，Temu数据源 ${appStatus.temu_files} 个，Shein数据源 ${appStatus.shein_files} 个，ERP数据源 ${appStatus.erp_files} 个，基础库 ${appStatus.database.tables} 表 / ${appStatus.database.rows} 行`;
-    renderReports(); renderOutputs(); renderWeeklySources(); renderRules(); renderOperator(); loadTasks(false);
+    renderReports(); renderOutputs(); renderWeeklySources(); renderRules(); renderOverview(); renderOperator(); loadTasks(false);
     loadOwnerOptions();
     loadStoreOwners();
     updateReportOutputCapacity();
@@ -2742,33 +3143,44 @@ async function runWeeklyReports(){
   } catch(e){ st.innerHTML = `<span class="bad">${e.message}</span>`; }
 }
 function taskQuery(){
+  const ownerMode = operatorSession?.role === 'owner';
   const params = new URLSearchParams();
-  params.set('role', document.getElementById('taskRole')?.value || 'admin');
-  params.set('user', document.getElementById('taskUser')?.value.trim() || '');
-  params.set('status', document.getElementById('taskStatus')?.value || '');
-  params.set('platform', document.getElementById('taskPlatform')?.value || '');
-  params.set('task_type', document.getElementById('taskType')?.value || '');
-  params.set('store', document.getElementById('taskStore')?.value.trim() || '');
-  params.set('next_handler', document.getElementById('taskNextHandler')?.value || '');
-  params.set('priority', document.getElementById('taskPriority')?.value || '');
-  params.set('open_only', document.getElementById('taskOpenOnly')?.checked ? '1' : '');
-  params.set('overdue', document.getElementById('taskOverdue')?.checked ? '1' : '');
-  params.set('unassigned', document.getElementById('taskUnassigned')?.checked ? '1' : '');
-  params.set('reworked', document.getElementById('taskReworked')?.checked ? '1' : '');
+  if(ownerMode){
+    params.set('role', 'owner');
+    params.set('user', operatorSession?.user || '');
+    params.set('status', document.getElementById('taskOwnerStatus')?.value || '');
+    params.set('platform', document.getElementById('taskOwnerPlatform')?.value || '');
+    params.set('task_type', document.getElementById('taskOwnerType')?.value || '');
+    params.set('store', document.getElementById('taskOwnerStore')?.value.trim() || '');
+    params.set('open_only', document.getElementById('taskOwnerOpenOnly')?.checked ? '1' : '');
+    params.set('search', document.getElementById('taskOwnerSearch')?.value.trim() || '');
+  } else {
+    params.set('role', 'admin');
+    params.set('user', document.getElementById('taskAdminOwner')?.value.trim() || '');
+    params.set('status', document.getElementById('taskStatus')?.value || '');
+    params.set('platform', document.getElementById('taskPlatform')?.value || '');
+    params.set('task_type', document.getElementById('taskType')?.value || '');
+    params.set('store', document.getElementById('taskStore')?.value.trim() || '');
+    params.set('open_only', document.getElementById('taskOpenOnly')?.checked ? '1' : '');
+    params.set('overdue', document.getElementById('taskOverdue')?.checked ? '1' : '');
+    params.set('unassigned', document.getElementById('taskUnassigned')?.checked ? '1' : '');
+    params.set('reworked', document.getElementById('taskReworked')?.checked ? '1' : '');
+    params.set('search', document.getElementById('taskSearch')?.value.trim() || '');
+  }
   return params;
 }
 async function loadTasks(showMessage=true){
   const tbody = document.getElementById('taskRows');
   if(!tbody) return;
   const st = document.getElementById('taskStatusLine');
-  if(!operatorToken){ renderTaskSummary(); tbody.innerHTML = '<tr><td colspan="9" class="muted">请先登录身份。</td></tr>'; return; }
+  if(!operatorToken){ renderTaskSummary(); tbody.innerHTML = '<div class="muted">请先登录身份。</div>'; return; }
   if(showMessage) st.textContent = '正在读取任务...';
   try {
     const res = await api('/api/tasks?' + taskQuery().toString());
-    taskState = {summary:res.summary || {}, tasks:res.tasks || []};
+    taskState = {summary:res.summary || {}, packages:res.packages || [], tasks:res.tasks || []};
     renderTaskSummary();
     renderTaskRows();
-    st.textContent = `当前筛选 ${taskState.tasks.length} 条任务`;
+    st.textContent = `当前筛选 ${taskState.packages.length} 个任务包，包含 ${taskState.tasks.length} 条明细`;
   } catch(e){
     st.innerHTML = `<span class="bad">${e.message}</span>`;
   }
@@ -2782,13 +3194,13 @@ function renderTaskSummary(){
   const cards = [
     ['全部任务', summary.total || 0],
     ['管理员待办', nextHandler['管理员'] || 0],
+    ['待推送', status['待推送'] || 0],
     ['店长待办', nextHandler['店长'] || 0],
     ['待店长处理', status['待店长处理'] || 0],
     ['待管理员审核', status['待管理员审核'] || 0],
     ['超时未处理', overdue.total || 0],
     ['已通过', status['已通过'] || 0],
     ['未分配', summary.unassigned || 0],
-    ['无需处理', nextHandler['无需处理'] || 0],
   ];
   wrap.innerHTML = cards.map(([label, value]) => `<div class="task-kpi"><span class="muted">${label}</span><strong>${value}</strong></div>`).join('');
   renderAdminTaskQueue();
@@ -2814,6 +3226,8 @@ function applyAdminQueueFilter(index){
   const filters = item.filters || {};
   setTaskField('taskRole', 'admin');
   setTaskField('taskUser', '');
+  setTaskField('taskAdminOwner', '');
+  setTaskField('taskSearch', '');
   setTaskField('taskStatus', filters.status || '');
   setTaskField('taskNextHandler', '');
   setTaskField('taskPriority', '');
@@ -2833,7 +3247,7 @@ function renderOwnerTaskSummary(){
   if(!rows.length){ wrap.innerHTML = ''; return; }
   wrap.innerHTML = rows.map((item, index) => {
     const status = item.by_status || {};
-    return `<button class="task-kpi" type="button" data-owner-index="${index}" onclick="applyOwnerSummaryFilter(${index})"><span class="muted">负责人待办：${esc(item.owner)}</span><strong>${item.total || 0}</strong><div class="muted">待店长 ${status['待店长处理'] || 0} / 待审核 ${status['待管理员审核'] || 0} / 超时 ${item.overdue || 0} / 返工 ${item.reworked || 0} / 已完成 ${status['已完成'] || 0}</div></button>`;
+    return `<button class="task-kpi" type="button" data-owner-index="${index}" onclick="applyOwnerSummaryFilter(${index})"><span class="muted">负责人待办：${esc(item.owner)}</span><strong>${item.total || 0}</strong><div class="muted">待推送 ${status['待推送'] || 0} / 待店长 ${status['待店长处理'] || 0} / 待审核 ${status['待管理员审核'] || 0} / 超时 ${item.overdue || 0} / 返工 ${item.reworked || 0} / 已完成 ${status['已完成'] || 0}</div></button>`;
   }).join('');
 }
 function applyOwnerSummaryFilter(index){
@@ -2843,6 +3257,8 @@ function applyOwnerSummaryFilter(index){
   if(!item) return;
   setTaskField('taskRole', 'admin');
   setTaskField('taskUser', item.owner === '未分配' ? '' : item.owner || '');
+  setTaskField('taskAdminOwner', item.owner === '未分配' ? '' : item.owner || '');
+  setTaskField('taskSearch', '');
   setTaskField('taskStatus', '');
   setTaskField('taskNextHandler', '');
   setTaskField('taskPriority', '');
@@ -2872,34 +3288,102 @@ function canMarkDoneTask(task){
 function canAssignTask(task){
   return task.status !== '已完成';
 }
-function taskActionButtons(task){
-  const historyButton = `<button class="secondary" onclick="showTaskHistory('${task.id}')">查看记录</button>`;
-  const submitButton = !task.owner ? '<span class="muted">先指派负责人</span>' : canSubmitOwnerTask(task) ? `<button class="secondary" onclick="submitTask('${task.id}')">店长填写</button>` : '<span class="muted">无需店长填写</span>';
+function packageSourceText(pkg){
+  const reports = (pkg.source_reports || []).slice(0, 2).join('、');
+  const files = (pkg.source_files || []).slice(0, 2).join('、');
+  return [reports, files].filter(Boolean).join(' / ') || '-';
+}
+function packageProgressText(pkg){
+  const status = pkg.by_status || {};
+  return `待推送 ${pkg.pending_push_count || 0} / 待店长 ${pkg.pending_owner_count || 0} / 待审核 ${pkg.pending_review_count || 0} / 已通过 ${pkg.approved_count || 0} / 已完成 ${pkg.done_count || 0}${pkg.overdue_count ? ' / 超时 ' + pkg.overdue_count : ''}${pkg.reworked_count ? ' / 返工 ' + pkg.reworked_count : ''}`;
+}
+function packageStatusBadges(pkg){
+  const status = pkg.by_status || {};
+  const pairs = [['待推送', status['待推送'] || 0], ['待店长处理', status['待店长处理'] || 0], ['待管理员审核', status['待管理员审核'] || 0], ['已驳回', status['已驳回'] || 0], ['已通过', status['已通过'] || 0], ['已完成', status['已完成'] || 0]].filter(([_label, count]) => count);
+  return pairs.map(([label, count]) => `<span class="badge ${label === '待推送' || label === '待管理员审核' ? 'warn' : label === '已通过' || label === '已完成' ? 'ok' : label === '已驳回' ? 'bad' : ''}">${esc(label)} ${count}</span>`).join('');
+}
+function taskPackageById(id){
+  return (taskState.packages || []).find(item => item.id === id);
+}
+function packageActionButtons(pkg){
+  const preview = `<button class="secondary" onclick="togglePackagePreview('${pkg.id}')">${expandedTaskPackageId === pkg.id ? '收起' : '预览'}</button>`;
   if(operatorSession && operatorSession.role === 'owner'){
-    return `${historyButton}${submitButton}<span class="muted">店长只能填写自己负责的任务</span>`;
+    const submit = (pkg.submittable_task_ids || []).length ? `<button class="primary" onclick="submitTaskPackage('${pkg.id}')">整包已处理</button>` : '';
+    return `${preview}${submit}`;
   }
-  const reviewButtons = canReviewTask(task) ? `<button class="primary" onclick="reviewTask('${task.id}','通过')">通过</button><button class="danger" onclick="reviewTask('${task.id}','驳回')">驳回</button>` : '<span class="muted">无需审核</span>';
-  const doneButton = canMarkDoneTask(task) ? `<button class="secondary" onclick="doneTask('${task.id}')">标记完成</button>` : '';
-  const assignButton = canAssignTask(task) ? `<button class="secondary" onclick="assignTask('${task.id}')">指派负责人</button>` : '';
+  const push = (pkg.pushable_task_ids || []).length ? `<button class="primary" onclick="pushTaskPackage('${pkg.id}')">推送店长</button>` : '';
+  const approve = (pkg.reviewable_task_ids || []).length ? `<button class="primary" onclick="reviewTaskPackage('${pkg.id}','通过')">整包通过</button>` : '';
+  const reject = (pkg.reviewable_task_ids || []).length ? `<button class="danger" onclick="reviewTaskPackage('${pkg.id}','驳回')">整包驳回</button>` : '';
+  return `${preview}${push}${approve}${reject}`;
+}
+function taskActionButtons(task){
+  const historyButton = `<button class="secondary" onclick="showTaskHistory('${task.id}')" title="查看操作记录">记录</button>`;
+  const submitButton = !task.owner ? '<span class="muted">待指派</span>' : canSubmitOwnerTask(task) ? `<button class="secondary" onclick="submitTask('${task.id}')" title="店长填写处理结果">填写</button>` : '<span class="muted">-</span>';
+  if(operatorSession && operatorSession.role === 'owner'){
+    return `${historyButton}${submitButton}`;
+  }
+  const reviewButtons = canReviewTask(task) ? `<button class="primary" onclick="reviewTask('${task.id}','通过')" title="审核通过">通过</button><button class="danger" onclick="reviewTask('${task.id}','驳回')" title="审核驳回">驳回</button>` : '';
+  const doneButton = canMarkDoneTask(task) ? `<button class="secondary" onclick="doneTask('${task.id}')" title="标记完成">完成</button>` : '';
+  const assignButton = canAssignTask(task) ? `<button class="secondary" onclick="assignTask('${task.id}')" title="指派负责人">指派</button>` : '';
   return `${historyButton}${assignButton}${submitButton}${reviewButtons}${doneButton}`;
+}
+function selectedTaskIds(){
+  const ids = [];
+  const seen = new Set();
+  Array.from(document.querySelectorAll('.task-check:checked')).forEach(input => {
+    const values = (input.dataset.ids || input.value || '').split(',').map(item => item.trim()).filter(Boolean);
+    values.forEach(value => {
+      if(!seen.has(value)){
+        seen.add(value);
+        ids.push(value);
+      }
+    });
+  });
+  return ids;
+}
+function toggleAllTaskSelection(checked){
+  document.querySelectorAll('.task-check').forEach(input => { input.checked = checked; });
+}
+function renderPackagePreview(pkg){
+  const rows = pkg.sample_tasks || [];
+  if(!rows.length) return '<div class="muted">暂无可预览明细。</div>';
+  return `<div class="package-preview"><div class="package-preview-line package-preview-head"><span>商家编码</span><span>SKC ID</span><span>SPU ID</span><span>商品 / 异常明细</span><span>单条</span></div>${rows.map(task => {
+    const pushButton = operatorSession?.role !== 'owner' && task.status === '待推送' && task.owner ? `<button class="secondary" onclick="pushSingleTask('${task.id}')">推送</button>` : '<span class="muted">-</span>';
+    return `<div class="package-preview-line"><span>${esc(task.merchant_code || '-')}</span><span>${esc(task.skc || '-')}</span><span>${esc(task.spu || '-')}</span><span>${esc(task.product_name || task.task_detail || '-')}</span><span>${pushButton}</span></div>`;
+  }).join('')}${pkg.total > rows.length ? `<div class="muted">还有 ${pkg.total - rows.length} 条明细，可点导出查看完整表格。</div>` : ''}</div>`;
+}
+function togglePackagePreview(id){
+  expandedTaskPackageId = expandedTaskPackageId === id ? '' : id;
+  renderTaskRows();
 }
 function renderTaskRows(){
   const tbody = document.getElementById('taskRows'); if(!tbody) return;
-  if(!taskState.tasks.length){
-    tbody.innerHTML = '<tr><td colspan="9" class="muted">暂无任务。生成爆旺、低分、滞销或议价报表后，系统会自动写入任务台账。</td></tr>';
+  const selectAll = document.getElementById('taskSelectAll');
+  if(selectAll) selectAll.checked = false;
+  if(!taskState.packages.length){
+    tbody.innerHTML = '<div class="muted">暂无任务包。导入数据或店长填报后，系统会按店铺、负责人、类型生成任务包。</div>';
     return;
   }
-  tbody.innerHTML = taskState.tasks.map(task => `<tr>
-    <td><span class="badge ${task.status === '待管理员审核' ? 'warn' : task.status === '已通过' ? 'ok' : task.status === '已驳回' ? 'bad' : ''}">${esc(task.status)}</span></td>
-    <td>${esc(task.next_handler || '-')}<br><span class="muted">${esc(task.next_action || '')}</span><br><span class="badge ${task.priority === '高' ? 'bad' : task.priority === '中' ? 'warn' : task.priority === '低' ? 'ok' : ''}">${esc(task.priority || '普通')}</span><br><span class="muted">${esc(task.priority_reason || '')}</span></td>
-    <td>${esc(task.platform)}<br>${esc(task.task_type)}<br><span class="muted">${esc(taskSourceText(task))}</span></td>
-    <td>${esc(task.store)}<br><span class="muted">${esc(task.owner)}</span></td>
-    <td class="task-product"><strong>${esc(task.product_name || task.merchant_code || task.skc || task.spu)}</strong><br><span class="muted">${esc(task.merchant_code)} ${esc(task.skc)} ${esc(task.spu)}</span></td>
-    <td>${esc(task.system_action)}<br><span class="muted">${esc(task.task_detail || '')}</span></td>
-    <td>${esc(task.owner_action || '-')}<br><span class="muted">${esc(task.owner_remark || '')}</span><br><span class="muted">${task.owner_proof ? '凭证：' + esc(task.owner_proof) : ''}</span></td>
-    <td>${esc(task.admin_decision || '-')}<br><span class="muted">${esc(task.admin_remark || '')}</span></td>
-    <td><div class="task-actions">${taskActionButtons(task)}</div></td>
-  </tr>`).join('');
+  tbody.innerHTML = taskState.packages.map(pkg => {
+    const actionable = operatorSession?.role === 'owner'
+      ? (pkg.submittable_task_ids || [])
+      : ((pkg.pushable_task_ids || []).length ? pkg.pushable_task_ids : (pkg.reviewable_task_ids || []));
+    const ids = actionable;
+    const priorityClass = pkg.priority === '高' ? 'bad' : pkg.priority === '中' ? 'warn' : pkg.priority === '低' ? 'ok' : '';
+    const preview = expandedTaskPackageId === pkg.id ? `<div class="package-preview-card">${renderPackagePreview(pkg)}</div>` : '';
+    return `<div class="package-card">
+      <div class="task-select"><input class="task-check" type="checkbox" ${ids.length ? '' : 'disabled'} data-ids="${esc((ids || []).join(','))}"></div>
+      <div class="package-metric">
+        <div class="package-title"><strong>${esc(pkg.store || '-')}</strong><span class="badge ${priorityClass}">${esc(pkg.priority || '普通')}</span>${packageStatusBadges(pkg) || `<span class="badge">${esc(pkg.main_status || '-')}</span>`}</div>
+        <div class="package-meta" title="${esc(pkg.system_action || '')}">${esc(pkg.system_action || '-')}</div>
+      </div>
+      <div class="package-metric"><span>负责人 / 平台</span><strong>${esc(pkg.owner || '-')}</strong><div class="package-sub">${esc(pkg.platform || '-')}</div></div>
+      <div class="package-metric"><span>任务类型</span><strong>${esc(pkg.task_type || '-')}</strong><div class="package-sub">${esc(pkg.next_action || '')}</div></div>
+      <div class="package-metric"><span>明细数量</span><strong>${pkg.total || 0}</strong><div class="package-sub">${esc(packageProgressText(pkg))}</div></div>
+      <div class="package-metric"><span>来源</span><div class="package-meta" title="${esc(packageSourceText(pkg))}">${esc(packageSourceText(pkg))}</div><div class="task-actions">${packageActionButtons(pkg)}</div></div>
+      ${preview}
+    </div>`;
+  }).join('');
 }
 function showTaskHistory(id){
   const task = (taskState.tasks || []).find(item => item.id === id);
@@ -2919,7 +3403,7 @@ function showTaskError(e){
 }
 async function submitTask(id){
   try {
-    const actor = document.getElementById('taskUser').value.trim() || prompt('填写人') || '';
+    const actor = operatorSession?.user || document.getElementById('taskUser').value.trim() || prompt('填写人') || '';
     if(!actor) return;
     const action = prompt('处理动作，例如：已下架、申请退货、继续观察、同意议价');
     if(!action) return;
@@ -2928,6 +3412,69 @@ async function submitTask(id){
     if(!remark.trim() && !proof.trim()){ document.getElementById('taskStatusLine').textContent = '店长提交必须填写处理依据：备注或处理凭证至少填一个'; return; }
     await api('/api/tasks/submit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, actor, action, remark, proof})});
     await loadTasks();
+  } catch(e){ showTaskError(e); }
+}
+async function batchSubmitTasks(){
+  try {
+    if(operatorSession?.role !== 'owner'){ document.getElementById('taskStatusLine').textContent = '只有店长可以批量填写处理结果'; return; }
+    const ids = selectedTaskIds();
+    if(!ids.length){ document.getElementById('taskStatusLine').textContent = '请先勾选要批量处理的任务'; return; }
+    const action = prompt('批量处理动作，例如：已下架、申请退货、继续观察、同意议价');
+    if(!action) return;
+    const remark = prompt('批量处理备注，和处理凭证至少填一个') || '';
+    const proof = prompt('批量处理凭证，例如截图链接、后台单号，和备注至少填一个') || '';
+    if(!remark.trim() && !proof.trim()){ document.getElementById('taskStatusLine').textContent = '店长提交必须填写处理依据：备注或处理凭证至少填一个'; return; }
+    const res = await api('/api/tasks/batch-submit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids, action, remark, proof})});
+    document.getElementById('taskStatusLine').textContent = `已批量提交 ${res.count || 0} 条任务，等待管理员审核`;
+    await loadTasks(false);
+  } catch(e){ showTaskError(e); }
+}
+async function submitTaskPackage(packageId){
+  const pkg = taskPackageById(packageId);
+  if(!pkg) return;
+  const ids = pkg.submittable_task_ids || [];
+  if(!ids.length){ document.getElementById('taskStatusLine').textContent = '这个任务包当前没有可提交的明细'; return; }
+  try {
+    if(operatorSession?.role !== 'owner'){ document.getElementById('taskStatusLine').textContent = '只有店长可以提交任务包'; return; }
+    const action = prompt(`整包处理动作：${pkg.store || ''} / ${pkg.task_type || ''} / ${pkg.system_action || ''}`, '已处理');
+    if(!action) return;
+    const remark = prompt('整包处理备注，和处理凭证至少填一个') || '';
+    const proof = prompt('整包处理凭证，例如截图链接、后台单号，和备注至少填一个') || '';
+    if(!remark.trim() && !proof.trim()){ document.getElementById('taskStatusLine').textContent = '店长提交必须填写处理依据：备注或处理凭证至少填一个'; return; }
+    const res = await api('/api/tasks/batch-submit', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids, action, remark, proof})});
+    document.getElementById('taskStatusLine').textContent = `任务包已提交 ${res.count || 0} 条，等待管理员审核`;
+    await loadTasks(false);
+  } catch(e){ showTaskError(e); }
+}
+async function batchPushTasks(){
+  try {
+    if(operatorSession?.role === 'owner'){ document.getElementById('taskStatusLine').textContent = '店长不能推送任务包'; return; }
+    const ids = selectedTaskIds();
+    if(!ids.length){ document.getElementById('taskStatusLine').textContent = '请先勾选要推送的待推送任务包'; return; }
+    const remark = prompt('推送说明，可空', '管理员确认推送') || '';
+    const res = await api('/api/tasks/batch-push', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids, remark})});
+    document.getElementById('taskStatusLine').textContent = `已推送 ${res.count || 0} 条任务给店长`;
+    await loadTasks(false);
+  } catch(e){ showTaskError(e); }
+}
+async function pushTaskPackage(packageId){
+  const pkg = taskPackageById(packageId);
+  if(!pkg) return;
+  const ids = pkg.pushable_task_ids || [];
+  if(!ids.length){ document.getElementById('taskStatusLine').textContent = '这个任务包当前没有待推送明细'; return; }
+  try {
+    const remark = prompt(`推送给 ${pkg.owner || '负责人'}：${pkg.store || ''} / ${pkg.task_type || ''}`, '管理员确认推送') || '';
+    const res = await api('/api/tasks/batch-push', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids, remark})});
+    document.getElementById('taskStatusLine').textContent = `任务包已推送 ${res.count || 0} 条给店长`;
+    await loadTasks(false);
+  } catch(e){ showTaskError(e); }
+}
+async function pushSingleTask(id){
+  try {
+    const remark = prompt('单条推送说明，可空', '管理员确认推送') || '';
+    const res = await api('/api/tasks/batch-push', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids:[id], remark})});
+    document.getElementById('taskStatusLine').textContent = `已单条推送 ${res.count || 0} 条任务`;
+    await loadTasks(false);
   } catch(e){ showTaskError(e); }
 }
 async function assignTask(id){
@@ -2950,12 +3497,25 @@ async function reviewTask(id, decision){
 }
 async function batchReviewTasks(decision){
   try {
-    const ids = (taskState.tasks || []).filter(task => task.status === '待管理员审核').map(task => task.id);
-    if(!ids.length){ document.getElementById('taskStatusLine').textContent = '当前筛选没有待管理员审核任务'; return; }
+    const ids = selectedTaskIds();
+    if(!ids.length){ document.getElementById('taskStatusLine').textContent = '请先勾选要批量审核的任务'; return; }
     const remark = prompt(decision === '驳回' ? '批量驳回原因（必填）' : `批量${decision}说明（必填）`) || '';
     if(!remark.trim()){ document.getElementById('taskStatusLine').textContent = '批量审核必须填写说明'; return; }
     const res = await api('/api/tasks/batch-review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids, decision, remark})});
     document.getElementById('taskStatusLine').textContent = `已批量${decision} ${res.count || 0} 条任务`;
+    await loadTasks(false);
+  } catch(e){ showTaskError(e); }
+}
+async function reviewTaskPackage(packageId, decision){
+  const pkg = taskPackageById(packageId);
+  if(!pkg) return;
+  const ids = pkg.reviewable_task_ids || [];
+  if(!ids.length){ document.getElementById('taskStatusLine').textContent = '这个任务包当前没有待审核明细'; return; }
+  try {
+    const remark = prompt(decision === '驳回' ? '整包驳回原因（必填）' : `整包${decision}说明（必填）`) || '';
+    if(!remark.trim()){ document.getElementById('taskStatusLine').textContent = '整包审核必须填写说明'; return; }
+    const res = await api('/api/tasks/batch-review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids, decision, remark})});
+    document.getElementById('taskStatusLine').textContent = `任务包已${decision} ${res.count || 0} 条`;
     await loadTasks(false);
   } catch(e){ showTaskError(e); }
 }
@@ -2968,10 +3528,20 @@ async function doneTask(id){
   } catch(e){ showTaskError(e); }
 }
 async function exportTasks(){
+  const st = document.getElementById('taskStatusLine');
   try {
+    if(st) st.textContent = '正在导出任务表，请稍等...';
     const payload = Object.fromEntries(taskQuery().entries());
     const res = await api('/api/tasks/export', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-    document.getElementById('taskStatusLine').innerHTML = `<span class="ok">已导出 ${res.rows} 条：</span><a href="${authDownload(res.download)}">${esc(res.file)}</a>`;
+    const downloadUrl = authDownload(res.download);
+    if(st) st.innerHTML = `<span class="ok">已导出 ${res.rows} 条，正在下载：</span><a href="${downloadUrl}">${esc(res.file)}</a>`;
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = res.file || '';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
     await refreshStatus();
   } catch(e){ showTaskError(e); }
 }
@@ -3157,9 +3727,15 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/tasks/submit":
                 cancel_scheduled_shutdown()
                 self.send_payload(*handle_tasks_api("POST_SUBMIT", self.headers, self.read_json()))
+            elif parsed.path == "/api/tasks/batch-submit":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_tasks_api("POST_BATCH_SUBMIT", self.headers, self.read_json()))
             elif parsed.path == "/api/tasks/assign":
                 cancel_scheduled_shutdown()
                 self.send_payload(*handle_tasks_api("POST_ASSIGN", self.headers, self.read_json()))
+            elif parsed.path == "/api/tasks/batch-push":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_tasks_api("POST_BATCH_PUSH", self.headers, self.read_json()))
             elif parsed.path == "/api/tasks/review":
                 cancel_scheduled_shutdown()
                 self.send_payload(*handle_tasks_api("POST_REVIEW", self.headers, self.read_json()))

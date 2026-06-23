@@ -1,6 +1,8 @@
 @echo off
-chcp 65001 >nul
-echo 日常运营工作台桌面版无需单独停止。
-echo 请直接关闭桌面窗口；正在执行的任务完成后再退出。
-echo.
-pause
+setlocal
+
+cd /d "%~dp0"
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$root=(Resolve-Path '.').Path; Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($root) -and ($_.Name -like '*electron*' -or $_.Name -like '*node*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+
+echo 工作台已请求停止。

@@ -1,5 +1,8 @@
 #!/bin/zsh
-echo "日常运营工作台桌面版无需单独停止。"
-echo "请直接关闭桌面窗口；正在执行的任务完成后再退出。"
-echo
-read "?按回车关闭窗口..."
+
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+pkill -f "$ROOT_DIR/node_modules/electron" 2>/dev/null || true
+pkill -f "PETCIRCLE 运营工作台" 2>/dev/null || true
+
+osascript -e 'display notification "工作台已请求停止" with title "PETCIRCLE 运营工作台"' 2>/dev/null || true
