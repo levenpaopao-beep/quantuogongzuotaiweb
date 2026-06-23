@@ -462,8 +462,12 @@ async function submitTask(id) {
     if (!actor) return;
     const action = window.prompt("店长填写处理动作，例如：已下架、申请退货、继续观察、同意议价");
     if (!action) return;
-    const remark = window.prompt("备注") || "";
-    const proof = window.prompt("处理凭证，例如截图链接、后台单号，可空") || "";
+    const remark = window.prompt("处理备注，和处理凭证至少填一个") || "";
+    const proof = window.prompt("处理凭证，例如截图链接、后台单号，和备注至少填一个") || "";
+    if (!remark.trim() && !proof.trim()) {
+      showToast("店长提交必须填写处理依据：备注或处理凭证至少填一个");
+      return;
+    }
     await api.submitTask(operatorPayload({ id, actor, action, remark, proof }));
     await loadTasks(false);
     showToast("店长填写已提交");

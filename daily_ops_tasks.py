@@ -560,6 +560,10 @@ class OperationTaskStore:
         action = norm(action)
         if not action:
             raise ValueError("店长处理动作不能为空")
+        remark = norm(remark)
+        proof = norm(proof)
+        if not remark and not proof:
+            raise ValueError("店长提交必须填写处理依据：备注或处理凭证至少填一个")
         owner = norm(task.get("owner"))
         actor = norm(actor)
         if not owner:
@@ -570,8 +574,8 @@ class OperationTaskStore:
             raise ValueError("只有待店长处理或已驳回的任务可以由店长填写")
         timestamp = now_text()
         task["owner_action"] = action
-        task["owner_remark"] = norm(remark)
-        task["owner_proof"] = norm(proof)
+        task["owner_remark"] = remark
+        task["owner_proof"] = proof
         task["owner_submitted_by"] = actor
         task["owner_submitted_at"] = timestamp
         task["status"] = STATUS_PENDING_REVIEW

@@ -172,6 +172,30 @@ class OperationTaskStoreTest(unittest.TestCase):
             finally:
                 workbook.close()
 
+    def test_owner_submission_requires_remark_or_proof_for_traceability(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {
+                    "platform": "Temu",
+                    "task_type": "爆旺冲突",
+                    "store": "7",
+                    "owner": "小琴",
+                    "merchant_code": "A-001",
+                    "source_report": "r",
+                    "source_row": 1,
+                }
+            ])
+            task = store.list_tasks(role="owner", user="小琴")[0]
+
+            with self.assertRaises(ValueError) as ctx:
+                store.submit_owner_action(task["id"], actor="小琴", action="已下架", remark="", proof="")
+
+            self.assertIn("处理依据", str(ctx.exception))
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已下架", remark="", proof="后台截图：https://example.test/proof")
+            self.assertEqual(submitted["status"], daily_ops_tasks.STATUS_PENDING_REVIEW)
+
     def test_generated_tasks_are_deduped_within_same_batch_but_not_across_weekly_files(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -243,10 +267,10 @@ class OperationTaskStoreTest(unittest.TestCase):
             ])
 
             rows = store.list_tasks(role="owner", user="小琴")
-            done_task = store.submit_owner_action(rows[0]["id"], actor="小琴", action="已处理", remark="")
+            done_task = store.submit_owner_action(rows[0]["id"], actor="小琴", action="已处理", remark="后台已处理")
             done_task = store.review_task(done_task["id"], admin="管理员", decision="通过", remark="同意")
             store.mark_done(done_task["id"], actor="管理员", remark="后台已确认")
-            active_task = store.submit_owner_action(rows[1]["id"], actor="小琴", action="继续观察", remark="")
+            active_task = store.submit_owner_action(rows[1]["id"], actor="小琴", action="继续观察", remark="后台继续观察")
             store.review_task(active_task["id"], admin="管理员", decision="通过", remark="同意")
 
             open_rows = store.list_tasks(role="owner", user="小琴", open_only="1")
@@ -453,10 +477,10 @@ class OperationTaskStoreTest(unittest.TestCase):
                 {"platform": "Temu", "task_type": "滞销处理", "store": "9", "owner": "", "merchant_code": "D", "source_report": "r", "source_row": 4},
             ])
             xiaoqin_rows = store.list_tasks(role="owner", user="小琴")
-            store.submit_owner_action(xiaoqin_rows[0]["id"], actor="小琴", action="已处理", remark="")
-            store.submit_owner_action(xiaoqin_rows[1]["id"], actor="小琴", action="已处理", remark="")
+            store.submit_owner_action(xiaoqin_rows[0]["id"], actor="小琴", action="已处理", remark="后台已处理")
+            store.submit_owner_action(xiaoqin_rows[1]["id"], actor="小琴", action="已处理", remark="后台已处理")
             store.review_task(xiaoqin_rows[0]["id"], admin="管理员", decision="驳回", remark="缺截图")
-            store.submit_owner_action(xiaoqin_rows[0]["id"], actor="小琴", action="已补图", remark="")
+            store.submit_owner_action(xiaoqin_rows[0]["id"], actor="小琴", action="已补图", remark="已补充截图")
             store.review_task(xiaoqin_rows[0]["id"], admin="管理员", decision="通过", remark="")
 
             summary = store.summary()
@@ -995,7 +1019,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             }
             store.upsert_generated_tasks([source])
             task = store.list_tasks()[0]
-            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已下架", remark="")
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已下架", remark="后台已下架")
             approved = store.review_task(submitted["id"], admin="管理员", decision="通过", remark="同意")
             done = store.mark_done(approved["id"], actor="管理员", remark="后台已确认")
             history_count = len(done["history"])
@@ -1146,7 +1170,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             ])
             rows = store.list_tasks(role="owner", user="小琴")
             submitted = [
-                store.submit_owner_action(row["id"], actor="小琴", action="已处理", remark="")
+                store.submit_owner_action(row["id"], actor="小琴", action="已处理", remark="后台已处理")
                 for row in rows
             ]
 
@@ -1201,7 +1225,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 store.mark_done(task["id"], actor="管理员", remark="未审核不能完成")
 
-            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已处理", remark="")
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已处理", remark="后台已处理")
             reviewed = store.review_task(submitted["id"], admin="管理员", decision="通过", remark="同意")
             with self.assertRaises(ValueError):
                 store.mark_done(reviewed["id"], actor="管理员", remark="")
@@ -1596,6 +1620,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("先指派负责人", html)
         self.assertIn("驳回原因", html)
         self.assertIn("必须填写原因", html)
+        self.assertIn("备注或处理凭证至少填一个", html)
         self.assertIn("完成确认说明", html)
         self.assertIn("标记完成必须填写确认说明", html)
         for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
@@ -1681,6 +1706,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("先指派负责人", js)
         self.assertIn("驳回原因", js)
         self.assertIn("必须填写原因", js)
+        self.assertIn("备注或处理凭证至少填一个", js)
         self.assertIn("完成确认说明", js)
         self.assertIn("标记完成必须填写确认说明", js)
         for text in ["operator.role === \"owner\"", "店长只能填写自己负责的任务"]:
@@ -2077,7 +2103,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                 {"platform": "Temu", "task_type": "低分预警", "store": "1", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_file": "a.xlsx", "source_row": 1},
             ])
             task = store.list_tasks()[0]
-            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已处理", remark="")
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已处理", remark="后台已处理")
             approved = store.review_task(submitted["id"], admin="管理员", decision="通过", remark="同意")
             store.mark_done(approved["id"], actor="管理员", remark="后台已确认")
 
@@ -2105,7 +2131,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                 {"platform": "Temu", "task_type": "爆旺冲突", "store": "1", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
                 {"platform": "Temu", "task_type": "低分预警", "store": "2", "owner": "洁琳", "merchant_code": "B", "source_report": "r", "source_row": 2},
             ])
-            pending = [store.submit_owner_action(row["id"], actor=row["owner"], action="已处理", remark="") for row in store.list_tasks()]
+            pending = [store.submit_owner_action(row["id"], actor=row["owner"], action="已处理", remark="后台已处理") for row in store.list_tasks()]
             ids = [row["id"] for row in pending]
             with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
                 status, _content_type, body = daily_ops_app.handle_tasks_api(
@@ -2133,7 +2159,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                 {"platform": "Temu", "task_type": "爆旺冲突", "store": "1", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
             ])
             task = store.list_tasks()[0]
-            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已处理", remark="")
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已处理", remark="后台已处理")
 
             with self.assertRaises(ValueError):
                 store.review_tasks([submitted["id"]], admin="管理员", decision="驳回", remark="")
@@ -2510,7 +2536,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                 {"platform": "Temu", "task_type": "爆旺冲突", "store": "7", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
             ])
             task = store.list_tasks()[0]
-            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已下架", remark="")
+            submitted = store.submit_owner_action(task["id"], actor="小琴", action="已下架", remark="后台已下架")
             store.review_task(submitted["id"], admin="管理员", decision="通过", remark="同意")
 
             with patch.object(daily_ops_app, "TASK_DB_PATH", task_db), \
