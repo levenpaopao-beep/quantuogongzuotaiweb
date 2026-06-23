@@ -149,6 +149,21 @@ if (!applyRouteIntentBody.includes("route.importFocus") || !renderImportBody.inc
     "首页进入导入页时应定位到需处理缺口，矩阵也要能在需处理、待提交和全部之间切换。",
   ]);
 }
+if (!html.includes('id="reportReadinessBar"') || !renderer.includes("function renderReportReadiness(") || !renderer.includes("generateWeeklyReports")) {
+  fail("经营报表缺少生成前体检", [
+    "月结输出前需要把未填销量、导入缺口和任务待办集中提示，避免报表生成后才发现口径不完整。",
+  ]);
+}
+const renderReportReadinessBody = functionBody(renderer, "renderReportReadiness");
+if (
+  !renderReportReadinessBody.includes('data-empty-page="sales"') ||
+  !renderReportReadinessBody.includes('data-empty-page="imports"') ||
+  !renderReportReadinessBody.includes('data-empty-page="tasks"')
+) {
+  fail("报表体检未接入销量/导入/任务定位", [
+    "报表页的风险项按钮必须能直接回到销量、导入和任务模块处理问题。",
+  ]);
+}
 if (/radial-gradient\(/.test(fs.readFileSync(path.join(ROOT, "electron", "renderer.css"), "utf8"))) {
   fail("界面背景仍有装饰光斑", [
     "工作台是高频运营工具，背景应保持清爽，不使用离散渐变光斑作为装饰。",

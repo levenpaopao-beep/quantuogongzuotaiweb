@@ -502,9 +502,62 @@ function latestOutputForReport(reportId) {
   return state.outputs.find((item) => item.report === reportId) || null;
 }
 
+function renderReportReadiness() {
+  const bar = $("#reportReadinessBar");
+  if (!bar) return;
+  const salesSummary = state.sales?.summary || {};
+  const importSummary = state.importMatrix?.summary || {};
+  const taskSummary = state.taskOverview || state.taskSummary || {};
+  const status = taskSummary.by_status || {};
+  const reports = Object.keys(state.reports || {});
+  const completed = reports.filter((reportId) => latestOutputForReport(reportId)).length;
+  const salesMissing = Number(salesSummary.missing || 0);
+  const importBlocked = Number(importSummary.blocked_stores || 0);
+  const ownerPending = Number(status["待店长处理"] || 0);
+  const adminPending = Number(status["待管理员审核"] || 0) + Number(status["已通过"] || 0);
+  const pendingReports = Math.max(0, reports.length - completed);
+  const issueCount = [salesMissing, importBlocked, ownerPending, adminPending].filter((value) => value > 0).length;
+  const title = $("#reportReadinessTitle");
+  const hint = $("#reportReadinessHint");
+  const metrics = $("#reportReadinessMetrics");
+  const actions = $("#reportReadinessActions");
+  if (title) title.textContent = issueCount ? "报表生成前还有风险项" : "报表生成口径已就绪";
+  if (hint) {
+    hint.textContent = issueCount
+      ? "建议先处理未填销量、导入缺口和任务待办，再生成月结输出。"
+      : "销量、导入和任务队列已检查，可以生成或复核报表输出。";
+  }
+  if (metrics) {
+    metrics.innerHTML = [
+      ["未填销量", salesMissing, `${salesSummary.submitted || 0}/${salesSummary.required || 0} 已填`, salesMissing ? "warn" : "ok"],
+      ["导入缺口", importBlocked, `${importSummary.ready_stores || 0}/${importSummary.stores || 0} 店铺完整`, importBlocked ? "warn" : "ok"],
+      ["店长待办", ownerPending, "任务包待处理", ownerPending ? "warn" : "ok"],
+      ["管理员待办", adminPending, "待确认/待归档", adminPending ? "warn" : "ok"],
+      ["待生成报表", pendingReports, `${completed}/${reports.length} 已生成`, pendingReports ? "warn" : "ok"],
+    ].map(([label, value, note, tone]) => `
+      <div class="report-ready-metric ${tone}">
+        <span>${label}</span>
+        <strong>${value}</strong>
+        <small>${note}</small>
+      </div>
+    `).join("");
+  }
+  if (actions) {
+    actions.innerHTML = `
+      <button class="tool-button" data-empty-page="sales" data-sales-focus="missing" type="button">查销量</button>
+      <button class="tool-button" data-empty-page="imports" data-focus="import-matrix" data-import-focus="blocked" type="button">查导入</button>
+      <button class="tool-button" data-empty-page="tasks" data-task-open-only="true" type="button">查任务</button>
+      <button class="tool-button primary-mini" data-report-action="generate-weekly" type="button">生成就绪报表</button>
+    `;
+    bindEmptyActions(actions);
+    actions.querySelector('[data-report-action="generate-weekly"]')?.addEventListener("click", generateWeeklyReports);
+  }
+}
+
 function renderReportCards() {
   const wrap = $("#reportCards");
   wrap.innerHTML = "";
+  renderReportReadiness();
   Object.entries(state.reports).forEach(([reportId, report]) => {
     const latest = latestOutputForReport(reportId);
     const card = document.createElement("div");
@@ -530,6 +583,7 @@ function renderReportCards() {
 function renderOutputs() {
   const wrap = $("#outputRows");
   wrap.innerHTML = "";
+  renderReportReadiness();
   state.outputs.forEach((item) => {
     const row = document.createElement("div");
     row.className = "output-row";
@@ -2489,6 +2543,16 @@ async function generateReport(reportId) {
   showToast(`表格已生成：${result.file || ""}；${taskSyncSummary(result.task_sync)}`);
 }
 
+async function generateWeeklyReports() {
+  showToast("开始生成所有就绪报表");
+  const result = await api.generateWeekly(operatorPayload());
+  (result.results || []).forEach((item) => {
+    if (item.status === "ok") state.reportTaskSync[item.report] = item.task_sync || {};
+  });
+  await refreshAll();
+  showToast(`本周报表已生成；${taskSyncSummary(result.task_sync)}`);
+}
+
 function showPage(name) {
   const pageMap = {
     today: "todayPage",
@@ -2568,15 +2632,7 @@ function bindEvents() {
   $("#operatorUser")?.addEventListener("input", () => {
     validateOperatorDraft(false);
   });
-  $("#generateWeeklyBtn")?.addEventListener("click", async () => {
-    showToast("开始生成所有就绪报表");
-    const result = await api.generateWeekly(operatorPayload());
-    (result.results || []).forEach((item) => {
-      if (item.status === "ok") state.reportTaskSync[item.report] = item.task_sync || {};
-    });
-    await refreshAll();
-    showToast(`本周报表已生成；${taskSyncSummary(result.task_sync)}`);
-  });
+  $("#generateWeeklyBtn")?.addEventListener("click", generateWeeklyReports);
   $("#saveRulesBtn")?.addEventListener("click", async () => {
     state.rules = collectRules();
     await api.saveRules(operatorPayload({ rules: state.rules }));

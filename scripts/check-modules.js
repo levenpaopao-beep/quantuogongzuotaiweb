@@ -122,6 +122,7 @@ const modules = [
     checks: [
       ["有报表页面入口", hasPage("reportsPage", "reports")],
       ["有报表卡片和输出记录", html.includes("reportCards") && html.includes("outputRows")],
+      ["有报表生成前体检", html.includes("reportReadinessBar") && renderer.includes("renderReportReadiness") && renderer.includes("generateWeeklyReports")],
       ["有生成报表接口", hasApi("generateReport", "api:generate-report") && hasApi("generateWeekly", "api:generate-weekly")],
       ["CLI 返回报表配置", reports && typeof reports === "object" && Object.keys(reports).length > 0],
     ],
