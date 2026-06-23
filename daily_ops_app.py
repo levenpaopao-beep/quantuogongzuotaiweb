@@ -1701,29 +1701,30 @@ def operation_task_store():
 
 def assign_existing_unassigned_tasks(assignments, actor="管理员"):
     store = operation_task_store()
-    payload = store.load()
-    timestamp = now_text()
-    assigned = 0
-    for task in payload.get("tasks", []):
-        if norm(task.get("owner")):
-            continue
-        owner = owner_from_assignments(assignments, task.get("platform", ""), task.get("store", ""))
-        if not owner:
-            continue
-        task["owner"] = owner
-        task["updated_at"] = timestamp
-        task.setdefault("history", []).append(daily_ops_tasks.history_entry(
-            task,
-            norm(actor) or "管理员",
-            "自动指派",
-            f"按店铺负责人配置指派给 {owner}",
-            "保存店铺负责人配置时自动补齐",
-            time=timestamp,
-        ))
-        assigned += 1
-    if assigned:
-        store.save(payload)
-    return assigned
+    with store._lock:
+        payload = store.load()
+        timestamp = now_text()
+        assigned = 0
+        for task in payload.get("tasks", []):
+            if norm(task.get("owner")):
+                continue
+            owner = owner_from_assignments(assignments, task.get("platform", ""), task.get("store", ""))
+            if not owner:
+                continue
+            task["owner"] = owner
+            task["updated_at"] = timestamp
+            task.setdefault("history", []).append(daily_ops_tasks.history_entry(
+                task,
+                norm(actor) or "管理员",
+                "自动指派",
+                f"按店铺负责人配置指派给 {owner}",
+                "保存店铺负责人配置时自动补齐",
+                time=timestamp,
+            ))
+            assigned += 1
+        if assigned:
+            store.save(payload)
+        return assigned
 
 
 def apply_store_owner_mapping(rows):

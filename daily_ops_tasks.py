@@ -1,5 +1,7 @@
 import hashlib
 import json
+import os
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -78,6 +80,8 @@ TASK_HISTORY_COLUMNS = [
 ]
 
 TASK_UPDATE_LABELS = dict(TASK_COLUMNS)
+TASK_STORE_LOCKS = {}
+TASK_STORE_LOCKS_GUARD = threading.Lock()
 
 
 def now_text():
@@ -88,6 +92,14 @@ def norm(value):
     if value is None:
         return ""
     return str(value).strip()
+
+
+def task_store_lock(path):
+    key = str(Path(path).resolve())
+    with TASK_STORE_LOCKS_GUARD:
+        if key not in TASK_STORE_LOCKS:
+            TASK_STORE_LOCKS[key] = threading.RLock()
+        return TASK_STORE_LOCKS[key]
 
 
 def parse_time(value):
@@ -245,22 +257,27 @@ def history_entry(task, actor, event, action, remark="", time="", proof=""):
 class OperationTaskStore:
     def __init__(self, path):
         self.path = Path(path)
+        self._lock = task_store_lock(self.path)
 
     def load(self):
-        if not self.path.exists():
-            return {"tasks": []}
-        try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return {"tasks": []}
-        if not isinstance(payload, dict):
-            return {"tasks": []}
-        tasks = payload.get("tasks")
-        return {"tasks": tasks if isinstance(tasks, list) else []}
+        with self._lock:
+            if not self.path.exists():
+                return {"tasks": []}
+            try:
+                payload = json.loads(self.path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                return {"tasks": []}
+            if not isinstance(payload, dict):
+                return {"tasks": []}
+            tasks = payload.get("tasks")
+            return {"tasks": tasks if isinstance(tasks, list) else []}
 
     def save(self, payload):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_name(f".{self.path.name}.{threading.get_ident()}.tmp")
+            tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(tmp, self.path)
 
     def list_tasks(self, role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", reworked="", open_only="", now=None):
         role = norm(role) or "admin"
@@ -663,6 +680,24 @@ class OperationTaskStore:
         style_task_sheet(criteria_ws)
         workbook.save(output_path)
         return output_path
+
+
+def locked_task_store_method(method):
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return wrapper
+
+
+for _method_name in [
+    "upsert_generated_tasks",
+    "assign_task",
+    "submit_owner_action",
+    "review_task",
+    "review_tasks",
+    "mark_done",
+]:
+    setattr(OperationTaskStore, _method_name, locked_task_store_method(getattr(OperationTaskStore, _method_name)))
 
 
 def style_task_sheet(ws):

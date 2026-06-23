@@ -3,6 +3,7 @@ import os
 import json
 import io
 import zipfile
+import threading
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -231,6 +232,50 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual([row["status"] for row in open_rows], [daily_ops_tasks.STATUS_APPROVED])
             self.assertEqual(open_rows[0]["merchant_code"], "B")
             self.assertEqual(store.summary(open_rows)["total"], 1)
+
+    def test_concurrent_owner_submissions_do_not_overwrite_each_other(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            store.upsert_generated_tasks([
+                {"platform": "Temu", "task_type": "爆旺冲突", "store": "7", "owner": "小琴", "merchant_code": "A", "source_report": "r", "source_row": 1},
+                {"platform": "Temu", "task_type": "低分预警", "store": "8", "owner": "洁琳", "merchant_code": "B", "source_report": "r", "source_row": 2},
+            ])
+            tasks = {row["owner"]: row["id"] for row in store.list_tasks()}
+            original_load = store.load
+            barrier = threading.Barrier(2)
+
+            def racing_load():
+                payload = original_load()
+                if threading.current_thread() is not threading.main_thread():
+                    try:
+                        barrier.wait(timeout=0.2)
+                    except threading.BrokenBarrierError:
+                        pass
+                return payload
+
+            store.load = racing_load
+            errors = []
+
+            def submit(owner, task_id):
+                try:
+                    store.submit_owner_action(task_id, actor=owner, action="已处理", remark=owner)
+                except Exception as exc:
+                    errors.append(exc)
+
+            threads = [
+                threading.Thread(target=submit, args=("小琴", tasks["小琴"])),
+                threading.Thread(target=submit, args=("洁琳", tasks["洁琳"])),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+            self.assertEqual(errors, [])
+            rows = {row["owner"]: row for row in store.list_tasks()}
+            self.assertEqual(rows["小琴"]["status"], daily_ops_tasks.STATUS_PENDING_REVIEW)
+            self.assertEqual(rows["洁琳"]["status"], daily_ops_tasks.STATUS_PENDING_REVIEW)
 
     def test_tasks_expose_next_handler_and_action_for_workflow_routing(self):
         with TemporaryDirectory() as tmp:
