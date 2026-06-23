@@ -595,11 +595,12 @@ class OperationTaskStore:
             raise ValueError("只有待管理员审核的任务可以审核")
         if decision not in {"通过", "驳回"}:
             raise ValueError("管理员审核结果只能是通过或驳回")
-        if decision == "驳回" and not norm(remark):
-            raise ValueError("驳回任务必须填写原因")
+        remark = norm(remark)
+        if not remark:
+            raise ValueError("管理员审核必须填写说明")
         timestamp = now_text()
         task["admin_decision"] = decision
-        task["admin_remark"] = norm(remark)
+        task["admin_remark"] = remark
         task["admin_reviewed_by"] = norm(admin)
         task["admin_reviewed_at"] = timestamp
         task["status"] = STATUS_APPROVED if decision == "通过" else STATUS_REJECTED
@@ -621,8 +622,9 @@ class OperationTaskStore:
         decision = norm(decision)
         if decision not in {"通过", "驳回"}:
             raise ValueError("管理员审核结果只能是通过或驳回")
-        if decision == "驳回" and not norm(remark):
-            raise ValueError("批量驳回任务必须填写原因")
+        remark = norm(remark)
+        if not remark:
+            raise ValueError("批量审核必须填写说明")
         payload = self.load()
         by_id = {row.get("id"): row for row in payload["tasks"]}
         tasks = []

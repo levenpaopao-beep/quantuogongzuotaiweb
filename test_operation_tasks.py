@@ -481,7 +481,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             store.submit_owner_action(xiaoqin_rows[1]["id"], actor="小琴", action="已处理", remark="后台已处理")
             store.review_task(xiaoqin_rows[0]["id"], admin="管理员", decision="驳回", remark="缺截图")
             store.submit_owner_action(xiaoqin_rows[0]["id"], actor="小琴", action="已补图", remark="已补充截图")
-            store.review_task(xiaoqin_rows[0]["id"], admin="管理员", decision="通过", remark="")
+            store.review_task(xiaoqin_rows[0]["id"], admin="管理员", decision="通过", remark="复核通过")
 
             summary = store.summary()
             self.assertEqual(summary["owner_status"]["小琴"]["total"], 2)
@@ -1087,6 +1087,8 @@ class OperationTaskStoreTest(unittest.TestCase):
             submitted = store.submit_owner_action(task["id"], actor="小琴", action="已下架", remark="后台已处理")
             with self.assertRaises(ValueError):
                 store.review_task(submitted["id"], admin="管理员", decision="驳回", remark="")
+            with self.assertRaises(ValueError):
+                store.review_task(submitted["id"], admin="管理员", decision="通过", remark="")
             reviewed = store.review_task(submitted["id"], admin="管理员", decision="通过", remark="同意")
             self.assertEqual(reviewed["status"], daily_ops_tasks.STATUS_APPROVED)
 
@@ -1619,7 +1621,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("platform", html)
         self.assertIn("先指派负责人", html)
         self.assertIn("驳回原因", html)
-        self.assertIn("必须填写原因", html)
+        self.assertIn("管理员审核必须填写说明", html)
+        self.assertIn("批量审核必须填写说明", html)
         self.assertIn("备注或处理凭证至少填一个", html)
         self.assertIn("完成确认说明", html)
         self.assertIn("标记完成必须填写确认说明", html)
@@ -1705,7 +1708,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn('platform: $("#taskPlatform")?.value || ""', js)
         self.assertIn("先指派负责人", js)
         self.assertIn("驳回原因", js)
-        self.assertIn("必须填写原因", js)
+        self.assertIn("管理员审核必须填写说明", js)
+        self.assertIn("批量审核必须填写说明", js)
         self.assertIn("备注或处理凭证至少填一个", js)
         self.assertIn("完成确认说明", js)
         self.assertIn("标记完成必须填写确认说明", js)
@@ -1881,14 +1885,14 @@ class OperationTaskStoreTest(unittest.TestCase):
                 status, _content_type, body = daily_ops_app.handle_tasks_api(
                     "POST_REVIEW",
                     owner_headers,
-                    {"id": owner_task["id"], "decision": "通过", "remark": ""},
+                    {"id": owner_task["id"], "decision": "通过", "remark": "复核通过"},
                 )
                 self.assertEqual(status, 403)
 
                 status, _content_type, body = daily_ops_app.handle_tasks_api(
                     "POST_REVIEW",
                     admin_headers,
-                    {"id": owner_task["id"], "decision": "通过", "remark": ""},
+                    {"id": owner_task["id"], "decision": "通过", "remark": "复核通过"},
                 )
                 self.assertEqual(status, 200)
 

@@ -2942,8 +2942,8 @@ async function assignTask(id){
 async function reviewTask(id, decision){
   try {
     const admin = document.getElementById('taskUser').value.trim() || prompt('管理员') || '管理员';
-    const remark = prompt(decision === '驳回' ? '管理员审核：驳回原因（必填）' : `管理员审核：${decision}`) || '';
-    if(decision === '驳回' && !remark.trim()){ document.getElementById('taskStatusLine').textContent = '驳回任务必须填写原因'; return; }
+    const remark = prompt(decision === '驳回' ? '管理员审核：驳回原因（必填）' : `管理员审核：${decision}说明（必填）`) || '';
+    if(!remark.trim()){ document.getElementById('taskStatusLine').textContent = '管理员审核必须填写说明'; return; }
     await api('/api/tasks/review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, admin, decision, remark})});
     await loadTasks();
   } catch(e){ showTaskError(e); }
@@ -2952,8 +2952,8 @@ async function batchReviewTasks(decision){
   try {
     const ids = (taskState.tasks || []).filter(task => task.status === '待管理员审核').map(task => task.id);
     if(!ids.length){ document.getElementById('taskStatusLine').textContent = '当前筛选没有待管理员审核任务'; return; }
-    const remark = prompt(decision === '驳回' ? '批量驳回原因（必填）' : `批量${decision}备注`) || '';
-    if(decision === '驳回' && !remark.trim()){ document.getElementById('taskStatusLine').textContent = '批量驳回任务必须填写原因'; return; }
+    const remark = prompt(decision === '驳回' ? '批量驳回原因（必填）' : `批量${decision}说明（必填）`) || '';
+    if(!remark.trim()){ document.getElementById('taskStatusLine').textContent = '批量审核必须填写说明'; return; }
     const res = await api('/api/tasks/batch-review', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids, decision, remark})});
     document.getElementById('taskStatusLine').textContent = `已批量${decision} ${res.count || 0} 条任务`;
     await loadTasks(false);

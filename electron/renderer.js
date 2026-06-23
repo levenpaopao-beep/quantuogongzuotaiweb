@@ -493,9 +493,9 @@ async function assignTask(id) {
 async function reviewTask(id, decision) {
   try {
     const admin = $("#taskUser")?.value.trim() || window.prompt("管理员") || "管理员";
-    const remark = window.prompt(decision === "驳回" ? "管理员审核：驳回原因（必填）" : `管理员审核：${decision}`) || "";
-    if (decision === "驳回" && !remark.trim()) {
-      showToast("驳回任务必须填写原因");
+    const remark = window.prompt(decision === "驳回" ? "管理员审核：驳回原因（必填）" : `管理员审核：${decision}说明（必填）`) || "";
+    if (!remark.trim()) {
+      showToast("管理员审核必须填写说明");
       return;
     }
     await api.reviewTask(operatorPayload({ id, admin, decision, remark }));
@@ -514,9 +514,9 @@ async function batchReviewTasks(decision) {
       showToast("当前筛选没有待管理员审核任务");
       return;
     }
-    const remark = window.prompt(decision === "驳回" ? "批量驳回原因（必填）" : `批量${decision}备注`) || "";
-    if (decision === "驳回" && !remark.trim()) {
-      showToast("批量驳回任务必须填写原因");
+    const remark = window.prompt(decision === "驳回" ? "批量驳回原因（必填）" : `批量${decision}说明（必填）`) || "";
+    if (!remark.trim()) {
+      showToast("批量审核必须填写说明");
       return;
     }
     const result = await api.batchReviewTasks(operatorPayload({ ids, admin, decision, remark }));
