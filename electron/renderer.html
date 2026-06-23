@@ -147,6 +147,17 @@
           <div class="module-grid">
             <section class="simple-panel soft-panel">
               <h2>今日填报清单</h2>
+              <div class="sales-focus-bar" id="salesFocusBar">
+                <div>
+                  <strong id="salesFocusTitle">今天先补未填</strong>
+                  <span id="salesFocusHint">按店铺逐行填写，回车即可提交当前行。</span>
+                </div>
+                <div class="sales-focus-tabs" role="group" aria-label="销量填报筛选">
+                  <button class="segment active" data-sales-focus="missing" type="button">未填</button>
+                  <button class="segment" data-sales-focus="abnormal" type="button">异常</button>
+                  <button class="segment" data-sales-focus="all" type="button">全部</button>
+                </div>
+              </div>
               <div class="sales-tools">
                 <input id="salesDate" type="date" />
                 <button class="ghost-button" id="loadSalesBtn">读取日期</button>

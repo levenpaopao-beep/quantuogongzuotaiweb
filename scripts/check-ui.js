@@ -121,6 +121,23 @@ if (!todayWorkflowBody.includes("data-empty-page") || !todayWorkflowBody.include
     "流程卡片里的操作按钮必须能跳到对应模块，并带任务筛选状态。",
   ]);
 }
+if (!html.includes('id="salesFocusBar"') || !renderer.includes("function setSalesFocus(") || !renderer.includes("salesFocusEntries")) {
+  fail("销量页缺少每日高频填报筛选", [
+    "店长每天进入销量页时需要优先看到未填店铺，并能切换异常和全部，避免在长列表里找。",
+  ]);
+}
+const applyRouteIntentBody = functionBody(renderer, "applyRouteIntent");
+if (!applyRouteIntentBody.includes("route.salesFocus") || !todayWorkflowBody.includes('data-sales-focus="missing"')) {
+  fail("今日工作台未直达未填销量", [
+    "首页“去填写/看销量”应把销量页切到未填口径，符合每天先补未填的主流程。",
+  ]);
+}
+const renderSalesBody = functionBody(renderer, "renderSalesManagement");
+if (!renderSalesBody.includes('event.key === "Enter"') || !renderSalesBody.includes("submitSalesEntry(Number(")) {
+  fail("销量填报缺少回车提交", [
+    "每日填报是高频动作，输入销量后回车应直接提交当前店铺。",
+  ]);
+}
 if (/radial-gradient\(/.test(fs.readFileSync(path.join(ROOT, "electron", "renderer.css"), "utf8"))) {
   fail("界面背景仍有装饰光斑", [
     "工作台是高频运营工具，背景应保持清爽，不使用离散渐变光斑作为装饰。",

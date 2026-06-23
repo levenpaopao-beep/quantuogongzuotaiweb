@@ -507,6 +507,36 @@ label { color: var(--muted); font-size: 12px; }
   font-size: 12px;
 }
 .sales-entry-done { background: #f6fff9; }
+.sales-focus-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #dce5f6;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255,255,255,.94), rgba(240,252,255,.9));
+}
+.sales-focus-bar strong { display: block; font-size: 15px; }
+.sales-focus-bar span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.sales-focus-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.sales-focus-tabs .segment {
+  min-width: 54px;
+  height: 32px;
+  padding: 0 10px;
+}
 .sales-tools {
   display: flex;
   align-items: center;
@@ -1212,6 +1242,8 @@ label { color: var(--muted); font-size: 12px; }
   .workflow-head p { text-align: left; }
   .workflow-steps { grid-template-columns: 1fr; }
   .guide-steps { grid-template-columns: 1fr; }
+  .sales-focus-bar { grid-template-columns: 1fr; }
+  .sales-focus-tabs { justify-content: flex-start; }
   .sales-entry { grid-template-columns: 1fr; }
   .platform-sales-row { grid-template-columns: 1fr 1fr; }
   .action-empty { align-items: flex-start; flex-direction: column; }

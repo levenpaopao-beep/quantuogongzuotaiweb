@@ -88,6 +88,7 @@ const modules = [
     checks: [
       ["有销量页面入口", hasPage("salesPage", "sales")],
       ["有今日清单和提交按钮", html.includes("salesEntryList") && renderer.includes("submitSalesEntry")],
+      ["有未填/异常/全部快速筛选", html.includes("salesFocusBar") && renderer.includes("setSalesFocus") && renderer.includes("salesFocusEntries")],
       ["有导出销量接口", hasButton("exportSalesBtn") && hasApi("exportSales", "api:export-sales")],
       ["CLI 返回销量结构", Array.isArray(sales.entries) && sales.summary && Array.isArray(sales.platforms)],
       ["差异提醒结构可用", Array.isArray(salesCompare.rows) && salesCompare.summary],

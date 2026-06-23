@@ -15,6 +15,7 @@ const state = {
   reportTasks: {},
   storeOwners: [],
   sales: null,
+  salesFocus: "missing",
   salesCompare: null,
   importMatrix: null,
   taskSuppressions: [],
@@ -819,8 +820,8 @@ function setText(selector, text) {
   if (element) element.textContent = text;
 }
 
-function actionEmpty({ title, body, primary, page, secondary }) {
-  const primaryButton = primary && page ? `<button class="primary-button" data-empty-page="${page}">${primary}</button>` : "";
+function actionEmpty({ title, body, primary, page, secondary, attrs = "" }) {
+  const primaryButton = primary && page ? `<button class="primary-button" data-empty-page="${page}" ${attrs}>${primary}</button>` : "";
   const secondaryText = secondary ? `<small>${secondary}</small>` : "";
   return `
     <div class="action-empty">
@@ -850,6 +851,7 @@ function applyRouteIntent(route = {}) {
   if (route.taskStatus && $("#taskStatus")) $("#taskStatus").value = route.taskStatus;
   if (route.taskNextHandler && $("#taskNextHandler")) $("#taskNextHandler").value = route.taskNextHandler;
   if (route.taskOpenOnly && $("#taskOpenOnly")) $("#taskOpenOnly").checked = route.taskOpenOnly === "true";
+  if (route.salesFocus) setSalesFocus(route.salesFocus, { scroll: route.emptyPage === "sales" });
   if (route.emptyPage === "tasks" && (route.taskStatus || route.taskNextHandler || route.taskOpenOnly)) {
     loadTasks();
   }
@@ -864,12 +866,45 @@ function salesDateValue() {
   return input?.value || todayDateText();
 }
 
+function setSalesFocus(focus = "missing", options = {}) {
+  const allowed = ["missing", "abnormal", "all"];
+  state.salesFocus = allowed.includes(focus) ? focus : "missing";
+  renderSalesManagement();
+  if (options.scroll) {
+    setTimeout(() => document.querySelector("#salesEntryList")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+  }
+}
+
+function salesFocusEntries(entries) {
+  if (state.salesFocus === "abnormal") return entries.filter((item) => item.abnormal);
+  if (state.salesFocus === "all") return entries;
+  return entries.filter((item) => !item.submitted);
+}
+
+function renderSalesFocus(summary = {}, entries = []) {
+  const title = $("#salesFocusTitle");
+  const hint = $("#salesFocusHint");
+  const visible = salesFocusEntries(entries);
+  if (title) {
+    const label = state.salesFocus === "abnormal" ? "只看异常波动" : state.salesFocus === "all" ? "查看全部店铺" : "今天先补未填";
+    title.textContent = `${label} · ${visible.length} 条`;
+  }
+  if (hint) {
+    hint.textContent = `应填 ${summary.required || 0}，已填 ${summary.submitted || 0}，未填 ${summary.missing || 0}，异常 ${summary.abnormal || 0}。输入销量后按回车可提交当前行。`;
+  }
+  document.querySelectorAll(".sales-focus-tabs [data-sales-focus]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.salesFocus === state.salesFocus);
+  });
+}
+
 function renderSalesManagement() {
   const payload = state.sales || {};
   const entries = payload.entries || [];
   const list = $("#salesEntryList");
   const ledger = $("#salesLedgerRows");
   const summary = payload.summary || {};
+  const visibleEntries = salesFocusEntries(entries);
+  renderSalesFocus(summary, entries);
   if ($("#salesStatusLine")) {
     $("#salesStatusLine").textContent = `应填 ${summary.required || 0} 个店铺，已填 ${summary.submitted || 0}，未填 ${summary.missing || 0}，异常 ${summary.abnormal || 0}`;
   }
@@ -883,16 +918,34 @@ function renderSalesManagement() {
       });
       bindEmptyActions(list);
     } else {
-      list.innerHTML = entries.map((item, index) => `
+      list.innerHTML = visibleEntries.map((item) => {
+        const index = entries.indexOf(item);
+        return `
         <div class="sales-entry ${item.submitted ? "sales-entry-done" : ""}">
           <span>${item.platform} · ${item.store}<small>${item.owner || "未分配"}</small></span>
           <input data-sales-index="${index}" inputmode="numeric" value="${item.sales || ""}" placeholder="销售件数" />
           <input data-remark-index="${index}" value="${item.remark || ""}" placeholder="备注，可选" />
           <button class="primary-button" data-action="submit-sales" data-index="${index}">${item.submitted ? "更新" : "提交"}</button>
         </div>
-      `).join("");
+      `;
+      }).join("") || actionEmpty({
+        title: state.salesFocus === "abnormal" ? "当前没有异常波动" : "当前没有未填店铺",
+        body: state.salesFocus === "abnormal" ? "异常波动只提醒不拦截；需要复核时切到“全部”查看店铺。" : "今天的销量清单已经填完，可以回到今日工作台处理任务包。",
+        primary: state.salesFocus === "missing" ? "处理任务包" : "查看全部",
+        page: state.salesFocus === "missing" ? "tasks" : "sales",
+        attrs: state.salesFocus === "missing" ? 'data-task-status="待店长处理" data-task-open-only="true"' : 'data-sales-focus="all"',
+      });
+      bindEmptyActions(list);
       list.querySelectorAll('[data-action="submit-sales"]').forEach((button) => {
         button.addEventListener("click", () => submitSalesEntry(Number(button.dataset.index)));
+      });
+      list.querySelectorAll("[data-sales-index], [data-remark-index]").forEach((input) => {
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            submitSalesEntry(Number(input.dataset.salesIndex || input.dataset.remarkIndex));
+          }
+        });
       });
     }
   }
@@ -1088,12 +1141,12 @@ function renderTodayDashboard() {
   const salesActions = $("#todaySalesActions");
   if (salesActions) {
     const actions = ownerMode ? [
-      ["第 1 步：填销量", "打开“销量管理”，把自己负责店铺的今日销量填完。", "sales", "去填写", ""],
+      ["第 1 步：填销量", "打开“销量管理”，把自己负责店铺的今日销量填完。", "sales", "去填写", 'data-sales-focus="missing"'],
       ["第 2 步：看异常", "如果波动很大，补一句原因，系统只提醒不拦截。", "reports", "看提醒", ""],
       ["第 3 步：处理任务包", "销量完成后进入“商品任务”，按整包提交处理结果。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
     ] : [
-      ["管理员今日动作", "查看未填、异常波动、补填申请，并在月结前锁定口径。", "sales", "看销量", ""],
-      ["提醒店长", "未填或异常店铺会集中显示，方便按负责人跟进。", "sales", "去跟进", ""],
+      ["管理员今日动作", "查看未填、异常波动、补填申请，并在月结前锁定口径。", "sales", "看销量", 'data-sales-focus="missing"'],
+      ["提醒店长", "未填或异常店铺会集中显示，方便按负责人跟进。", "sales", "去跟进", 'data-sales-focus="missing"'],
     ];
     salesActions.innerHTML = actions.map(([title, text, page, label, attrs]) => `
       <div class="action-route">
@@ -1152,12 +1205,12 @@ function renderTodayWorkflow() {
       : "每天盯销量和异常；每周看导入缺口、推送任务包，最后确认归档。";
   }
   const steps = ownerMode ? [
-    ["01", "填写今日销量", "进入销量管理，只填写自己负责店铺；波动大时补原因。", "sales", "去填销量", ""],
+    ["01", "填写今日销量", "进入销量管理，只填写自己负责店铺；波动大时补原因。", "sales", "去填销量", 'data-sales-focus="missing"'],
     ["02", "处理我的任务包", "商品任务按整包提交，备注或凭证至少填一个。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
     ["03", "补齐每周导入", "数据导入页只看自己店铺缺什么，补完后管理员能看到。", "imports", "看缺口", 'data-focus="import-matrix"'],
     ["04", "看经营结果", "回到经营报表查看自己店铺趋势和销量差异提醒。", "reports", "看报表", ""],
   ] : [
-    ["01", "检查销量进度", "先看未填店铺和异常波动，提醒负责人补齐原因。", "sales", "看销量", ""],
+    ["01", "检查销量进度", "先看未填店铺和异常波动，提醒负责人补齐原因。", "sales", "看销量", 'data-sales-focus="missing"'],
     ["02", "检查导入缺口", "按平台、店铺、数据类型看缺失矩阵，缺哪个店铺一眼定位。", "imports", "看矩阵", 'data-focus="import-matrix"'],
     ["03", "推送商品任务", "按任务包推送给店长；任务多时可下载表格给店长处理。", "tasks", "推送任务", 'data-task-status="待推送" data-task-open-only="true"'],
     ["04", "确认并归档", "店长整包处理后，管理员只需确认打勾，任务从待办消失。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
@@ -2234,10 +2287,14 @@ function bindEvents() {
     showToast("销量已刷新");
   });
   $("#loadSalesHeaderBtn")?.addEventListener("click", async () => {
+    state.salesFocus = "missing";
     await loadSales(false);
     await loadSalesCompare(false);
     document.querySelector("#salesEntryList")?.scrollIntoView({ behavior: "smooth", block: "start" });
     showToast("今日销量清单已刷新");
+  });
+  document.querySelectorAll(".sales-focus-tabs [data-sales-focus]").forEach((button) => {
+    button.addEventListener("click", () => setSalesFocus(button.dataset.salesFocus));
   });
   $("#loadSalesCompareBtn")?.addEventListener("click", () => loadSalesCompare(true));
   $("#focusImportMatrixBtn")?.addEventListener("click", () => {
