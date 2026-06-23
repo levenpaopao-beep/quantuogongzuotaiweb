@@ -81,6 +81,7 @@ const modules = [
       ["有首页入口和页面", hasPage("todayPage", "today")],
       ["有角色化工作流导航", html.includes("todayWorkflowSteps") && renderer.includes("renderTodayWorkflow")],
       ["有开始使用清单", html.includes("todayGuideSteps") && renderer.includes("renderTodayGuide")],
+      ["角色入口有负责人候选校验", html.includes("operatorOwnerOptions") && renderer.includes("validateOperatorDraft")],
     ],
   },
   {

@@ -202,6 +202,22 @@ if (!renderer.includes("setTaskQuickFilters") || !renderer.includes("renderTaskW
     "点击顶部按钮应能切换任务筛选，勾选任务后已选数量应立即刷新。",
   ]);
 }
+if (!html.includes('list="operatorOwnerOptions"') || !html.includes('id="operatorOwnerOptions"')) {
+  fail("角色入口缺少负责人下拉建议", [
+    "店长视角不能只靠手输姓名，否则输错后会看不到自己的销量、导入和任务。",
+  ]);
+}
+if (!renderer.includes("function collectOwnerOptions(") || !renderer.includes("function validateOperatorDraft(")) {
+  fail("角色入口缺少负责人候选和姓名校验", [
+    "负责人候选应从可见销量、导入、任务和管理员基础资料里提取，切换店长前要校验姓名。",
+  ]);
+}
+const saveOperatorBody = functionBody(renderer, "saveOperator");
+if (!saveOperatorBody.includes("validateOperatorDraft(true)")) {
+  fail("切换店长视角未校验负责人姓名", [
+    "保存角色前必须检查店长姓名是否为空或不在候选负责人里。",
+  ]);
+}
 
 const renderStoreOwnersBody = functionBody(renderer, "renderStoreOwners");
 const validateStoreOwnerRowsBody = functionBody(renderer, "validateStoreOwnerRows");

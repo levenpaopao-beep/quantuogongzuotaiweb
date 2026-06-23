@@ -22,6 +22,7 @@ const state = {
   taskSuppressions: [],
   taskDialog: null,
   customPlatforms: [],
+  ownerOptions: [],
 };
 
 const BUILT_IN_PLATFORMS = ["Temu", "Shein", "速卖通", "TK", "Ozon"];
@@ -36,6 +37,62 @@ function currentOperator() {
   } catch (_error) {
     return {};
   }
+}
+
+function collectOwnerOptions() {
+  const names = new Set();
+  (state.storeOwners || []).forEach((item) => {
+    if (item.owner) names.add(item.owner);
+  });
+  (state.sales?.entries || []).forEach((item) => {
+    if (item.owner) names.add(item.owner);
+  });
+  (state.importMatrix?.rows || []).forEach((item) => {
+    if (item.owner) names.add(item.owner);
+  });
+  [state.taskOverview?.owner_status, state.taskSummary?.owner_status].forEach((ownerStatus) => {
+    Object.keys(ownerStatus || {}).forEach((owner) => {
+      if (owner && owner !== "未分配") names.add(owner);
+    });
+  });
+  return [...names].sort((a, b) => String(a).localeCompare(String(b), "zh-Hans-CN"));
+}
+
+function renderOperatorOwnerOptions() {
+  state.ownerOptions = collectOwnerOptions();
+  const list = $("#operatorOwnerOptions");
+  if (list) {
+    list.innerHTML = state.ownerOptions.map((owner) => `<option value="${esc(owner)}"></option>`).join("");
+  }
+  validateOperatorDraft(false);
+}
+
+function validateOperatorDraft(showMessage = false) {
+  const draft = selectedOperatorDraft();
+  const input = $("#operatorUser");
+  if (draft.role !== "owner") {
+    input?.classList.remove("field-error");
+    if ($("#operatorHint")) $("#operatorHint").textContent = draft.user ? `管理员 · ${draft.user}` : "管理员 · 全部数据";
+    return true;
+  }
+  if (!draft.user) {
+    input?.classList.add("field-error");
+    if ($("#operatorHint")) $("#operatorHint").textContent = "店长视角需填写姓名";
+    if (showMessage) showToast("输入店长姓名后再切换视角");
+    return false;
+  }
+  const hasOptions = state.ownerOptions.length > 0;
+  const matched = !hasOptions || state.ownerOptions.includes(draft.user);
+  input?.classList.toggle("field-error", !matched);
+  if ($("#operatorHint")) {
+    $("#operatorHint").textContent = matched
+      ? `店长 · ${draft.user} · 只看自己负责的数据`
+      : `未找到负责人：${draft.user}`;
+  }
+  if (!matched && showMessage) {
+    showToast("这个姓名不在负责人配置里，请从下拉建议选择或让管理员维护基础资料");
+  }
+  return matched;
 }
 
 function applyOperatorToTasks() {
@@ -59,6 +116,7 @@ function applyOperatorToTasks() {
   if (roleText) roleText.textContent = role === "admin" ? "查看全部平台和店铺" : "只看自己负责的数据";
   if (avatar) avatar.textContent = role === "admin" ? "AD" : "店";
   applyRoleVisibility(role);
+  renderOperatorOwnerOptions();
   renderRoleCopy();
 }
 
@@ -82,11 +140,8 @@ function saveOperator() {
     role: $("#operatorRole")?.value || "admin",
     user: $("#operatorUser")?.value.trim() || "",
   };
-  if (operator.role === "owner" && !operator.user) {
+  if (operator.role === "owner" && !validateOperatorDraft(true)) {
     const input = $("#operatorUser");
-    input?.classList.add("field-error");
-    if ($("#operatorHint")) $("#operatorHint").textContent = "先填写店长姓名";
-    showToast("请先输入店长姓名，再切换店长视角");
     input?.focus();
     return;
   }
@@ -532,6 +587,7 @@ function renderTaskSummary() {
   wrap.innerHTML = cards.map(([label, value]) => `<div class="task-kpi"><span>${label}</span><strong>${value}</strong></div>`).join("");
   renderAdminTaskQueue();
   renderOwnerTaskSummary();
+  renderOperatorOwnerOptions();
 }
 
 function renderAdminTaskQueue() {
@@ -1226,6 +1282,7 @@ async function loadSales(showToastOnDone = false) {
   try {
     state.sales = await api.sales(operatorPayload({ date: salesDateValue() }));
     renderSalesManagement();
+    renderOperatorOwnerOptions();
     renderTodayDashboard();
     if (showToastOnDone) showToast("销量已刷新");
   } catch (error) {
@@ -1249,6 +1306,7 @@ async function loadImportMatrix(showToastOnDone = false) {
   try {
     state.importMatrix = await api.importMatrix(operatorPayload());
     renderImportMatrix();
+    renderOperatorOwnerOptions();
     if (showToastOnDone) showToast("缺失矩阵已刷新");
   } catch (error) {
     showToast(error.message || "读取缺失矩阵失败");
@@ -1939,6 +1997,7 @@ function renderStoreOwners(assignments = state.storeOwners) {
     const dailyCount = items.filter((item) => item.enabled !== false && item.daily_required !== false).length;
     line.textContent = `已读取 ${items.length} 条店铺配置，其中 ${dailyCount} 条进入每日销量填报`;
   }
+  renderOperatorOwnerOptions();
 }
 
 function storeOwnerPlatformOptions(assignments = state.storeOwners) {
@@ -2031,6 +2090,7 @@ async function loadStoreOwners() {
   const operator = currentOperator();
   if (operator.role === "owner") {
     state.storeOwners = [];
+    renderOperatorOwnerOptions();
     const input = $("#storeOwnerMapText");
     const rows = $("#storeOwnerRows");
     const line = $("#storeOwnerStatus");
@@ -2052,6 +2112,7 @@ async function loadStoreOwners() {
   state.storeOwners = result.assignments || [];
   state.customPlatforms = storeOwnerPlatformOptions(state.storeOwners).filter((platform) => !BUILT_IN_PLATFORMS.includes(platform));
   renderStoreOwners();
+  renderOperatorOwnerOptions();
 }
 
 async function saveStoreOwners() {
@@ -2502,18 +2563,10 @@ function bindEvents() {
   $("#suppressTasksBtn")?.addEventListener("click", () => suppressTasks());
   $("#saveOperatorBtn")?.addEventListener("click", saveOperator);
   $("#operatorRole")?.addEventListener("change", () => {
-    const draft = selectedOperatorDraft();
-    if (draft.role === "owner" && !draft.user) {
-      $("#operatorUser")?.classList.add("field-error");
-      if ($("#operatorHint")) $("#operatorHint").textContent = "店长视角需填写姓名";
-      showToast("输入店长姓名后再切换视角");
-      $("#operatorUser")?.focus();
-      return;
-    }
-    $("#operatorUser")?.classList.remove("field-error");
+    if (!validateOperatorDraft(true)) $("#operatorUser")?.focus();
   });
   $("#operatorUser")?.addEventListener("input", () => {
-    $("#operatorUser")?.classList.remove("field-error");
+    validateOperatorDraft(false);
   });
   $("#generateWeeklyBtn")?.addEventListener("click", async () => {
     showToast("开始生成所有就绪报表");

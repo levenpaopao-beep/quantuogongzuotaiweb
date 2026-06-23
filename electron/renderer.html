@@ -45,7 +45,8 @@
           <div class="top-actions">
             <div class="global-operator">
               <select id="operatorRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
-              <input id="operatorUser" placeholder="当前操作人" />
+              <input id="operatorUser" placeholder="当前操作人" list="operatorOwnerOptions" />
+              <datalist id="operatorOwnerOptions"></datalist>
               <button class="ghost-button" id="saveOperatorBtn">切换视角</button>
               <span id="operatorHint">按管理员查看全部数据</span>
             </div>
