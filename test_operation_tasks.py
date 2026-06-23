@@ -1525,6 +1525,8 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("renderOwnerTaskSummary", html)
         self.assertIn("管理员待办队列", html)
         self.assertIn("renderAdminTaskQueue", html)
+        self.assertIn("applyAdminQueueFilter", html)
+        self.assertIn("data-queue-index", html)
         self.assertIn("admin_queue", html)
         self.assertIn("owner_status", html)
         self.assertIn("超时未处理", html)
@@ -1565,6 +1567,8 @@ class OperationTaskStoreTest(unittest.TestCase):
 
         self.assertIn("adminTaskQueue", html)
         self.assertIn("renderAdminTaskQueue", js)
+        self.assertIn("applyAdminQueueFilter", js)
+        self.assertIn("data-queue-index", js)
         self.assertIn("admin_queue", js)
         self.assertIn("管理员待办队列", js)
 

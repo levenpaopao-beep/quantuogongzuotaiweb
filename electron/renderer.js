@@ -269,7 +269,39 @@ function renderAdminTaskQueue() {
     wrap.innerHTML = "";
     return;
   }
-  wrap.innerHTML = rows.map((item) => `<div class="task-kpi"><span>管理员待办队列</span><strong>${item.count || 0}</strong><p>${item.action || ""}<br>优先级：${item.priority || ""}</p></div>`).join("");
+  wrap.innerHTML = rows.map((item, index) => `<button class="task-kpi" type="button" data-queue-index="${index}"><span>管理员待办队列</span><strong>${item.count || 0}</strong><p>${item.action || ""}<br>优先级：${item.priority || ""}</p></button>`).join("");
+  wrap.querySelectorAll("[data-queue-index]").forEach((button) => {
+    button.addEventListener("click", () => applyAdminQueueFilter(Number(button.dataset.queueIndex)));
+  });
+}
+
+function setTaskField(id, value) {
+  const field = $(`#${id}`);
+  if (field) field.value = value || "";
+}
+
+function setTaskCheck(id, value) {
+  const field = $(`#${id}`);
+  if (field) field.checked = Boolean(value);
+}
+
+function applyAdminQueueFilter(index) {
+  const item = (state.taskSummary?.admin_queue || [])[index];
+  if (!item) return;
+  const filters = item.filters || {};
+  setTaskField("taskRole", "admin");
+  setTaskField("taskUser", "");
+  setTaskField("taskStatus", filters.status || "");
+  setTaskField("taskNextHandler", "");
+  setTaskField("taskPriority", "");
+  setTaskField("taskPlatform", "");
+  setTaskField("taskType", "");
+  setTaskField("taskStore", "");
+  setTaskCheck("taskOpenOnly", filters.open_only === "1");
+  setTaskCheck("taskOverdue", filters.overdue === "1");
+  setTaskCheck("taskUnassigned", filters.unassigned === "1");
+  setTaskCheck("taskReworked", filters.reworked === "1");
+  loadTasks();
 }
 
 function renderOwnerTaskSummary() {

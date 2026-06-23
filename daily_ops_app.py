@@ -2792,7 +2792,33 @@ function renderAdminTaskQueue(){
   const wrap = document.getElementById('adminTaskQueue'); if(!wrap) return;
   const rows = taskState.summary?.admin_queue || [];
   if(!rows.length){ wrap.innerHTML = ''; return; }
-  wrap.innerHTML = rows.map(item => `<div class="task-kpi"><span class="muted">管理员待办队列</span><strong>${item.count || 0}</strong><div>${esc(item.action || '')}</div><div class="muted">优先级：${esc(item.priority || '')}</div></div>`).join('');
+  wrap.innerHTML = rows.map((item, index) => `<button class="task-kpi" type="button" data-queue-index="${index}" onclick="applyAdminQueueFilter(${index})"><span class="muted">管理员待办队列</span><strong>${item.count || 0}</strong><div>${esc(item.action || '')}</div><div class="muted">优先级：${esc(item.priority || '')}</div></button>`).join('');
+}
+function setTaskField(id, value){
+  const field = document.getElementById(id);
+  if(field) field.value = value || '';
+}
+function setTaskCheck(id, value){
+  const field = document.getElementById(id);
+  if(field) field.checked = Boolean(value);
+}
+function applyAdminQueueFilter(index){
+  const item = (taskState.summary?.admin_queue || [])[index];
+  if(!item) return;
+  const filters = item.filters || {};
+  setTaskField('taskRole', 'admin');
+  setTaskField('taskUser', '');
+  setTaskField('taskStatus', filters.status || '');
+  setTaskField('taskNextHandler', '');
+  setTaskField('taskPriority', '');
+  setTaskField('taskPlatform', '');
+  setTaskField('taskType', '');
+  setTaskField('taskStore', '');
+  setTaskCheck('taskOpenOnly', filters.open_only === '1');
+  setTaskCheck('taskOverdue', filters.overdue === '1');
+  setTaskCheck('taskUnassigned', filters.unassigned === '1');
+  setTaskCheck('taskReworked', filters.reworked === '1');
+  loadTasks();
 }
 function renderOwnerTaskSummary(){
   const wrap = document.getElementById('ownerTaskSummary'); if(!wrap) return;
