@@ -11,6 +11,7 @@
     "check:cli": "node scripts/check-cli.js",
     "check:journeys": "node scripts/check-journeys.js",
     "check:modules": "node scripts/check-modules.js",
+    "check:security": "node scripts/check-security.js",
     "test": "node scripts/check-python-tests.js",
     "check:ready": "node scripts/check-ready.js",
     "check:release": "node scripts/check-release.js",
