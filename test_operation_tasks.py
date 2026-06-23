@@ -114,6 +114,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertIn("店长处理动作", headers)
                 self.assertIn("管理员审核结果", headers)
                 self.assertIn("店长处理凭证", headers)
+                self.assertIn("任务生成批次", headers)
                 self.assertIn("是否超时", headers)
                 self.assertIn("超时天数", headers)
                 proof_col = headers.index("店长处理凭证") + 1
@@ -197,6 +198,26 @@ class OperationTaskStoreTest(unittest.TestCase):
             second_result = store.upsert_generated_tasks([second_week])
             self.assertEqual(second_result["created"], 1)
             self.assertEqual(second_result["total"], 2)
+
+    def test_report_sync_records_task_generation_batch_for_traceability(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            report = root / "250623-Temu爆旺款重复预警-V1-120000.xlsx"
+            workbook = daily_ops_tasks.Workbook()
+            ws = workbook.active
+            ws.title = "具体店铺操作表"
+            ws.append(["商家编码", "货品名称", "skc", "所属店铺", "负责人", "冲突类型", "处理意见"])
+            ws.append(["A-001", "红色球衣", "SKC1", "7", "小琴", "平销款冲突爆款", "立即下架"])
+            workbook.save(report)
+
+            task_db = root / "operation_tasks.json"
+            with patch.object(daily_ops_app, "TASK_DB_PATH", task_db):
+                sync = daily_ops_app.sync_report_tasks("temu_hot", report)
+
+            self.assertEqual(sync["created"], 1)
+            task = daily_ops_tasks.OperationTaskStore(task_db).list_tasks()[0]
+            self.assertEqual(task["source_batch_id"], "250623-Temu爆旺款重复预警-V1-120000")
+            self.assertIn("任务生成批次", task["history"][0]["remark"])
 
     def test_task_summary_counts_unassigned_tasks_for_admin_followup(self):
         with TemporaryDirectory() as tmp:

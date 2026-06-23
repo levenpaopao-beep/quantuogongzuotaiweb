@@ -1743,6 +1743,8 @@ def apply_store_owner_mapping(rows):
 def sync_report_tasks(report_id, workbook_path):
     report = REPORTS.get(report_id, {})
     rows = daily_ops_tasks.rows_from_report_workbook(report_id, report.get("name", report_id), workbook_path)
+    batch_id = Path(workbook_path).stem
+    rows = [{**row, "source_batch_id": batch_id} for row in rows]
     rows = apply_store_owner_mapping(rows)
     result = operation_task_store().upsert_generated_tasks(rows)
     result["imported_rows"] = len(rows)

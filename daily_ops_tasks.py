@@ -52,6 +52,7 @@ TASK_COLUMNS = [
     ("source_file", "来源文件"),
     ("source_sheet", "来源页签"),
     ("source_row", "来源行"),
+    ("source_batch_id", "任务生成批次"),
     ("is_overdue", "是否超时"),
     ("overdue_days", "超时天数"),
     ("created_at", "创建时间"),
@@ -219,6 +220,7 @@ def generated_task_remark(row):
         ("source_file", "来源文件"),
         ("source_sheet", "来源页签"),
         ("source_row", "来源行"),
+        ("source_batch_id", "任务生成批次"),
     ]:
         value = norm(row.get(key))
         if value:
@@ -234,6 +236,7 @@ def task_source_batch_label(row):
         norm(row.get("source_report")),
         norm(row.get("source_file")),
         norm(row.get("source_sheet")),
+        norm(row.get("source_batch_id")),
     ]
     parts = [part for part in parts if part]
     return " / ".join(parts) or "未填写"
@@ -405,6 +408,7 @@ class OperationTaskStore:
                     "source_file",
                     "source_sheet",
                     "source_row",
+                    "source_batch_id",
                 ]:
                     next_value = row.get(key, task.get(key, ""))
                     if norm(task.get(key)) != norm(next_value):
@@ -445,6 +449,7 @@ class OperationTaskStore:
                     "source_file": row.get("source_file", ""),
                     "source_sheet": row.get("source_sheet", ""),
                     "source_row": row.get("source_row", ""),
+                    "source_batch_id": row.get("source_batch_id", ""),
                     "history": [],
                     "created_at": timestamp,
                     "updated_at": timestamp,
