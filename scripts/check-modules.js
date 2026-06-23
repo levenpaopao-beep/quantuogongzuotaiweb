@@ -109,6 +109,7 @@ const modules = [
     checks: [
       ["有导入页面入口", hasPage("importPage", "imports")],
       ["有数据源表和缺失矩阵", html.includes("sourceRows") && html.includes("importMatrixRows")],
+      ["有导入缺口健康条和筛选", html.includes("importHealthBar") && renderer.includes("setImportFocus") && renderer.includes("importFocusRows")],
       ["有选择、上传、结束上传接口", hasApi("selectFiles", "api:select-files") && hasApi("uploadSource", "api:upload-source") && hasApi("finishUpload", "api:finish-upload")],
       ["CLI 返回缺失矩阵结构", Array.isArray(importMatrix.rows) && importMatrix.summary],
       ["状态返回数据源分组", Array.isArray(status.source_groups)],

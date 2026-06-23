@@ -18,6 +18,7 @@ const state = {
   salesFocus: "missing",
   salesCompare: null,
   importMatrix: null,
+  importFocus: "blocked",
   taskSuppressions: [],
   taskDialog: null,
   customPlatforms: [],
@@ -271,8 +272,10 @@ function renderSourceProgress(group) {
 function renderSources(groups) {
   const rows = $("#sourceRows");
   rows.innerHTML = "";
-  $("#statusSummary").textContent = `共 ${groups.length} 个数据源`;
-  $("#syncHint").textContent = groups.some((item) => item.pending_count) ? "有数据源等待结束上传" : "所有已启用的数据源均已检查完成";
+  const pendingGroups = groups.filter((item) => item.pending_count);
+  $("#statusSummary").textContent = `共 ${groups.length} 个数据源，${pendingGroups.length} 个有待提交文件`;
+  $("#syncHint").textContent = pendingGroups.length ? "有数据源等待结束上传，结束上传后才进入缺失矩阵。" : "所有已启用的数据源均已检查完成";
+  renderImportHealth(groups);
   groups.forEach((group) => {
     const [badgeText, badgeClass] = sourceBadge(group.name);
     const row = document.createElement("div");
@@ -302,13 +305,71 @@ function importCellClass(state) {
   return "danger";
 }
 
+function setImportFocus(focus = "blocked", options = {}) {
+  const allowed = ["blocked", "pending", "all"];
+  state.importFocus = allowed.includes(focus) ? focus : "blocked";
+  renderImportMatrix();
+  renderImportHealth(state.status?.source_groups || []);
+  if (options.scroll) {
+    setTimeout(() => document.querySelector("#importMatrixRows")?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+  }
+}
+
+function importFocusRows(rows) {
+  if (state.importFocus === "pending") {
+    return rows.filter((row) => (row.cells || []).some((cell) => cell.state === "pending"));
+  }
+  if (state.importFocus === "all") return rows;
+  return rows.filter((row) => !row.ready);
+}
+
+function renderImportHealth(groups = []) {
+  const summary = state.importMatrix?.summary || {};
+  const pendingSources = groups.reduce((sum, group) => sum + Number(group.pending_count || 0), 0);
+  const blockedStores = Number(summary.blocked_stores || 0);
+  const pendingCells = Number(summary.pending_cells || 0);
+  const missingCells = Number(summary.missing_cells || 0);
+  const title = $("#importHealthTitle");
+  const hint = $("#importHealthHint");
+  const metrics = $("#importHealthMetrics");
+  if (title) {
+    title.textContent = blockedStores || pendingSources ? "本周导入还需处理" : "本周导入已就绪";
+  }
+  if (hint) {
+    const operator = currentOperator();
+    hint.textContent = operator.role === "owner"
+      ? "这里只显示你负责店铺的缺口；待提交文件需要点“结束上传”才会正式生效。"
+      : "管理员可按缺口、待提交和全部店铺切换，缺哪个店铺和数据类型会集中显示。";
+  }
+  if (metrics) {
+    metrics.innerHTML = [
+      ["需处理店铺", blockedStores, `${summary.ready_stores || 0}/${summary.stores || 0} 已完整`, blockedStores ? "warn" : "ok"],
+      ["缺失项", missingCells, "缺文件或缺数据类型", missingCells ? "danger" : "ok"],
+      ["矩阵待提交", pendingCells, "上传后未结束批次", pendingCells ? "warn" : "ok"],
+      ["文件待提交", pendingSources, "数据源上传缓存", pendingSources ? "warn" : "ok"],
+    ].map(([label, value, note, tone]) => `
+      <div class="import-health-metric ${tone}">
+        <span>${label}</span>
+        <strong>${value}</strong>
+        <small>${note}</small>
+      </div>
+    `).join("");
+  }
+  document.querySelectorAll(".import-health-tabs [data-import-focus]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.importFocus === state.importFocus);
+  });
+}
+
 function renderImportMatrix() {
   const matrix = state.importMatrix || {};
   const summary = matrix.summary || {};
   const rows = matrix.rows || [];
+  const visibleRows = importFocusRows(rows);
+  renderImportHealth(state.status?.source_groups || []);
   const summaryLine = $("#importMatrixSummary");
   if (summaryLine) {
-    summaryLine.textContent = `覆盖 ${summary.stores || 0} 个店铺，完整 ${summary.ready_stores || 0} 个，受缺失/待提交影响 ${summary.blocked_stores || 0} 个`;
+    const focusLabel = state.importFocus === "pending" ? "待提交" : state.importFocus === "all" ? "全部" : "需处理";
+    summaryLine.textContent = `覆盖 ${summary.stores || 0} 个店铺，完整 ${summary.ready_stores || 0} 个，受缺失/待提交影响 ${summary.blocked_stores || 0} 个；当前显示 ${focusLabel} ${visibleRows.length} 个`;
   }
   const container = $("#importMatrixRows");
   if (!container) return;
@@ -322,7 +383,18 @@ function renderImportMatrix() {
     bindEmptyActions(container);
     return;
   }
-  container.innerHTML = rows.map((row) => {
+  if (!visibleRows.length) {
+    container.innerHTML = `<div class="import-empty">${actionEmpty({
+      title: state.importFocus === "pending" ? "当前没有待提交数据源" : "当前没有导入缺口",
+      body: state.importFocus === "pending" ? "已上传的文件都完成了结束上传。切到“全部”可以复核每个店铺的数据状态。" : "本周导入矩阵已完整。切到“全部”可以复核所有平台店铺。",
+      primary: "查看全部",
+      page: "imports",
+      attrs: 'data-import-focus="all"',
+    })}</div>`;
+    bindEmptyActions(container);
+    return;
+  }
+  container.innerHTML = visibleRows.map((row) => {
     const chips = (row.cells || []).map((cell) => {
       const label = cell.state === "ready" ? "已就绪" : cell.state === "pending" ? "待提交" : "缺失";
       const meta = cell.batch_id ? ` · ${cell.batch_id}` : "";
@@ -852,6 +924,7 @@ function applyRouteIntent(route = {}) {
   if (route.taskNextHandler && $("#taskNextHandler")) $("#taskNextHandler").value = route.taskNextHandler;
   if (route.taskOpenOnly && $("#taskOpenOnly")) $("#taskOpenOnly").checked = route.taskOpenOnly === "true";
   if (route.salesFocus) setSalesFocus(route.salesFocus, { scroll: route.emptyPage === "sales" });
+  if (route.importFocus) setImportFocus(route.importFocus, { scroll: route.emptyPage === "imports" || route.focus === "import-matrix" });
   if (route.emptyPage === "tasks" && (route.taskStatus || route.taskNextHandler || route.taskOpenOnly)) {
     loadTasks();
   }
@@ -1162,13 +1235,13 @@ function renderTodayDashboard() {
     const rows = ownerMode ? [
       ["我的待填销量", salesSummary.missing ?? 0, "当天销量是每天第一优先级。", "sales", "去填写", ""],
       ["我的待处理任务包", status["待店长处理"] || 0, "按任务包整包处理，备注或凭证至少填一个。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
-      ["我的导入待提交", pendingSources + missingSources, "每周导入自己店铺需要补的数据。", "imports", "去导入", 'data-focus="import-matrix"'],
+      ["我的导入待提交", pendingSources + missingSources, "每周导入自己店铺需要补的数据。", "imports", "去导入", 'data-focus="import-matrix" data-import-focus="blocked"'],
       ["等待管理员确认", status["待管理员审核"] || 0, "提交后由管理员打勾，完成后从待办消失。", "tasks", "查看", 'data-task-status="待管理员审核" data-task-open-only="true"'],
     ] : [
       [adminQueueLabel, adminQueueCount, "管理员按当前队列处理，完成后任务从待办消失。", "tasks", "去处理", adminQueueAttrs],
       ["待店长处理", status["待店长处理"] || 0, "店长按任务包整包处理。", "tasks", "看进度", 'data-task-status="待店长处理" data-task-open-only="true"'],
       ["待管理员确认", status["待管理员审核"] || 0, "店长处理后管理员打勾完成。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
-      ["导入缺失/待提交", pendingSources + missingSources, "查看本周两批次导入矩阵。", "imports", "去检查", 'data-focus="import-matrix"'],
+      ["导入缺失/待提交", pendingSources + missingSources, "查看本周两批次导入矩阵。", "imports", "去检查", 'data-focus="import-matrix" data-import-focus="blocked"'],
     ];
     actionList.innerHTML = rows.map(([label, value, hint, page, action, attrs]) => `
       <div class="action-route">
@@ -1207,11 +1280,11 @@ function renderTodayWorkflow() {
   const steps = ownerMode ? [
     ["01", "填写今日销量", "进入销量管理，只填写自己负责店铺；波动大时补原因。", "sales", "去填销量", 'data-sales-focus="missing"'],
     ["02", "处理我的任务包", "商品任务按整包提交，备注或凭证至少填一个。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
-    ["03", "补齐每周导入", "数据导入页只看自己店铺缺什么，补完后管理员能看到。", "imports", "看缺口", 'data-focus="import-matrix"'],
+    ["03", "补齐每周导入", "数据导入页只看自己店铺缺什么，补完后管理员能看到。", "imports", "看缺口", 'data-focus="import-matrix" data-import-focus="blocked"'],
     ["04", "看经营结果", "回到经营报表查看自己店铺趋势和销量差异提醒。", "reports", "看报表", ""],
   ] : [
     ["01", "检查销量进度", "先看未填店铺和异常波动，提醒负责人补齐原因。", "sales", "看销量", 'data-sales-focus="missing"'],
-    ["02", "检查导入缺口", "按平台、店铺、数据类型看缺失矩阵，缺哪个店铺一眼定位。", "imports", "看矩阵", 'data-focus="import-matrix"'],
+    ["02", "检查导入缺口", "按平台、店铺、数据类型看缺失矩阵，缺哪个店铺一眼定位。", "imports", "看矩阵", 'data-focus="import-matrix" data-import-focus="blocked"'],
     ["03", "推送商品任务", "按任务包推送给店长；任务多时可下载表格给店长处理。", "tasks", "推送任务", 'data-task-status="待推送" data-task-open-only="true"'],
     ["04", "确认并归档", "店长整包处理后，管理员只需确认打勾，任务从待办消失。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
   ];
@@ -2302,6 +2375,9 @@ function bindEvents() {
     showToast("已定位到缺失矩阵");
   });
   $("#loadImportMatrixBtn")?.addEventListener("click", () => loadImportMatrix(true));
+  document.querySelectorAll(".import-health-tabs [data-import-focus]").forEach((button) => {
+    button.addEventListener("click", () => setImportFocus(button.dataset.importFocus));
+  });
   $("#exportSalesBtn")?.addEventListener("click", exportSales);
   $("#loadTasksBtn")?.addEventListener("click", () => loadTasks());
   $("#exportTasksBtn")?.addEventListener("click", exportTasks);

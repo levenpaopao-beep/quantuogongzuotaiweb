@@ -614,6 +614,63 @@ label { color: var(--muted); font-size: 12px; }
   gap: 6px;
   margin-top: 7px;
 }
+.import-health-bar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(260px, 1.6fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0;
+  padding: 13px;
+  border: 1px solid #dce5f6;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255,255,255,.94), rgba(240,252,255,.9));
+}
+.import-health-copy strong { display: block; font-size: 15px; }
+.import-health-copy span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.import-health-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+.import-health-metric {
+  min-height: 72px;
+  padding: 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: #fff;
+}
+.import-health-metric span,
+.import-health-metric small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.import-health-metric strong {
+  display: block;
+  margin: 4px 0 2px;
+  font-size: 20px;
+}
+.import-health-metric.ok strong { color: var(--green); }
+.import-health-metric.warn strong { color: #a46a00; }
+.import-health-metric.danger strong { color: var(--red); }
+.import-health-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.import-health-tabs .segment {
+  min-width: 64px;
+  height: 32px;
+  padding: 0 10px;
+}
 .import-chip {
   display: inline-flex;
   align-items: center;
@@ -1242,6 +1299,9 @@ label { color: var(--muted); font-size: 12px; }
   .workflow-head p { text-align: left; }
   .workflow-steps { grid-template-columns: 1fr; }
   .guide-steps { grid-template-columns: 1fr; }
+  .import-health-bar { grid-template-columns: 1fr; }
+  .import-health-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .import-health-tabs { justify-content: flex-start; }
   .sales-focus-bar { grid-template-columns: 1fr; }
   .sales-focus-tabs { justify-content: flex-start; }
   .sales-entry { grid-template-columns: 1fr; }

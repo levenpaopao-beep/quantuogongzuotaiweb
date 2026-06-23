@@ -259,6 +259,18 @@
                 </div>
                 <button class="ghost-button" id="focusImportMatrixBtn">查看缺失矩阵</button>
               </div>
+              <div class="import-health-bar" id="importHealthBar">
+                <div class="import-health-copy">
+                  <strong id="importHealthTitle">导入缺口体检中</strong>
+                  <span id="importHealthHint">管理员看全部缺口，店长只看自己负责店铺。</span>
+                </div>
+                <div class="import-health-metrics" id="importHealthMetrics"></div>
+                <div class="import-health-tabs" role="group" aria-label="导入缺口筛选">
+                  <button class="segment active" data-import-focus="blocked" type="button">需处理</button>
+                  <button class="segment" data-import-focus="pending" type="button">待提交</button>
+                  <button class="segment" data-import-focus="all" type="button">全部</button>
+                </div>
+              </div>
               <div class="source-table">
                 <div class="table-row table-head">
                   <span>数据源</span>

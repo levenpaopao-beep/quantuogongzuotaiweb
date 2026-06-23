@@ -138,6 +138,17 @@ if (!renderSalesBody.includes('event.key === "Enter"') || !renderSalesBody.inclu
     "每日填报是高频动作，输入销量后回车应直接提交当前店铺。",
   ]);
 }
+if (!html.includes('id="importHealthBar"') || !renderer.includes("function setImportFocus(") || !renderer.includes("importFocusRows")) {
+  fail("数据导入页缺少缺口健康条", [
+    "管理员和店长需要先看到缺失、待提交、完整店铺等汇总，再进入矩阵明细。",
+  ]);
+}
+const renderImportBody = functionBody(renderer, "renderImportMatrix");
+if (!applyRouteIntentBody.includes("route.importFocus") || !renderImportBody.includes("visibleRows")) {
+  fail("导入缺口筛选未接入矩阵和首页入口", [
+    "首页进入导入页时应定位到需处理缺口，矩阵也要能在需处理、待提交和全部之间切换。",
+  ]);
+}
 if (/radial-gradient\(/.test(fs.readFileSync(path.join(ROOT, "electron", "renderer.css"), "utf8"))) {
   fail("界面背景仍有装饰光斑", [
     "工作台是高频运营工具，背景应保持清爽，不使用离散渐变光斑作为装饰。",
