@@ -2340,12 +2340,17 @@ function renderOperator(){
     taskRole.value = operatorSession.role;
     taskRole.disabled = operatorSession.role === 'owner';
     document.getElementById('taskUser').value = operatorSession.user;
+    defaultOpenTasksForOwner();
   } else {
     el.textContent = '未登录：任务台账需要先登录';
     if(taskRole) taskRole.disabled = false;
   }
   applyRoleVisibility();
   updateOwnerEntryLink();
+}
+function defaultOpenTasksForOwner(){
+  const openOnly = document.getElementById('taskOpenOnly');
+  if(operatorSession?.role === 'owner' && openOnly) openOnly.checked = true;
 }
 function clearOperatorSession(){
   localStorage.removeItem('operatorSession');
@@ -2400,6 +2405,7 @@ function applyEntryParams(){
   document.getElementById('taskRole').value = 'owner';
   document.getElementById('taskRole').disabled = true;
   document.getElementById('taskUser').value = user;
+  document.getElementById('taskOpenOnly').checked = true;
   const el = document.getElementById('operatorIdentity');
   if(el) el.textContent = `请以店长身份登录：${user}`;
   updateOwnerEntryLink();

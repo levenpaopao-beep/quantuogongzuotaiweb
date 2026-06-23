@@ -37,8 +37,14 @@ function applyOperatorToTasks() {
     $("#taskRole").disabled = role === "owner";
   }
   if ($("#taskUser")) $("#taskUser").value = user;
+  defaultOpenTasksForOwner(role);
   if ($("#operatorHint")) $("#operatorHint").textContent = user ? `当前身份：${role === "admin" ? "管理员" : "店长"} · ${user}` : "未设置身份时按管理员查看";
   applyRoleVisibility(role);
+}
+
+function defaultOpenTasksForOwner(role = currentOperator().role || "admin") {
+  const openOnly = $("#taskOpenOnly");
+  if (role === "owner" && openOnly) openOnly.checked = true;
 }
 
 function applyRoleVisibility(role = currentOperator().role || "admin") {
