@@ -257,7 +257,19 @@ function renderTaskSummary() {
     ["无需处理", nextHandler["无需处理"] || 0],
   ];
   wrap.innerHTML = cards.map(([label, value]) => `<div class="task-kpi"><span>${label}</span><strong>${value}</strong></div>`).join("");
+  renderAdminTaskQueue();
   renderOwnerTaskSummary();
+}
+
+function renderAdminTaskQueue() {
+  const wrap = $("#adminTaskQueue");
+  if (!wrap) return;
+  const rows = state.taskSummary?.admin_queue || [];
+  if (!rows.length) {
+    wrap.innerHTML = "";
+    return;
+  }
+  wrap.innerHTML = rows.map((item) => `<div class="task-kpi"><span>管理员待办队列</span><strong>${item.count || 0}</strong><p>${item.action || ""}<br>优先级：${item.priority || ""}</p></div>`).join("");
 }
 
 function renderOwnerTaskSummary() {

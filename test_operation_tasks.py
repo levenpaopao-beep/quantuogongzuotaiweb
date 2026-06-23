@@ -514,6 +514,75 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(summary["owner_status"]["小琴"]["overdue"], 2)
             self.assertEqual(summary["owner_status"]["洁琳"]["overdue"], 0)
 
+    def test_task_summary_builds_admin_action_queue(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_db = root / "tasks.json"
+            task_db.write_text(json.dumps({
+                "tasks": [
+                    {
+                        "id": "unassigned",
+                        "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                        "owner": "",
+                        "created_at": "2026-06-22 09:00:00",
+                        "updated_at": "2026-06-22 09:00:00",
+                    },
+                    {
+                        "id": "review-old",
+                        "status": daily_ops_tasks.STATUS_PENDING_REVIEW,
+                        "owner": "小琴",
+                        "owner_submitted_at": "2026-06-20 08:00:00",
+                        "updated_at": "2026-06-20 08:00:00",
+                    },
+                    {
+                        "id": "owner-old",
+                        "status": daily_ops_tasks.STATUS_PENDING_OWNER,
+                        "owner": "洁琳",
+                        "created_at": "2026-06-18 09:00:00",
+                        "updated_at": "2026-06-18 09:00:00",
+                    },
+                    {
+                        "id": "rejected-old",
+                        "status": daily_ops_tasks.STATUS_REJECTED,
+                        "owner": "小琴",
+                        "admin_reviewed_at": "2026-06-18 09:00:00",
+                        "updated_at": "2026-06-18 09:00:00",
+                    },
+                    {
+                        "id": "review-fresh",
+                        "status": daily_ops_tasks.STATUS_PENDING_REVIEW,
+                        "owner": "洁琳",
+                        "owner_submitted_at": "2026-06-22 09:00:00",
+                        "updated_at": "2026-06-22 09:00:00",
+                    },
+                    {
+                        "id": "approved",
+                        "status": daily_ops_tasks.STATUS_APPROVED,
+                        "owner": "小琴",
+                        "updated_at": "2026-06-22 08:00:00",
+                    },
+                    {
+                        "id": "done",
+                        "status": daily_ops_tasks.STATUS_DONE,
+                        "owner": "小琴",
+                        "updated_at": "2026-06-22 08:00:00",
+                    },
+                ]
+            }, ensure_ascii=False), encoding="utf-8")
+
+            summary = daily_ops_tasks.OperationTaskStore(task_db).summary(now=datetime(2026, 6, 22, 12, 0, 0))
+
+            queue = summary["admin_queue"]
+            self.assertEqual(
+                [item["action"] for item in queue],
+                ["指派负责人", "处理超时审核", "跟进超时店长处理", "跟进驳回返工超时", "审核通过或驳回", "标记完成或归档"],
+            )
+            self.assertEqual([item["count"] for item in queue], [1, 1, 1, 1, 1, 1])
+            self.assertEqual(queue[0]["priority"], "高")
+            self.assertEqual(queue[0]["filters"], {"unassigned": "1", "open_only": "1"})
+            self.assertEqual(queue[1]["filters"], {"status": daily_ops_tasks.STATUS_PENDING_REVIEW, "overdue": "1", "open_only": "1"})
+            self.assertEqual(queue[-1]["priority"], "中")
+
     def test_rejected_tasks_become_overdue_when_owner_does_not_rework(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1454,6 +1523,9 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("item.stores || []", html)
         self.assertIn("负责人待办", html)
         self.assertIn("renderOwnerTaskSummary", html)
+        self.assertIn("管理员待办队列", html)
+        self.assertIn("renderAdminTaskQueue", html)
+        self.assertIn("admin_queue", html)
         self.assertIn("owner_status", html)
         self.assertIn("超时未处理", html)
         self.assertIn("overdue", html)
@@ -1485,6 +1557,16 @@ class OperationTaskStoreTest(unittest.TestCase):
         for text in ["api:tasks", "api:submit-task", "api:review-task", "api:batch-review-tasks", "api:done-task", "api:assign-task", "api:export-tasks", "api:store-owners", "api:save-store-owners"]:
             self.assertIn(text, main)
         self.assertIn("payload.open_only", main)
+
+    def test_electron_renderer_exposes_admin_task_queue(self):
+        root = Path(__file__).resolve().parent
+        html = (root / "electron" / "renderer.html").read_text(encoding="utf-8")
+        js = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
+
+        self.assertIn("adminTaskQueue", html)
+        self.assertIn("renderAdminTaskQueue", js)
+        self.assertIn("admin_queue", js)
+        self.assertIn("管理员待办队列", js)
 
     def test_desktop_adapter_scopes_task_summary_like_task_rows(self):
         with TemporaryDirectory() as tmp:

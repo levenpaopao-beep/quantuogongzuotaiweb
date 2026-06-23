@@ -210,6 +210,40 @@ def task_sort_key(row):
     return (priority_order.get(norm(row.get("priority")), 9), -timestamp, norm(row.get("id")))
 
 
+def admin_queue_summary(rows, now=None):
+    specs = [
+        ("assign_owner", "指派负责人", "高", {"unassigned": "1", "open_only": "1"}),
+        ("review_overdue", "处理超时审核", "高", {"status": STATUS_PENDING_REVIEW, "overdue": "1", "open_only": "1"}),
+        ("owner_overdue", "跟进超时店长处理", "高", {"status": STATUS_PENDING_OWNER, "overdue": "1", "open_only": "1"}),
+        ("rejected_overdue", "跟进驳回返工超时", "高", {"status": STATUS_REJECTED, "overdue": "1", "open_only": "1"}),
+        ("review_pending", "审核通过或驳回", "中", {"status": STATUS_PENDING_REVIEW, "open_only": "1"}),
+        ("mark_done", "标记完成或归档", "中", {"status": STATUS_APPROVED, "open_only": "1"}),
+    ]
+    counts = {key: 0 for key, _action, _priority, _filters in specs}
+    for row in rows:
+        status = norm(row.get("status"))
+        if status == STATUS_DONE:
+            continue
+        overdue = task_overdue(row, now)
+        if status == STATUS_PENDING_OWNER and not norm(row.get("owner")):
+            counts["assign_owner"] += 1
+        elif status == STATUS_PENDING_REVIEW and overdue:
+            counts["review_overdue"] += 1
+        elif status == STATUS_PENDING_OWNER and overdue:
+            counts["owner_overdue"] += 1
+        elif status == STATUS_REJECTED and overdue:
+            counts["rejected_overdue"] += 1
+        elif status == STATUS_PENDING_REVIEW:
+            counts["review_pending"] += 1
+        elif status == STATUS_APPROVED:
+            counts["mark_done"] += 1
+    return [
+        {"key": key, "action": action, "priority": priority, "count": counts[key], "filters": dict(filters)}
+        for key, action, priority, filters in specs
+        if counts[key] > 0
+    ]
+
+
 def task_rejection_info(row):
     rejection_count = 0
     last_reason = ""
@@ -386,6 +420,7 @@ class OperationTaskStore:
             "owner_status": owner_status,
             "overdue": overdue,
             "unassigned": unassigned,
+            "admin_queue": admin_queue_summary(rows, now=now),
         }
 
     def owner_directory(self):

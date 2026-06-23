@@ -2172,6 +2172,7 @@ HTML_PAGE = r"""<!doctype html>
 
     <section id="tasks" class="section active">
       <div class="task-summary" id="taskSummary"></div>
+      <div class="task-summary" id="adminTaskQueue"></div>
       <div class="task-summary" id="ownerTaskSummary"></div>
       <div class="panel">
         <h2>任务台账</h2>
@@ -2784,7 +2785,14 @@ function renderTaskSummary(){
     ['无需处理', nextHandler['无需处理'] || 0],
   ];
   wrap.innerHTML = cards.map(([label, value]) => `<div class="task-kpi"><span class="muted">${label}</span><strong>${value}</strong></div>`).join('');
+  renderAdminTaskQueue();
   renderOwnerTaskSummary();
+}
+function renderAdminTaskQueue(){
+  const wrap = document.getElementById('adminTaskQueue'); if(!wrap) return;
+  const rows = taskState.summary?.admin_queue || [];
+  if(!rows.length){ wrap.innerHTML = ''; return; }
+  wrap.innerHTML = rows.map(item => `<div class="task-kpi"><span class="muted">管理员待办队列</span><strong>${item.count || 0}</strong><div>${esc(item.action || '')}</div><div class="muted">优先级：${esc(item.priority || '')}</div></div>`).join('');
 }
 function renderOwnerTaskSummary(){
   const wrap = document.getElementById('ownerTaskSummary'); if(!wrap) return;
