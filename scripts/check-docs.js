@@ -19,6 +19,7 @@ function fail(message, details = []) {
 
 [
   "check:design",
+  "check:render",
   "check:security",
   "check:modules",
   "check:journeys",
@@ -31,6 +32,7 @@ function fail(message, details = []) {
 [
   "PETCIRCLE跨境工作台",
   "产品设计检查",
+  "真实渲染",
   "安全体检",
   "模块体检",
   "角色旅程检查",
@@ -53,6 +55,12 @@ if (readme.includes("店长不能上传数据源")) {
 if (!readyCheck.includes("check-docs.js") || !readyCheck.includes("文档口径")) {
   fail("交付检查未显式覆盖文档口径", [
     "check:ready 必须直接运行 check-docs.js，避免 README、系统名和角色口径回退时总交付检查漏报。",
+  ]);
+}
+
+if (!readyCheck.includes("真实渲染")) {
+  fail("交付检查说明缺少真实渲染口径", [
+    "check:ready 需要明确覆盖 Electron 首屏真实渲染烟测，避免只做静态文件扫描。",
   ]);
 }
 

@@ -82,6 +82,18 @@ function checkProductDesign() {
   }
 }
 
+function checkRenderSmoke() {
+  const result = spawnSync(process.execPath, [path.join(ROOT, "scripts", "check-render.js")], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    console.error(result.stdout || "");
+    console.error(result.stderr || "");
+    process.exit(result.status || 1);
+  }
+}
+
 function checkCliSmoke() {
   const result = spawnSync(process.execPath, [path.join(ROOT, "scripts", "check-cli.js")], {
     cwd: ROOT,
@@ -159,10 +171,11 @@ checkElectron();
 checkPython();
 checkUiWiring();
 checkProductDesign();
+checkRenderSmoke();
 checkCliSmoke();
 checkSecurity();
 checkDocs();
 checkRoleJourneys();
 checkModules();
 checkBusinessTests();
-console.log("启动检查通过：Electron、Python、关键文件、产品设计、界面绑定、安全体检、文档说明、模块体检、角色旅程、权限边界和核心业务测试均可用。");
+console.log("启动检查通过：Electron、Python、关键文件、产品设计、真实渲染、界面绑定、安全体检、文档说明、模块体检、角色旅程、权限边界和核心业务测试均可用。");

@@ -114,12 +114,110 @@ function taskPayload(payload = {}) {
   };
 }
 
+function renderSmokeScript() {
+  return `
+    (async () => {
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const waitFor = async (predicate, timeout = 12000) => {
+        const started = Date.now();
+        while (Date.now() - started < timeout) {
+          if (predicate()) return true;
+          await sleep(160);
+        }
+        return false;
+      };
+      const errors = [];
+      const visible = (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      };
+      const requireVisible = (selector, label) => {
+        if (!visible(selector)) errors.push(label + "不可见");
+      };
+      const requireText = (selector, text, label) => {
+        const value = document.querySelector(selector)?.textContent || "";
+        if (!value.includes(text)) errors.push(label + "缺少“" + text + "”");
+      };
+      await waitFor(() =>
+        document.querySelectorAll("#todayWorkflowSteps .workflow-step").length >= 4 &&
+        document.querySelectorAll("#todayGuideSteps .guide-step").length >= 6 &&
+        document.querySelectorAll("#todayActionList .action-route").length >= 4
+      );
+      requireText("title", "PETCIRCLE跨境工作台", "窗口标题");
+      requireVisible(".sidebar", "侧边导航");
+      requireVisible("#todayPage.page-active", "今日工作台首屏");
+      requireVisible("#todayWorkflowSteps .workflow-step", "今日流程卡片");
+      requireVisible("#todayGuideSteps .guide-step", "开始使用清单");
+      requireVisible("#todaySalesMetrics .metric-card", "销量指标");
+      requireVisible("#todayActionList .action-route", "今日待办入口");
+      if (document.body.scrollWidth > window.innerWidth + 8) {
+        errors.push("首屏存在横向溢出：" + document.body.scrollWidth + " > " + window.innerWidth);
+      }
+      const brokenImages = Array.from(document.images).filter((image) => image.complete && image.naturalWidth === 0);
+      if (brokenImages.length) errors.push("存在破图：" + brokenImages.length);
+      document.querySelector('[data-page="sales"]')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      requireVisible("#salesPage.page-active", "销量管理页面");
+      requireVisible("#salesFocusBar", "销量筛选条");
+      document.querySelector('[data-page="tasks"]')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      requireVisible("#tasksPage.page-active", "商品任务页面");
+      requireVisible("#taskWorkbar", "任务工作条");
+      document.querySelector('[data-page="imports"]')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      requireVisible("#importPage.page-active", "数据导入页面");
+      requireVisible("#importHealthBar", "导入健康条");
+      const role = document.querySelector("#operatorRole");
+      const user = document.querySelector("#operatorUser");
+      const switchButton = document.querySelector("#saveOperatorBtn");
+      if (role && user && switchButton) {
+        role.value = "owner";
+        user.value = "";
+        switchButton.click();
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        if (!user.classList.contains("field-error")) errors.push("店长空姓名未提示错误");
+      } else {
+        errors.push("角色切换控件缺失");
+      }
+      return {
+        ok: errors.length === 0,
+        errors,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        scroll: { width: document.body.scrollWidth, height: document.body.scrollHeight },
+        activeTitle: document.querySelector("#pageTitle")?.textContent || "",
+      };
+    })();
+  `;
+}
+
+async function runRenderSmoke(win) {
+  try {
+    const result = await win.webContents.executeJavaScript(renderSmokeScript(), true);
+    if (!result.ok) {
+      console.error(`渲染烟测未通过：${result.errors.join("；")}`);
+      console.error(`渲染烟测诊断：${JSON.stringify(result)}`);
+      app.exit(1);
+      return;
+    }
+    console.log(`渲染烟测通过：${result.viewport.width}x${result.viewport.height} 首屏、导航、角色校验和横向溢出均已检查。`);
+    app.exit(0);
+  } catch (error) {
+    console.error(`渲染烟测执行失败：${error.message || error}`);
+    app.exit(1);
+  }
+}
+
 function createWindow() {
+  const smokeMode = process.env.PETCIRCLE_RENDER_SMOKE === "1";
   const win = new BrowserWindow({
     width: 1488,
     height: 980,
     minWidth: 1180,
     minHeight: 760,
+    show: !smokeMode,
     title: APP_NAME,
     icon: appIcon(),
     backgroundColor: "#f5f6f8",
@@ -131,6 +229,9 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+  if (smokeMode) {
+    win.webContents.once("did-finish-load", () => runRenderSmoke(win));
+  }
   win.loadFile(path.join(__dirname, "renderer.html"));
 }
 

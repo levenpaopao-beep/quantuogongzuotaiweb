@@ -37,4 +37,4 @@ if (release.status !== 0) {
 
 const releaseOutput = [release.stdout, release.stderr].filter(Boolean).join("\n").trim();
 if (releaseOutput) console.log(releaseOutput);
-console.log("交付检查通过：启动、业务测试、文档口径、依赖安全和提交范围均已通过。");
+console.log("交付检查通过：启动、真实渲染、业务测试、文档口径、依赖安全和提交范围均已通过。");

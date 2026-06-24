@@ -13,6 +13,7 @@
     "check:modules": "node scripts/check-modules.js",
     "check:security": "node scripts/check-security.js",
     "check:docs": "node scripts/check-docs.js",
+    "check:render": "node scripts/check-render.js",
     "test": "node scripts/check-python-tests.js",
     "check:ready": "node scripts/check-ready.js",
     "check:release": "node scripts/check-release.js",
