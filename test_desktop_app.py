@@ -208,6 +208,15 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("--blue", css)
         self.assertIn("grid-template-columns: 248px minmax(0, 1fr)", css)
 
+    def test_master_data_keeps_builtin_platforms_and_erp_limits_visible(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        js = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        for platform in ["Temu", "Shein", "速卖通", "TK", "Ozon"]:
+            self.assertIn(platform, html)
+            self.assertIn(platform, js)
+        self.assertIn('data-erp-field="page_size" type="number" min="1" max="100"', html)
+        self.assertIn('data-erp-field="stock_limit" type="number" min="1" max="2000"', html)
+
     def test_weekly_workflow_uses_table_workbench_layout(self):
         source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
         self.assertIn("renderSources", source)
