@@ -95,6 +95,7 @@ def command(argv):
         adapter.reveal_path(path)
         return ok({"path": str(path)})
     if name == "load-rules":
+        require_admin(read_payload(), "读取规则")
         return ok(adapter.load_rules())
     if name == "save-rules":
         payload = read_payload()

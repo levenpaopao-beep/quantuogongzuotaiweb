@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld("dailyOps", {
   generateReport: (reportId, version, payload) => ipcRenderer.invoke("api:generate-report", reportId, version, payload || {}),
   openOutput: (name, payload) => ipcRenderer.invoke("api:open-output", name, payload || {}),
   revealOutput: (name, payload) => ipcRenderer.invoke("api:reveal-output", name, payload || {}),
-  loadRules: () => ipcRenderer.invoke("api:load-rules"),
+  loadRules: (payload) => ipcRenderer.invoke("api:load-rules", payload || {}),
   saveRules: (payload) => ipcRenderer.invoke("api:save-rules", payload || {}),
   search: (query, limit, payload) => ipcRenderer.invoke("api:search", query, limit, payload || {}),
   tasks: (filters) => ipcRenderer.invoke("api:tasks", filters || {}),

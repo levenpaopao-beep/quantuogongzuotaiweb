@@ -2728,7 +2728,8 @@ async function manualErpSync() {
     if (status) status.textContent = "正在同步 ERP 商品和库存...";
     state.rules = await api.saveRules(operatorPayload({ rules: next }));
     const result = await api.erpSync(operatorPayload());
-    await loadRules();
+    state.rules = await api.loadRules(operatorPayload());
+    renderRules();
     const pages = `商品 ${result.product_pages || 0} 页、库存 ${result.stock_pages || 0} 页`;
     const warnings = (result.warnings || []).length ? `；提醒：${result.warnings.join("；")}` : "";
     const message = `${result.message || "ERP 同步完成"}；${pages}${warnings}`;
@@ -2896,7 +2897,7 @@ async function refreshAll() {
     state.status = await api.status(operatorPayload());
     state.reports = state.status.reports || await api.reports();
     state.outputs = state.status.outputs || await api.outputs(80, operatorPayload());
-    state.rules = state.status.rules || await api.loadRules();
+    state.rules = state.status.rules || await api.loadRules(operatorPayload());
     state.reportTasks = state.status.report_tasks || {};
     renderSources(state.status.source_groups || []);
     renderReportQueue();
