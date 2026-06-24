@@ -2815,7 +2815,7 @@ async function runDoctorCheck() {
       resultBox.className = "check-result running";
       resultBox.innerHTML = "<strong>正在自检...</strong><span>会检查运行环境、界面绑定、角色权限、核心接口和业务测试。</span>";
     }
-    const result = await api.runDoctor();
+    const result = await api.runDoctor(operatorPayload());
     const output = result?.output || "自检通过";
     if (resultBox) {
       resultBox.className = "check-result ok";
@@ -2843,7 +2843,7 @@ async function runReadyCheck() {
       resultBox.className = "check-result running";
       resultBox.innerHTML = "<strong>正在交付检查...</strong><span>会检查功能自检、依赖安全和 git 提交范围。</span>";
     }
-    const result = await api.runReadyCheck();
+    const result = await api.runReadyCheck(operatorPayload());
     const output = result?.output || "交付检查通过";
     if (resultBox) {
       resultBox.className = "check-result ok";

@@ -47,6 +47,6 @@ contextBridge.exposeInMainWorld("dailyOps", {
   erpSync: (payload) => ipcRenderer.invoke("api:erp-sync", payload || {}),
   createBackup: (payload) => ipcRenderer.invoke("api:create-backup", payload || {}),
   restoreBackup: (payload) => ipcRenderer.invoke("api:restore-backup", payload || {}),
-  runDoctor: () => ipcRenderer.invoke("api:run-doctor"),
-  runReadyCheck: () => ipcRenderer.invoke("api:run-ready-check"),
+  runDoctor: (payload) => ipcRenderer.invoke("api:run-doctor", payload || {}),
+  runReadyCheck: (payload) => ipcRenderer.invoke("api:run-ready-check", payload || {}),
 });

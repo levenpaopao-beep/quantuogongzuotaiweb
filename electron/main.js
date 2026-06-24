@@ -114,6 +114,12 @@ function taskPayload(payload = {}) {
   };
 }
 
+function requireAdminPayload(payload = {}, action = "执行系统操作") {
+  if ((payload.role || "admin") !== "admin") {
+    throw new Error(`只有管理员可以${action}`);
+  }
+}
+
 function renderSmokeScript() {
   return `
     (async () => {
@@ -515,8 +521,14 @@ ipcMain.handle("api:import-matrix", (_event, payload) => runPython("import-matri
 ipcMain.handle("api:erp-sync", (_event, payload) => runPython("erp-sync", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:create-backup", (_event, payload) => runPython("create-backup", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:restore-backup", (_event, payload) => runPython("restore-backup", [], JSON.stringify(payload || {})));
-ipcMain.handle("api:run-doctor", () => runNodeScript("doctor.js"));
-ipcMain.handle("api:run-ready-check", () => runNodeScript("check-ready.js"));
+ipcMain.handle("api:run-doctor", (_event, payload) => {
+  requireAdminPayload(payload || {}, "运行系统自检");
+  return runNodeScript("doctor.js");
+});
+ipcMain.handle("api:run-ready-check", (_event, payload) => {
+  requireAdminPayload(payload || {}, "运行交付检查");
+  return runNodeScript("check-ready.js");
+});
 
 ipcMain.handle("api:select-files", async (_event, group) => {
   const result = await dialog.showOpenDialog({
