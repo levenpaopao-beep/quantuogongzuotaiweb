@@ -154,6 +154,11 @@ if (!html.includes('id="reportReadinessBar"') || !renderer.includes("function re
     "月结输出前需要把未填销量、导入缺口和任务待办集中提示，避免报表生成后才发现口径不完整。",
   ]);
 }
+if (!html.includes('id="generateWeeklyBtn" data-admin-only="report-generate"')) {
+  fail("导入页生成报表入口未按管理员角色隐藏", [
+    "店长可以补导入数据，但生成就绪报表/任务仍是管理员动作，店长视角不能露出这个按钮。",
+  ]);
+}
 const renderReportReadinessBody = functionBody(renderer, "renderReportReadiness");
 if (
   !renderReportReadinessBody.includes('data-empty-page="sales"') ||
@@ -162,6 +167,17 @@ if (
 ) {
   fail("报表体检未接入销量/导入/任务定位", [
     "报表页的风险项按钮必须能直接回到销量、导入和任务模块处理问题。",
+  ]);
+}
+if (!renderReportReadinessBody.includes('currentOperator().role === "owner"') || !renderReportReadinessBody.includes('data-report-action="generate-weekly"')) {
+  fail("报表体检生成入口缺少店长隐藏逻辑", [
+    "店长看报表体检时可以查销量、导入和任务，但不能直接生成管理员报表。",
+  ]);
+}
+const renderReportCardsBody = functionBody(renderer, "renderReportCards");
+if (!renderReportCardsBody.includes('currentOperator().role === "owner"') || !renderReportCardsBody.includes('data-action="generate"')) {
+  fail("报表卡片生成按钮缺少店长隐藏逻辑", [
+    "店长可以查看已有经营输出，但单张报表生成按钮必须只给管理员。",
   ]);
 }
 if (/radial-gradient\(/.test(fs.readFileSync(path.join(ROOT, "electron", "renderer.css"), "utf8"))) {

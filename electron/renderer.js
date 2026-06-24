@@ -505,6 +505,7 @@ function latestOutputForReport(reportId) {
 function renderReportReadiness() {
   const bar = $("#reportReadinessBar");
   if (!bar) return;
+  const ownerMode = currentOperator().role === "owner";
   const salesSummary = state.sales?.summary || {};
   const importSummary = state.importMatrix?.summary || {};
   const taskSummary = state.taskOverview || state.taskSummary || {};
@@ -547,7 +548,7 @@ function renderReportReadiness() {
       <button class="tool-button" data-empty-page="sales" data-sales-focus="missing" type="button">查销量</button>
       <button class="tool-button" data-empty-page="imports" data-focus="import-matrix" data-import-focus="blocked" type="button">查导入</button>
       <button class="tool-button" data-empty-page="tasks" data-task-open-only="true" type="button">查任务</button>
-      <button class="tool-button primary-mini" data-report-action="generate-weekly" type="button">生成就绪报表</button>
+      ${ownerMode ? "" : '<button class="tool-button primary-mini" data-report-action="generate-weekly" type="button">生成就绪报表</button>'}
     `;
     bindEmptyActions(actions);
     actions.querySelector('[data-report-action="generate-weekly"]')?.addEventListener("click", generateWeeklyReports);
@@ -558,6 +559,7 @@ function renderReportCards() {
   const wrap = $("#reportCards");
   wrap.innerHTML = "";
   renderReportReadiness();
+  const ownerMode = currentOperator().role === "owner";
   Object.entries(state.reports).forEach(([reportId, report]) => {
     const latest = latestOutputForReport(reportId);
     const card = document.createElement("div");
@@ -567,11 +569,11 @@ function renderReportCards() {
       <p>${report.description || ""}</p>
       <div class="report-latest">${latest ? `最近生成：${latest.name}<br>${latest.modified} · ${formatSize(latest.size)}` : "暂无已生成表格"}<br>${reportTaskSummary(reportId)}</div>
       <div class="download-actions">
-        <button class="primary-button" data-action="generate">生成表格</button>
+        ${ownerMode ? "" : '<button class="primary-button" data-action="generate">生成表格</button>'}
         ${latest ? `<button class="ghost-button download-report" data-action="open">打开表格</button><button class="ghost-button" data-action="folder">打开所在文件夹</button>` : ""}
       </div>
     `;
-    card.querySelector('[data-action="generate"]').addEventListener("click", () => generateReport(reportId));
+    card.querySelector('[data-action="generate"]')?.addEventListener("click", () => generateReport(reportId));
     const openButton = card.querySelector('[data-action="open"]');
     const folderButton = card.querySelector('[data-action="folder"]');
     if (openButton && latest) openButton.addEventListener("click", () => api.openOutput(latest.name));
