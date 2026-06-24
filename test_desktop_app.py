@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import daily_ops_app
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from PIL import Image
 
 
@@ -139,6 +139,55 @@ class DesktopAppTest(unittest.TestCase):
             self.assertEqual(detail["D2"].value, "小琴")
             self.assertEqual(summary.max_row, 2)
             self.assertEqual(summary["A2"].value, "Temu")
+
+    def test_desktop_adapter_owner_sales_compare_is_scoped_to_owner(self):
+        import daily_ops_desktop_adapter as adapter
+
+        assignments = [
+            {"platform": "Temu", "store": "七弟", "owner": "小琴"},
+            {"platform": "Temu", "store": "童话", "owner": "胡娟"},
+        ]
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sales_db = root / "daily_sales.json"
+            source = root / "temu_sales.xlsx"
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["店铺", "SKC", "7天销量"])
+            ws.append(["七弟", "A001", 700])
+            ws.append(["童话", "B001", 700])
+            wb.save(source)
+
+            with patch.object(adapter, "SALES_DB_PATH", sales_db), \
+                 patch.object(daily_ops_app, "load_store_owner_assignments", return_value=assignments), \
+                 patch.object(daily_ops_app, "temu_sales_files", return_value=[source]), \
+                 patch.object(daily_ops_app, "shein_platform_files", return_value=[]):
+                adapter.submit_sales_payload({
+                    "role": "admin",
+                    "user": "管理员",
+                    "date": "2026-06-23",
+                    "platform": "Temu",
+                    "store": "七弟",
+                    "sales": "150",
+                })
+                adapter.submit_sales_payload({
+                    "role": "admin",
+                    "user": "管理员",
+                    "date": "2026-06-23",
+                    "platform": "Temu",
+                    "store": "童话",
+                    "sales": "150",
+                })
+                result = adapter.sales_compare_payload({
+                    "role": "owner",
+                    "user": "小琴",
+                    "date": "2026-06-23",
+                })
+
+            self.assertEqual(result["summary"]["checked"], 1)
+            self.assertEqual(result["summary"]["alerts"], 1)
+            self.assertEqual([row["store"] for row in result["rows"]], ["七弟"])
+            self.assertEqual([row["owner"] for row in result["rows"]], ["小琴"])
 
     def test_mac_launcher_uses_desktop_entrypoint_not_local_url(self):
         text = (ROOT / "启动日常运营工作台.command").read_text(encoding="utf-8")
