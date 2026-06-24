@@ -18,6 +18,7 @@ function run(label, command, args) {
 }
 
 run("启动和业务自检", process.execPath, [path.join(ROOT, "scripts", "doctor.js")]);
+run("文档口径检查", process.execPath, [path.join(ROOT, "scripts", "check-docs.js")]);
 run("依赖安全检查", "npm", ["audit"]);
 
 const release = spawnSync(process.execPath, [path.join(ROOT, "scripts", "check-release.js")], {
@@ -36,4 +37,4 @@ if (release.status !== 0) {
 
 const releaseOutput = [release.stdout, release.stderr].filter(Boolean).join("\n").trim();
 if (releaseOutput) console.log(releaseOutput);
-console.log("交付检查通过：启动、业务测试、依赖安全和提交范围均已通过。");
+console.log("交付检查通过：启动、业务测试、文档口径、依赖安全和提交范围均已通过。");
