@@ -5,11 +5,11 @@ def norm(value):
 
 
 SOURCE_REQUIREMENTS = {
-    "Temu": ["erp_base", "temu_platform", "temu_hot"],
-    "Shein": ["erp_base", "shein_platform"],
-    "速卖通": ["erp_base"],
-    "TK": ["erp_base"],
-    "Ozon": ["erp_base"],
+    "Temu": ["erp_base", "erp_stock", "temu_platform", "temu_hot"],
+    "Shein": ["erp_base", "erp_stock", "shein_platform"],
+    "速卖通": ["erp_base", "erp_stock"],
+    "TK": ["erp_base", "erp_stock"],
+    "Ozon": ["erp_base", "erp_stock"],
 }
 
 

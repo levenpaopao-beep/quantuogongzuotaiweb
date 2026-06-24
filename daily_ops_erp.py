@@ -9,8 +9,8 @@ from pathlib import Path
 from openpyxl import Workbook
 
 
-PRODUCT_ENDPOINT = "vip_api_goods_query.php"
-STOCK_ENDPOINT = "api_goods_stock_change_query.php"
+PRODUCT_ENDPOINT = "goods_query.php"
+STOCK_ENDPOINT = "stock_query.php"
 QYB_TEST_BASE_URL = "https://sandbox.wangdian.cn/openapi2"
 QYB_PROD_BASE_URL = "https://api.wangdian.cn/openapi2"
 
@@ -113,6 +113,21 @@ def _rows_from_response(data, keys):
     return []
 
 
+def _iter_product_items(items):
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        specs = item.get("spec_list") or item.get("specs") or item.get("goods_spec_list")
+        if isinstance(specs, list) and specs:
+            for spec in specs:
+                if isinstance(spec, dict):
+                    merged = dict(item)
+                    merged.update(spec)
+                    yield merged
+            continue
+        yield item
+
+
 def _total_from_response(data):
     if not isinstance(data, dict):
         return None
@@ -195,9 +210,7 @@ def _write_rows(path, headers, rows):
 
 def normalize_product_rows(items):
     rows = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
+    for item in _iter_product_items(items):
         rows.append({
             "店铺编号": _text(item.get("shop_no") or item.get("Shop_no")),
             "店铺": _text(item.get("shop_name") or item.get("Shop_name")),
@@ -210,6 +223,9 @@ def normalize_product_rows(items):
             "规格名称": _text(item.get("spec_name") or item.get("api_spec_name")),
             "条码": _text(item.get("barcode")),
             "平台库存": _text(item.get("stock_num")),
+            "成本价": _text(item.get("cost_price") or item.get("purchase_price") or item.get("成本价")),
+            "批发报价": _text(item.get("wholesale_price") or item.get("wholesale") or item.get("批发报价") or item.get("批发价")),
+            "批发价": _text(item.get("wholesale_price") or item.get("wholesale") or item.get("批发价") or item.get("批发报价")),
             "零售价": _text(item.get("retail_price") or item.get("price")),
             "修改时间": _text(item.get("modified")),
             "来源接口": PRODUCT_ENDPOINT,
@@ -217,24 +233,34 @@ def normalize_product_rows(items):
     return rows
 
 
-def normalize_stock_rows(items):
+def normalize_stock_rows(items, warehouse_no="", warehouse_name=""):
     rows = []
+    warehouse_no = _text(warehouse_no)
+    warehouse_name = _text(warehouse_name)
     for item in items:
         if not isinstance(item, dict):
+            continue
+        row_warehouse_no = _text(item.get("warehouse_no") or item.get("warehouse_id"))
+        row_warehouse_name = _text(item.get("warehouse_name") or item.get("warehouse"))
+        if warehouse_no and row_warehouse_no and row_warehouse_no != warehouse_no:
+            continue
+        if warehouse_name and row_warehouse_name and warehouse_name not in row_warehouse_name:
             continue
         merchant_code = _text(item.get("spec_no") or item.get("match_code") or item.get("outer_id"))
         rows.append({
             "店铺编号": _text(item.get("shop_no")),
             "店铺": _text(item.get("shop_name")),
-            "仓库编号": _text(item.get("warehouse_no") or item.get("warehouse_id")),
-            "仓库": _text(item.get("warehouse_name") or item.get("warehouse")),
+            "仓库编号": row_warehouse_no,
+            "仓库": row_warehouse_name,
             "平台货品编码": _text(item.get("api_goods_no") or item.get("goods_no")),
             "平台规格编码": _text(item.get("api_spec_no") or item.get("spec_no")),
             "商家编码（新）": merchant_code,
             "商家编码": merchant_code,
             "货品名称": _text(item.get("goods_name") or item.get("api_goods_name")),
             "规格名称": _text(item.get("spec_name") or item.get("api_spec_name")),
-            "可销库存": _text(item.get("stock_num") or item.get("available_stock") or item.get("stock")),
+            "可销库存": _text(item.get("stock_num") or item.get("available_stock") or item.get("available_num") or item.get("stock")),
+            "实际库存": _text(item.get("real_stock") or item.get("actual_stock") or item.get("stock_num")),
+            "占用库存": _text(item.get("occupy_stock") or item.get("lock_stock") or item.get("occupied_num")),
             "修改时间": _text(item.get("modified")),
             "来源接口": STOCK_ENDPOINT,
         })
@@ -251,7 +277,9 @@ def manual_sync(settings, erp_dir, now=None):
     days = max(1, min(days, 30))
     end_time = now.strftime("%Y-%m-%d %H:%M:%S")
     start_time = (now - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
-    shop_no = _text(settings.get("shop_no") or settings.get("warehouse_no"))
+    shop_no = _text(settings.get("shop_no"))
+    warehouse_no = _text(settings.get("warehouse_no"))
+    warehouse_name = _text(settings.get("warehouse_name") or "宠物圈仓库")
     page_size = _int(settings.get("page_size") or 100, 100, minimum=1, maximum=100)
     stock_limit = _int(settings.get("stock_limit") or 1000, 1000, minimum=1, maximum=2000)
 
@@ -266,21 +294,22 @@ def manual_sync(settings, erp_dir, now=None):
         "start_time": start_time,
         "end_time": end_time,
         "shop_no": shop_no,
+        "warehouse_no": warehouse_no,
         "limit": stock_limit,
-    }, ["stock_change_list", "data"], page_size, row_limit=stock_limit)
+    }, ["stock_list", "stock_change_list", "goods_list", "data"], page_size, row_limit=stock_limit)
 
     product_rows = normalize_product_rows(product_sync["rows"])
-    stock_rows = normalize_stock_rows(stock_sync["rows"])
+    stock_rows = normalize_stock_rows(stock_sync["rows"], warehouse_no, warehouse_name)
     stamp = now.strftime("%Y%m%d_%H%M%S")
     erp_dir = Path(erp_dir)
     product_file = _write_rows(
         erp_dir / f"erp产品基础信息表_接口同步_{stamp}.xlsx",
-        ["店铺编号", "店铺", "平台ID", "平台货品编码", "平台规格编码", "商家编码（新）", "货品编码", "货品名称", "规格名称", "条码", "平台库存", "零售价", "修改时间", "来源接口"],
+        ["店铺编号", "店铺", "平台ID", "平台货品编码", "平台规格编码", "商家编码（新）", "货品编码", "货品名称", "规格名称", "条码", "平台库存", "成本价", "批发报价", "批发价", "零售价", "修改时间", "来源接口"],
         product_rows,
     )
     stock_file = _write_rows(
         erp_dir / f"erp库存同步_{stamp}.xlsx",
-        ["店铺编号", "店铺", "仓库编号", "仓库", "平台货品编码", "平台规格编码", "商家编码（新）", "商家编码", "货品名称", "规格名称", "可销库存", "修改时间", "来源接口"],
+        ["店铺编号", "店铺", "仓库编号", "仓库", "平台货品编码", "平台规格编码", "商家编码（新）", "商家编码", "货品名称", "规格名称", "可销库存", "实际库存", "占用库存", "修改时间", "来源接口"],
         stock_rows,
     )
     return {

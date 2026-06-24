@@ -341,6 +341,11 @@ if (!html.includes('data-erp-field="page_size"') || !html.includes('data-erp-fie
     "宠物圈仓库商品和库存数据量可能超过单页，管理员需要能控制每页条数和库存最多拉取量。",
   ]);
 }
+if (!html.includes('data-erp-field="warehouse_no"') || !html.includes('data-erp-field="warehouse_name"') || !renderer.includes("仓库编码或仓库名称")) {
+  fail("ERP 同步缺少宠物圈仓库定位", [
+    "库存同步必须能锁定宠物圈仓库，避免把其他仓库库存混进报表。",
+  ]);
+}
 const renderErpSettingsBody = functionBody(renderer, "renderErpSettings");
 const manualErpSyncBody = functionBody(renderer, "manualErpSync");
 if (!renderErpSettingsBody.includes("last_product_pages") || !manualErpSyncBody.includes("result.product_pages")) {

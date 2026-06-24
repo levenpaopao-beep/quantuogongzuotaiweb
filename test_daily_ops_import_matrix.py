@@ -20,7 +20,7 @@ class ImportMatrixTest(unittest.TestCase):
 
         self.assertEqual(matrix["summary"]["stores"], 2)
         self.assertEqual(matrix["summary"]["blocked_stores"], 2)
-        self.assertEqual(matrix["summary"]["missing_cells"], 1)
+        self.assertEqual(matrix["summary"]["missing_cells"], 3)
         self.assertEqual(matrix["summary"]["pending_cells"], 1)
 
     def test_owner_only_sees_own_stores(self):

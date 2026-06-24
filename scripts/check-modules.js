@@ -157,6 +157,7 @@ const modules = [
       ["有系统设置页面入口", hasPage("rulesPage", "rules")],
       ["有 ERP 配置和手动同步按钮", hasButton("manualErpSyncBtn") && hasButton("saveErpSettingsBtn")],
       ["有 ERP 分页和库存上限配置", html.includes('data-erp-field="page_size"') && html.includes('data-erp-field="stock_limit"')],
+      ["有宠物圈仓库定位配置", html.includes('data-erp-field="warehouse_no"') && html.includes('data-erp-field="warehouse_name"')],
       ["有规则保存接口", hasApi("loadRules", "api:load-rules") && hasApi("saveRules", "api:save-rules")],
       ["ERP 同步安全返回", ["blocked", "synced"].includes(erpSync.status)],
       ["规则结构可读取", rules && typeof rules === "object"],
