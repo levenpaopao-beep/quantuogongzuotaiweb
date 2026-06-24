@@ -846,6 +846,10 @@ def sync_erp_base_data():
     settings["last_manual_sync_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     settings["last_manual_sync_status"] = result.get("status", "")
     settings["last_manual_sync_message"] = result.get("message", "")
+    settings["last_product_count"] = result.get("product_count", 0)
+    settings["last_stock_count"] = result.get("stock_count", 0)
+    settings["last_product_pages"] = result.get("product_pages", 0)
+    settings["last_stock_pages"] = result.get("stock_pages", 0)
     rules["erp_api"] = settings
     save_rules(rules)
     return result

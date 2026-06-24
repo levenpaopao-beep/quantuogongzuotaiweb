@@ -2004,10 +2004,13 @@ function renderErpSettings() {
   if (status) {
     const enabled = settings.enabled ? "已启用" : "未启用";
     const auto = settings.auto_sync ? "自动同步开启" : "手动同步为主";
+    const counts = settings.last_manual_sync_at
+      ? ` · 商品 ${settings.last_product_count || 0} 条/${settings.last_product_pages || 0} 页，库存 ${settings.last_stock_count || 0} 条/${settings.last_stock_pages || 0} 页`
+      : "";
     const last = settings.last_manual_sync_at
       ? ` · 上次同步：${settings.last_manual_sync_at} ${settings.last_manual_sync_message || ""}`
       : "";
-    status.textContent = `${settings.provider || "旺店通"} · ${enabled} · ${auto}${last}`;
+    status.textContent = `${settings.provider || "旺店通"} · ${enabled} · ${auto}${last}${counts}`;
   }
 }
 
@@ -2288,7 +2291,9 @@ async function manualErpSync() {
     state.rules = await api.saveRules(operatorPayload({ rules: next }));
     const result = await api.erpSync(operatorPayload());
     await loadRules();
-    const message = result.message || "ERP 同步完成";
+    const pages = `商品 ${result.product_pages || 0} 页、库存 ${result.stock_pages || 0} 页`;
+    const warnings = (result.warnings || []).length ? `；提醒：${result.warnings.join("；")}` : "";
+    const message = `${result.message || "ERP 同步完成"}；${pages}${warnings}`;
     if (status) status.textContent = message;
     showToast(message);
   } catch (error) {

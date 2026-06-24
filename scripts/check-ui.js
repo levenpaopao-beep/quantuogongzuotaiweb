@@ -262,6 +262,18 @@ if (!html.includes('id="manualErpSyncBtn"') || !renderer.includes("function manu
     "第一版应以手动同步为主，系统设置页必须提供立即同步商品和库存的操作。",
   ]);
 }
+if (!html.includes('data-erp-field="page_size"') || !html.includes('data-erp-field="stock_limit"')) {
+  fail("ERP 同步缺少分页和库存上限配置", [
+    "宠物圈仓库商品和库存数据量可能超过单页，管理员需要能控制每页条数和库存最多拉取量。",
+  ]);
+}
+const renderErpSettingsBody = functionBody(renderer, "renderErpSettings");
+const manualErpSyncBody = functionBody(renderer, "manualErpSync");
+if (!renderErpSettingsBody.includes("last_product_pages") || !manualErpSyncBody.includes("result.product_pages")) {
+  fail("ERP 同步结果缺少页数反馈", [
+    "同步完成后需要显示商品/库存拉了多少页，管理员才能判断是否只取了一页。",
+  ]);
+}
 if (!preload.includes("erpSync:") || !main.includes('ipcMain.handle("api:erp-sync"')) {
   fail("ERP 同步接口未完整暴露", [
     "manualErpSync 需要通过 preload 和主进程调用后端 erp-sync 命令。",

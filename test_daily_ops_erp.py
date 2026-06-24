@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from openpyxl import load_workbook
 
@@ -47,6 +48,52 @@ class ErpSyncTest(unittest.TestCase):
             ws = wb.active
             self.assertEqual(ws.cell(2, 1).value, "SKU-XL")
             wb.close()
+
+    def test_manual_sync_reads_multiple_pages_and_caps_stock_rows(self):
+        settings = {
+            "base_url": "https://api.wangdian.cn/openapi2",
+            "app_key": "app",
+            "app_secret": "secret",
+            "sid": "sid",
+            "shop_no": "PETCIRCLE",
+            "page_size": 2,
+            "stock_limit": 3,
+        }
+
+        def fake_post(_settings, endpoint, params):
+            page_no = params["page_no"]
+            if endpoint == daily_ops_erp.PRODUCT_ENDPOINT:
+                pages = [
+                    {"goods_list": [
+                        {"spec_no": "P-1", "goods_name": "猫粮", "spec_name": "1kg"},
+                        {"spec_no": "P-2", "goods_name": "猫粮", "spec_name": "2kg"},
+                    ], "total_count": 3},
+                    {"goods_list": [
+                        {"spec_no": "P-3", "goods_name": "猫粮", "spec_name": "3kg"},
+                    ], "total_count": 3},
+                ]
+                return pages[page_no]
+            pages = [
+                {"stock_change_list": [
+                    {"spec_no": "S-1", "stock_num": 11},
+                    {"spec_no": "S-2", "stock_num": 12},
+                ], "has_more": True},
+                {"stock_change_list": [
+                    {"spec_no": "S-3", "stock_num": 13},
+                    {"spec_no": "S-4", "stock_num": 14},
+                ], "has_more": False},
+            ]
+            return pages[page_no]
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(daily_ops_erp, "post_api", side_effect=fake_post):
+            result = daily_ops_erp.manual_sync(settings, Path(tmp))
+
+        self.assertEqual(result["status"], "synced")
+        self.assertEqual(result["product_count"], 3)
+        self.assertEqual(result["stock_count"], 3)
+        self.assertEqual(result["product_pages"], 2)
+        self.assertEqual(result["stock_pages"], 2)
+        self.assertIn("已达到拉取上限 3 条", result["warnings"])
 
 
 if __name__ == "__main__":

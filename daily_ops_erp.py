@@ -17,6 +17,17 @@ def _text(value):
     return "" if value is None else str(value).strip()
 
 
+def _int(value, default, minimum=1, maximum=None):
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        result = default
+    result = max(minimum, result)
+    if maximum is not None:
+        result = min(maximum, result)
+    return result
+
+
 def _byte_len(value):
     return len(_text(value).encode("utf-8"))
 
@@ -95,6 +106,74 @@ def _rows_from_response(data, keys):
     return []
 
 
+def _total_from_response(data):
+    if not isinstance(data, dict):
+        return None
+    for key in ["total_count", "total", "count", "record_count"]:
+        value = data.get(key)
+        if value not in (None, ""):
+            return _int(value, 0, minimum=0)
+    nested = data.get("data")
+    if isinstance(nested, dict):
+        for key in ["total_count", "total", "count", "record_count"]:
+            value = nested.get(key)
+            if value not in (None, ""):
+                return _int(value, 0, minimum=0)
+    return None
+
+
+def _has_next_page(data, rows, page_no, page_size, total):
+    if not isinstance(data, dict):
+        return False
+    for key in ["has_more", "has_next", "more"]:
+        if key in data:
+            return bool(data.get(key))
+    nested = data.get("data")
+    if isinstance(nested, dict):
+        for key in ["has_more", "has_next", "more"]:
+            if key in nested:
+                return bool(nested.get(key))
+    if total is not None:
+        return (page_no + 1) * page_size < total
+    return len(rows) >= page_size
+
+
+def _response_error(data):
+    if not isinstance(data, dict):
+        return ""
+    code = data.get("code")
+    if code in (None, "", 0, "0"):
+        return ""
+    return _text(data.get("message") or data.get("msg") or f"接口返回 code={code}")
+
+
+def fetch_paged_rows(settings, endpoint, base_params, row_keys, page_size, max_pages=50, row_limit=None):
+    all_rows = []
+    messages = []
+    total = None
+    pages = 0
+    for page_no in range(max_pages):
+        params = dict(base_params or {})
+        params.update({"page_size": page_size, "page_no": page_no})
+        data = post_api(settings, endpoint, params)
+        pages += 1
+        error = _response_error(data)
+        if error:
+            messages.append(f"第 {page_no + 1} 页：{error}")
+            break
+        rows = _rows_from_response(data, row_keys)
+        if total is None:
+            total = _total_from_response(data)
+        all_rows.extend(rows)
+        if row_limit is not None and len(all_rows) >= row_limit:
+            all_rows = all_rows[:row_limit]
+            messages.append(f"已达到拉取上限 {row_limit} 条")
+            break
+        if not _has_next_page(data, rows, page_no, page_size, total):
+            break
+    return {"rows": all_rows, "pages": pages, "total": total, "messages": messages}
+
+
 def _write_rows(path, headers, rows):
     wb = Workbook()
     ws = wb.active
@@ -162,22 +241,25 @@ def manual_sync(settings, erp_dir, now=None):
     end_time = now.strftime("%Y-%m-%d %H:%M:%S")
     start_time = (now - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     shop_no = _text(settings.get("shop_no") or settings.get("warehouse_no"))
-    page_size = int(settings.get("page_size") or 100)
-    stock_limit = int(settings.get("stock_limit") or 100)
+    page_size = _int(settings.get("page_size") or 100, 100, minimum=1, maximum=500)
+    stock_limit = _int(settings.get("stock_limit") or 1000, 1000, minimum=1, maximum=20000)
 
     product_endpoint = _text(settings.get("product_endpoint")) or PRODUCT_ENDPOINT
     stock_endpoint = _text(settings.get("stock_endpoint")) or STOCK_ENDPOINT
-    product_resp = post_api(settings, product_endpoint, {
+    product_sync = fetch_paged_rows(settings, product_endpoint, {
         "start_time": start_time,
         "end_time": end_time,
-        "page_size": page_size,
-        "page_no": 0,
         "shop_no": shop_no,
-    })
-    stock_resp = post_api(settings, stock_endpoint, {"shop_no": shop_no, "limit": stock_limit})
+    }, ["goods_list", "data"], page_size)
+    stock_sync = fetch_paged_rows(settings, stock_endpoint, {
+        "start_time": start_time,
+        "end_time": end_time,
+        "shop_no": shop_no,
+        "limit": stock_limit,
+    }, ["stock_change_list", "data"], page_size, row_limit=stock_limit)
 
-    product_rows = normalize_product_rows(_rows_from_response(product_resp, ["goods_list", "data"]))
-    stock_rows = normalize_stock_rows(_rows_from_response(stock_resp, ["stock_change_list", "data"]))
+    product_rows = normalize_product_rows(product_sync["rows"])
+    stock_rows = normalize_stock_rows(stock_sync["rows"])
     stamp = now.strftime("%Y%m%d_%H%M%S")
     erp_dir = Path(erp_dir)
     product_file = _write_rows(
@@ -195,6 +277,11 @@ def manual_sync(settings, erp_dir, now=None):
         "message": f"已同步商品 {len(product_rows)} 条、库存 {len(stock_rows)} 条",
         "product_count": len(product_rows),
         "stock_count": len(stock_rows),
+        "product_pages": product_sync["pages"],
+        "stock_pages": stock_sync["pages"],
+        "product_total": product_sync["total"],
+        "stock_total": stock_sync["total"],
+        "warnings": product_sync["messages"] + stock_sync["messages"],
         "product_file": str(product_file),
         "stock_file": str(stock_file),
         "api": {"product": product_endpoint, "stock": stock_endpoint},
