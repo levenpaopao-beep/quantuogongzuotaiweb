@@ -141,6 +141,10 @@ function renderSmokeScript() {
         const value = document.querySelector(selector)?.textContent || "";
         if (!value.includes(text)) errors.push(label + "缺少“" + text + "”");
       };
+      const requireActive = (selector, label) => {
+        const element = document.querySelector(selector);
+        if (!element || !element.classList.contains("active")) errors.push(label + "未处于选中状态");
+      };
       const checkNoHorizontalOverflow = (label) => {
         const offenders = Array.from(document.querySelectorAll("body *")).filter((element) => {
           const rect = element.getBoundingClientRect();
@@ -232,11 +236,17 @@ function renderSmokeScript() {
             }
           });
           requireText("#todayWorkflowTitle", "店长每日流程", "店长工作流");
+          await openPage("sales", "#salesPage.page-active", "店长销量管理页面");
+          requireVisible("#salesFocusBar", "店长销量筛选条");
+          requireText("#salesFocusTitle", "今天先补未填", "店长销量主筛选");
+          requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长销量未填筛选");
           await openPage("tasks", "#tasksPage.page-active", "店长商品任务页面");
           requireVisible('[data-owner-only="task-submit"]', "店长整包处理按钮");
           if (visible('[data-admin-only="task-push"]')) errors.push("店长视角仍显示管理员推送按钮");
           if (visible('[data-admin-only="task-review"]')) errors.push("店长视角仍显示管理员确认按钮");
           await openPage("imports", "#importPage.page-active", "店长数据导入页面");
+          requireVisible("#importHealthBar", "店长导入健康条");
+          requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长导入需处理筛选");
           if (visible('[data-admin-only="report-generate"]')) errors.push("店长视角仍显示管理员报表生成按钮");
           await openPage("reports", "#reportsPage.page-active", "店长经营报表页面");
           if (visible('[data-report-action="generate-weekly"]')) errors.push("店长视角仍显示周报生成按钮");
