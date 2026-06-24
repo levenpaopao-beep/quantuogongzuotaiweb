@@ -1149,12 +1149,13 @@ function followRouteButton(button) {
 }
 
 function applyRouteIntent(route = {}) {
+  if (route.taskUser && $("#taskUser")) $("#taskUser").value = route.taskUser;
   if (route.taskStatus && $("#taskStatus")) $("#taskStatus").value = route.taskStatus;
   if (route.taskNextHandler && $("#taskNextHandler")) $("#taskNextHandler").value = route.taskNextHandler;
   if (route.taskOpenOnly && $("#taskOpenOnly")) $("#taskOpenOnly").checked = route.taskOpenOnly === "true";
   if (route.salesFocus) setSalesFocus(route.salesFocus, { scroll: route.emptyPage === "sales" });
   if (route.importFocus) setImportFocus(route.importFocus, { scroll: route.emptyPage === "imports" || route.focus === "import-matrix" });
-  if (route.emptyPage === "tasks" && (route.taskStatus || route.taskNextHandler || route.taskOpenOnly)) {
+  if (route.emptyPage === "tasks" && (route.taskUser || route.taskStatus || route.taskNextHandler || route.taskOpenOnly)) {
     loadTasks();
   }
   if (route.focus === "import-matrix") {
@@ -1572,7 +1573,111 @@ function renderTodayDashboard() {
       <div><span>经营平台</span><strong>Temu / Shein / 速卖通 / TK / Ozon</strong></div>
     `;
   }
+  renderDailyFollowups();
   renderTodayGuide();
+}
+
+function ownerFollowupRows() {
+  const rows = new Map();
+  const ensure = (owner) => {
+    const key = owner || "未分配";
+    if (!rows.has(key)) {
+      rows.set(key, {
+        owner: key,
+        stores: new Set(),
+        missingSales: 0,
+        abnormalSales: 0,
+        importBlocked: 0,
+        importPending: 0,
+        ownerPending: 0,
+        adminPending: 0,
+        overdue: 0,
+      });
+    }
+    return rows.get(key);
+  };
+  (state.sales?.entries || []).forEach((entry) => {
+    const item = ensure(entry.owner || "未分配");
+    if (entry.store) item.stores.add(entry.store);
+    if (!entry.submitted) item.missingSales += 1;
+    if (entry.abnormal) item.abnormalSales += 1;
+  });
+  (state.importMatrix?.rows || []).forEach((row) => {
+    const item = ensure(row.owner || "未分配");
+    if (row.store) item.stores.add(row.store);
+    if (!row.ready) item.importBlocked += 1;
+    if ((row.cells || []).some((cell) => cell.state === "pending")) item.importPending += 1;
+  });
+  Object.values(state.taskOverview?.owner_status || state.taskSummary?.owner_status || {}).forEach((row) => {
+    const item = ensure(row.owner || "未分配");
+    const status = row.by_status || {};
+    item.ownerPending += Number(status["待店长处理"] || 0) + Number(status["已驳回"] || 0);
+    item.adminPending += Number(status["待管理员审核"] || 0) + Number(status["已通过"] || 0);
+    item.overdue += Number(row.overdue || 0);
+  });
+  return [...rows.values()]
+    .map((item) => ({ ...item, storeCount: item.stores.size }))
+    .filter((item) => item.owner !== "未分配" || item.missingSales || item.importBlocked || item.ownerPending || item.adminPending)
+    .sort((a, b) => {
+      const score = (row) => (row.missingSales * 5) + (row.ownerPending * 4) + (row.adminPending * 3) + (row.importBlocked * 2) + row.abnormalSales + row.overdue;
+      return score(b) - score(a) || String(a.owner).localeCompare(String(b.owner), "zh-Hans-CN");
+    });
+}
+
+function followupPrimaryAction(item, ownerMode) {
+  if (item.missingSales) return ["补销量", "sales", 'data-sales-focus="missing"'];
+  if (item.ownerPending) return ["处理任务", "tasks", 'data-task-status="待店长处理" data-task-open-only="true"'];
+  if (item.importBlocked || item.importPending) return ["补导入", "imports", 'data-focus="import-matrix" data-import-focus="blocked"'];
+  if (!ownerMode && item.adminPending) return ["确认任务", "tasks", 'data-task-status="待管理员审核" data-task-open-only="true"'];
+  return ["看明细", "tasks", 'data-task-open-only="true"'];
+}
+
+function renderDailyFollowups() {
+  const wrap = $("#dailyFollowupList");
+  if (!wrap) return;
+  const operator = currentOperator();
+  const ownerMode = operator.role === "owner";
+  const hint = $("#dailyFollowupHint");
+  if (hint) {
+    hint.textContent = ownerMode
+      ? "这里合并你负责店铺的销量、导入和任务状态，按今天要做的顺序处理。"
+      : "管理员按负责人看谁还缺销量、导入或任务处理，方便每天集中跟进。";
+  }
+  let rows = ownerFollowupRows();
+  if (ownerMode) rows = rows.filter((item) => item.owner === operator.user);
+  if (!rows.length) {
+    wrap.innerHTML = `<div class="daily-followup-empty">${actionEmpty({
+      title: ownerMode ? "今天没有需要你处理的督办项" : "当前没有负责人督办项",
+      body: ownerMode ? "如果你负责的店铺未显示，请让管理员在基础资料里维护负责人。" : "销量、导入和任务都没有集中风险时，这里会保持为空。",
+      primary: ownerMode ? "查看我的销量" : "查看基础资料",
+      page: ownerMode ? "sales" : "masterdata",
+      attrs: ownerMode ? 'data-sales-focus="missing"' : "",
+    })}</div>`;
+    bindEmptyActions(wrap);
+    return;
+  }
+  wrap.innerHTML = rows.slice(0, 8).map((item) => {
+    const [actionLabel, page, attrs] = followupPrimaryAction(item, ownerMode);
+    const ownerAttr = !ownerMode && item.owner !== "未分配" ? `data-task-user="${esc(item.owner)}"` : "";
+    return `
+      <div class="daily-followup-row">
+        <div class="daily-followup-owner">
+          <strong>${esc(item.owner)}</strong>
+          <span>${item.storeCount || 0} 个店铺</span>
+        </div>
+        <div class="daily-followup-metrics">
+          <span class="${item.missingSales ? "warn" : "ok"}">未填 ${item.missingSales}</span>
+          <span class="${item.abnormalSales ? "danger" : "ok"}">异常 ${item.abnormalSales}</span>
+          <span class="${item.importBlocked ? "warn" : "ok"}">导入 ${item.importBlocked}</span>
+          <span class="${item.ownerPending ? "warn" : "ok"}">待店长 ${item.ownerPending}</span>
+          <span class="${item.adminPending ? "warn" : "ok"}">待确认 ${item.adminPending}</span>
+          <span class="${item.overdue ? "danger" : "ok"}">超时 ${item.overdue}</span>
+        </div>
+        <button class="ghost-button" data-empty-page="${page}" ${attrs} ${ownerAttr}>${actionLabel}</button>
+      </div>
+    `;
+  }).join("");
+  bindEmptyActions(wrap);
 }
 
 function renderTodayWorkflow() {
@@ -2806,6 +2911,7 @@ function bindEvents() {
   });
   $("#refreshBtn")?.addEventListener("click", refreshAll);
   $("#todayGuideRefreshBtn")?.addEventListener("click", refreshAll);
+  $("#dailyFollowupRefreshBtn")?.addEventListener("click", refreshAll);
   $("#loadSalesBtn")?.addEventListener("click", async () => {
     await loadSales(false);
     await loadSalesCompare(false);

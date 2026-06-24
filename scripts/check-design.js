@@ -47,6 +47,15 @@ expect(html.includes('id="todayWorkflowSteps"') && renderer.includes("renderToda
 expect(renderer.includes("店长每日流程") && renderer.includes("管理员日常流程"), "首页工作流缺少角色化表达", [
   "同一入口下，管理员和店长必须看到不同动作路径。",
 ]);
+expect(html.includes('id="dailyFollowupList"') && renderer.includes("renderDailyFollowups"), "首页缺少每日督办模块", [
+  "每天使用为主的工作台，需要按负责人合并销量、导入和任务缺口。",
+]);
+expect(/\.daily-followup-row\s*\{[\s\S]*grid-template-columns:\s*minmax/.test(css), "每日督办缺少稳定栅格", [
+  "负责人、指标和动作需要固定结构，避免列表刷新时布局跳动。",
+]);
+expect(/@media\s*\(max-width:\s*1260px\)\s*\{[\s\S]*\.daily-followup-row\s*\{\s*grid-template-columns:\s*1fr/.test(css), "每日督办缺少中小屏单列布局", [
+  "督办指标较多，小屏必须改成单列，避免文字挤压。",
+]);
 
 const imageTags = [...html.matchAll(/<img\b[^>]*>/g)].map((match) => match[0]);
 const unsafeImages = imageTags.filter((tag) => !tag.includes("data-fallback-label"));

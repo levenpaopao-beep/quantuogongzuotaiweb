@@ -120,6 +120,16 @@ if (!html.includes('id="todayWorkflowSteps"') || !html.includes('id="todayWorkfl
     "首屏需要直接告诉管理员和店长今天怎么操作，不能只显示状态卡片。",
   ]);
 }
+if (
+  !html.includes('id="dailyFollowupList"') ||
+  !renderer.includes("function renderDailyFollowups(") ||
+  !renderer.includes("function ownerFollowupRows(") ||
+  !renderer.includes('data-task-user="${esc(item.owner)}"')
+) {
+  fail("今日工作台缺少按负责人每日督办", [
+    "管理员每天需要按负责人看到未填销量、导入缺口和任务待办，店长也要看到自己的今日完成度。",
+  ]);
+}
 const todayWorkflowBody = functionBody(renderer, "renderTodayWorkflow");
 if (!todayWorkflowBody.includes("店长每日流程") || !todayWorkflowBody.includes("管理员日常流程")) {
   fail("今日工作流缺少角色化文案", [
@@ -142,11 +152,18 @@ if (!applyRouteIntentBody.includes("route.salesFocus") || !todayWorkflowBody.inc
     "首页“去填写/看销量”应把销量页切到未填口径，符合每天先补未填的主流程。",
   ]);
 }
+if (!applyRouteIntentBody.includes("route.taskUser") || !applyRouteIntentBody.includes("#taskUser")) {
+  fail("每日督办缺少负责人任务筛选跳转", [
+    "管理员点某个负责人督办时，任务页需要自动带上负责人，避免进入大列表后重新筛选。",
+  ]);
+}
 const renderSmokeBody = functionBody(main, "renderSmokeScript");
 if (
   !renderSmokeBody.includes("店长今日待办销量入口") ||
   !renderSmokeBody.includes("店长开始清单任务入口") ||
   !renderSmokeBody.includes("管理员今日待办导入入口") ||
+  !renderSmokeBody.includes("每日督办入口") ||
+  !renderSmokeBody.includes("店长每日督办入口") ||
   !renderSmokeBody.includes("店长销量回车提交") ||
   !renderSmokeBody.includes("管理员基础资料导入入口") ||
   !renderSmokeBody.includes("店长隐藏基础资料导入入口") ||

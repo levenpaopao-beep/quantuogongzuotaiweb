@@ -200,6 +200,7 @@ function renderSmokeScript() {
       requireVisible("#todayGuideSteps .guide-step", "开始使用清单");
       requireVisible("#todaySalesMetrics .metric-card", "销量指标");
       requireVisible("#todayActionList .action-route", "今日待办入口");
+      requireVisible("#dailyFollowupList .daily-followup-row, #dailyFollowupList .action-empty", "每日督办入口");
       checkNoHorizontalOverflow("今日工作台首屏");
       const brokenImages = Array.from(document.images).filter((image) => image.complete && image.naturalWidth === 0);
       if (brokenImages.length) errors.push("存在破图：" + brokenImages.length);
@@ -269,6 +270,7 @@ function renderSmokeScript() {
           });
           requireText("#todayWorkflowTitle", "店长每日流程", "店长工作流");
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
+          requireVisible("#dailyFollowupList .daily-followup-row, #dailyFollowupList .action-empty", "店长每日督办入口");
           await clickRoute('#todayWorkflowSteps [data-empty-page="sales"][data-sales-focus="missing"]', "#salesPage.page-active", "店长今日流程销量入口");
           requireText("#salesFocusTitle", "今天先补未填", "店长销量入口主筛选");
           requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长销量入口未填筛选");
