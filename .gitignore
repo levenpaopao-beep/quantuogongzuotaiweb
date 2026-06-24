@@ -17,6 +17,7 @@ node_modules
 *.log
 outputs/
 运营备份/
+.superpowers/
 
 # Local secrets and credentials
 .env
