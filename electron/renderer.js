@@ -17,12 +17,14 @@ const state = {
   sales: null,
   salesFocus: "missing",
   salesCompare: null,
+  salesReport: null,
   importMatrix: null,
   importFocus: "blocked",
   taskSuppressions: [],
   taskDialog: null,
   customPlatforms: [],
   ownerOptions: [],
+  operatorAccounts: [],
 };
 
 const BUILT_IN_PLATFORMS = ["Temu", "Shein", "速卖通", "TK", "Ozon"];
@@ -1363,6 +1365,73 @@ async function loadSalesCompare(showToastOnDone = false) {
   }
 }
 
+function salesReportPayload() {
+  return operatorPayload({
+    date_from: $("#salesReportDateFrom")?.value || "",
+    date_to: $("#salesReportDateTo")?.value || "",
+    platform: $("#salesReportPlatform")?.value || "",
+    store: $("#salesReportStore")?.value.trim() || "",
+  });
+}
+
+function renderSalesReport() {
+  const report = state.salesReport || {};
+  const summary = report.summary || {};
+  const summaryBox = $("#salesReportSummary");
+  if (summaryBox) {
+    summaryBox.innerHTML = [
+      ["总销量", summary.total_sales || 0, `${summary.record_count || 0} 条记录`, "ok"],
+      ["覆盖天数", summary.day_count || 0, "按日期去重", ""],
+      ["日均销量", summary.daily_average || 0, "总销量 / 天数", ""],
+      ["筛选店铺", (report.by_store || []).length, "当前结果", ""],
+    ].map(([label, value, hint, tone]) => `<div class="metric-card ${tone}"><span>${label}</span><strong>${value}</strong><small>${hint}</small></div>`).join("");
+  }
+  const platformRows = $("#salesReportPlatformRows");
+  if (platformRows) {
+    const rows = report.by_platform || [];
+    platformRows.innerHTML = rows.length ? rows.map((row) => `
+      <div class="output-row"><div><strong>${esc(row.platform)}</strong><p>销量 ${row.sales}，日均 ${row.daily_average}，记录 ${row.record_count}</p></div></div>
+    `).join("") : `<div class="action-empty"><strong>暂无平台汇总</strong><span>调整时间或平台后再查询。</span></div>`;
+  }
+  const storeRows = $("#salesReportStoreRows");
+  if (storeRows) {
+    const rows = report.by_store || [];
+    storeRows.innerHTML = rows.length ? rows.slice(0, 20).map((row) => `
+      <div class="output-row"><div><strong>${esc(row.store)}</strong><p>销量 ${row.sales}，日均 ${row.daily_average}，记录 ${row.record_count}</p></div></div>
+    `).join("") : `<div class="action-empty"><strong>暂无店铺汇总</strong><span>导入历史销量或填写每日销量后会显示。</span></div>`;
+  }
+  const detailRows = $("#salesReportDetailRows");
+  if (detailRows) {
+    const rows = report.rows || [];
+    detailRows.innerHTML = rows.length ? rows.slice(0, 80).map((row) => `
+      <div class="output-row">
+        <div><strong>${esc(row.date)} · ${esc(row.platform)} · ${esc(row.store)}</strong><p>${esc(row.owner || "-")} · 销量 ${esc(row.sales)} · ${esc(row.status || "")}</p></div>
+      </div>
+    `).join("") : `<div class="action-empty"><strong>暂无明细</strong><span>请先导入跨境运营总表，或让店长填写每日销量。</span></div>`;
+  }
+}
+
+async function loadSalesReport(showToastOnDone = false) {
+  if (!api.salesReport) return;
+  try {
+    state.salesReport = await api.salesReport(salesReportPayload());
+    renderSalesReport();
+    if (showToastOnDone) showToast("销量报表已查询");
+  } catch (error) {
+    showToast(userFacingError(error));
+  }
+}
+
+async function exportSalesReport() {
+  try {
+    const result = await api.exportSalesReport(salesReportPayload());
+    await refreshAll();
+    showToast(`销量报表已导出：${result.file || ""}`);
+  } catch (error) {
+    showToast(userFacingError(error));
+  }
+}
+
 async function loadImportMatrix(showToastOnDone = false) {
   if (!api.importMatrix) return;
   try {
@@ -1401,6 +1470,7 @@ async function submitSalesEntry(index) {
       await api.submitSales(payload);
     }
     await loadSales(false);
+    await loadSalesReport(false);
     await loadSalesCompare(false);
     showToast("销量已保存");
   } catch (error) {
@@ -2215,6 +2285,113 @@ async function saveStoreOwners() {
   }
 }
 
+async function loadOperatorAccounts(showMessage = false) {
+  const operator = currentOperator();
+  if (operator.role === "owner") {
+    state.operatorAccounts = [];
+    renderOperatorAccounts();
+    return;
+  }
+  try {
+    const result = await api.operatorAccounts(operatorPayload());
+    state.operatorAccounts = result.accounts || [];
+    renderOperatorAccounts();
+    if (showMessage) showToast("店长账号已刷新");
+  } catch (error) {
+    state.operatorAccounts = [];
+    renderOperatorAccounts(userFacingError(error));
+  }
+}
+
+function renderOperatorAccounts(error = "") {
+  const box = $("#operatorAccountRows");
+  if (!box) return;
+  if (error) {
+    box.innerHTML = `<div class="action-empty"><strong>账号读取失败</strong><span>${esc(error)}</span></div>`;
+    return;
+  }
+  if (!state.operatorAccounts.length) {
+    box.innerHTML = `<div class="action-empty"><strong>暂无店长账号</strong><span>导入负责人表后会自动生成账号。</span></div>`;
+    return;
+  }
+  box.innerHTML = state.operatorAccounts.map((account) => `
+    <div class="output-row">
+      <div>
+        <strong>${esc(account.owner || account.username)}</strong>
+        <p>账号：${esc(account.username)} · ${account.enabled === false ? "停用" : "启用"}</p>
+      </div>
+      <button class="ghost-button" data-reset-account="${esc(account.username)}">重置密码</button>
+    </div>
+  `).join("");
+  box.querySelectorAll("[data-reset-account]").forEach((button) => {
+    button.addEventListener("click", () => resetOperatorPassword(button.dataset.resetAccount));
+  });
+}
+
+async function resetOperatorPassword(username) {
+  try {
+    const result = await api.resetOperatorPassword(operatorPayload({ username }));
+    showToast(`新密码：${result.initial_password}`);
+    const status = $("#masterImportStatus");
+    if (status) status.textContent = `${username} 的新密码：${result.initial_password}`;
+    await loadOperatorAccounts(false);
+  } catch (error) {
+    showToast(userFacingError(error));
+  }
+}
+
+async function chooseWorkbookPath(inputSelector, title) {
+  const paths = await api.selectFiles({ name: title || "表格文件" });
+  if (!paths || !paths.length) return "";
+  const input = $(inputSelector);
+  if (input) input.value = paths[0];
+  return paths[0];
+}
+
+async function importOwnerMaster() {
+  const path = $("#ownerMasterPath")?.value.trim() || "";
+  if (!path) {
+    showToast("请先选择店铺负责人表");
+    return;
+  }
+  const status = $("#masterImportStatus");
+  try {
+    if (status) status.textContent = "正在导入负责人和生成账号...";
+    const result = await api.importOwnerMaster(operatorPayload({ path }));
+    const passwords = Object.entries(result.initial_passwords || {}).map(([user, password]) => `${user}:${password}`).join("；");
+    const passwordText = passwords ? `；初始密码 ${passwords}` : "";
+    if (status) status.textContent = `负责人 ${result.assignment_count || 0} 条，账号 ${result.account_count || 0} 个；整理表：${result.review_file}${passwordText}`;
+    await loadStoreOwners();
+    await loadOperatorAccounts(false);
+    showToast("负责人和账号已导入");
+  } catch (error) {
+    const message = userFacingError(error);
+    if (status) status.textContent = message;
+    showToast(message);
+  }
+}
+
+async function importSalesHistory() {
+  const path = $("#salesHistoryPath")?.value.trim() || "";
+  if (!path) {
+    showToast("请先选择跨境运营总表");
+    return;
+  }
+  const status = $("#masterImportStatus");
+  try {
+    if (status) status.textContent = "正在导入历史销量...";
+    const result = await api.importSalesHistory(operatorPayload({ path }));
+    if (status) status.textContent = `历史销量新增 ${result.created || 0} 条，跳过已有 ${result.skipped_existing || 0} 条；整理表：${result.review_file}`;
+    await loadSales(false);
+    await loadSalesReport(false);
+    showToast("历史销量已导入");
+  } catch (error) {
+    const message = userFacingError(error);
+    if (status) status.textContent = message;
+    showToast(message);
+  }
+}
+
 function collectRules() {
   const next = structuredClone(state.rules || {});
   document.querySelectorAll("[data-rule]").forEach((input) => {
@@ -2334,6 +2511,13 @@ async function createBackup() {
     if (status) status.textContent = error.message || "生成备份失败";
     showToast(error.message || "生成备份失败");
   }
+}
+
+function renderBackupReminder() {
+  const status = $("#backupStatus");
+  const reminder = state.status?.backup_reminder || {};
+  if (!status || !reminder.message) return;
+  status.textContent = reminder.message;
 }
 
 async function selectBackupFile() {
@@ -2479,12 +2663,15 @@ async function refreshAll() {
     renderOutputs();
     renderRules();
     await loadStoreOwners();
+    await loadOperatorAccounts(false);
     await loadSales(false);
+    await loadSalesReport(false);
     await loadSalesCompare(false);
     await loadImportMatrix(false);
     await loadTaskSuppressions();
     await loadTasks(false);
     renderTodayDashboard();
+    renderBackupReminder();
     showToast("状态已刷新");
   } catch (error) {
     showToast(error.message);
@@ -2635,6 +2822,8 @@ function bindEvents() {
     button.addEventListener("click", () => setSalesFocus(button.dataset.salesFocus));
   });
   $("#loadSalesCompareBtn")?.addEventListener("click", () => loadSalesCompare(true));
+  $("#loadSalesReportBtn")?.addEventListener("click", () => loadSalesReport(true));
+  $("#exportSalesReportBtn")?.addEventListener("click", exportSalesReport);
   $("#focusImportMatrixBtn")?.addEventListener("click", () => {
     document.querySelector("#importMatrixRows")?.scrollIntoView({ behavior: "smooth", block: "center" });
     showToast("已定位到缺失矩阵");
@@ -2679,6 +2868,10 @@ function bindEvents() {
   $("#addStoreOwnerBtn")?.addEventListener("click", addStoreOwnerRow);
   $("#loadStoreOwnersBtn")?.addEventListener("click", loadStoreOwners);
   $("#saveStoreOwnersBtn")?.addEventListener("click", saveStoreOwners);
+  $("#selectOwnerMasterBtn")?.addEventListener("click", () => chooseWorkbookPath("#ownerMasterPath", "店铺负责人对应表"));
+  $("#selectSalesHistoryBtn")?.addEventListener("click", () => chooseWorkbookPath("#salesHistoryPath", "跨境运营总表"));
+  $("#importOwnerMasterBtn")?.addEventListener("click", importOwnerMaster);
+  $("#importSalesHistoryBtn")?.addEventListener("click", importSalesHistory);
   $("#taskDialogForm")?.addEventListener("submit", submitTaskDialog);
   document.querySelectorAll("[data-dialog-close]").forEach((button) => button.addEventListener("click", closeTaskDialog));
   $("#taskDialog")?.addEventListener("click", (event) => {

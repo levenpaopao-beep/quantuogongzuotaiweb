@@ -24,6 +24,7 @@ from openpyxl.utils import get_column_letter
 
 import daily_ops_tasks
 import daily_ops_task_suppression
+import daily_ops_master_data
 import update_shein_summary_30d_skc as raw_xlsx
 
 
@@ -41,6 +42,9 @@ RULES_FILE = ROOT / "基础数据库" / "report_rules.json"
 TASK_DB_PATH = ROOT / "基础数据库" / "operation_tasks.json"
 TASK_SUPPRESSION_FILE = ROOT / "基础数据库" / "operation_task_suppressions.json"
 STORE_OWNER_MAP_FILE = ROOT / "基础数据库" / "store_owner_map.json"
+OPERATOR_ACCOUNTS_FILE = ROOT / "基础数据库" / "operator_accounts.json"
+DAILY_SALES_FILE = ROOT / "基础数据库" / "daily_sales.json"
+MASTER_IMPORT_REVIEW_FILE = Path.home() / "Downloads" / "基础信息导入整理表.xlsx"
 OWNER_FILE = ROOT / "店铺负责人对应表.xlsx"
 
 HOST = "127.0.0.1"
@@ -428,6 +432,8 @@ def backup_source_paths():
     paths = [
         TASK_DB_PATH,
         TASK_SUPPRESSION_FILE,
+        DAILY_SALES_FILE,
+        OPERATOR_ACCOUNTS_FILE,
         RULES_FILE,
         DATA_SOURCE_MANIFEST,
         STORE_OWNER_MAP_FILE,
@@ -504,6 +510,62 @@ def restore_operational_backup(backup_path):
                 shutil.copyfileobj(src, dst)
             restored.append(name)
     return {"file": backup_path.name, "restored": restored, "count": len(restored)}
+
+
+def operator_accounts():
+    payload = daily_ops_master_data.load_operator_accounts(OPERATOR_ACCOUNTS_FILE)
+    accounts = []
+    for row in payload.get("accounts", []):
+        item = dict(row)
+        item.pop("password_hash", None)
+        item.pop("password_salt", None)
+        accounts.append(item)
+    return {"accounts": accounts}
+
+
+def reset_operator_account_password(username, password=""):
+    result = daily_ops_master_data.reset_operator_password(OPERATOR_ACCOUNTS_FILE, username, password or None)
+    return result
+
+
+def import_owner_master_data(source_path):
+    parsed = daily_ops_master_data.parse_owner_workbook(source_path)
+    saved_assignments = save_store_owner_assignments(parsed.get("assignments", []))
+    account_result = daily_ops_master_data.save_operator_accounts(OPERATOR_ACCOUNTS_FILE, parsed.get("accounts", []))
+    review_path = MASTER_IMPORT_REVIEW_FILE
+    daily_ops_master_data.export_master_import_review(parsed, [], account_result, review_path)
+    return {
+        "assignments": saved_assignments,
+        "accounts": operator_accounts()["accounts"],
+        "initial_passwords": account_result.get("initial_passwords", {}),
+        "review_file": str(review_path),
+        "assignment_count": len(saved_assignments),
+        "account_count": len(account_result.get("accounts", [])),
+    }
+
+
+def import_crossborder_sales(source_path):
+    assignments = load_store_owner_assignments()
+    rows = daily_ops_master_data.parse_crossborder_sales_workbook(source_path, assignments)
+    result = daily_ops_master_data.import_history_sales_records(DAILY_SALES_FILE, rows, actor="管理员")
+    parsed_owner = {"assignments": assignments}
+    account_payload = daily_ops_master_data.load_operator_accounts(OPERATOR_ACCOUNTS_FILE)
+    review_path = MASTER_IMPORT_REVIEW_FILE
+    daily_ops_master_data.export_master_import_review(parsed_owner, rows, {"accounts": account_payload.get("accounts", []), "initial_passwords": {}}, review_path)
+    return {**result, "review_file": str(review_path)}
+
+
+def sales_report(platform="", store="", date_from="", date_to=""):
+    return daily_ops_master_data.query_sales_report(DAILY_SALES_FILE, platform, store, date_from, date_to)
+
+
+def export_sales_report(platform="", store="", date_from="", date_to=""):
+    report = sales_report(platform, store, date_from, date_to)
+    return daily_ops_master_data.export_sales_report(report, OUTPUT_DIR)
+
+
+def monthly_backup_reminder():
+    return daily_ops_master_data.monthly_backup_status(backup_output_dir())
 
 
 def report_id_for_output(filename):
@@ -1078,6 +1140,7 @@ def data_status():
         "reports": REPORTS,
         "rules": load_rules(),
         "upload_targets": {key: label for key, (label, _folder) in UPLOAD_TARGETS.items()},
+        "backup_reminder": monthly_backup_reminder(),
     }
 
 

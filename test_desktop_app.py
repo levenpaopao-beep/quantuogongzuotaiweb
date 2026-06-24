@@ -189,6 +189,45 @@ class DesktopAppTest(unittest.TestCase):
             self.assertEqual([row["store"] for row in result["rows"]], ["七弟"])
             self.assertEqual([row["owner"] for row in result["rows"]], ["小琴"])
 
+    def test_desktop_adapter_imports_master_data_and_sales_history(self):
+        import daily_ops_desktop_adapter as adapter
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            owner_file = root / "店铺负责人对应表.xlsx"
+            owner_wb = Workbook()
+            owner_ws = owner_wb.active
+            owner_ws.append(["店铺", "店名", "业务", "平台"])
+            owner_ws.append(["一弟", "Apetcircle", "小琴", "temu"])
+            owner_wb.save(owner_file)
+
+            sales_file = root / "跨境运营总表new.xlsx"
+            sales_wb = Workbook()
+            sales_wb.active.title = "总览"
+            month = sales_wb.create_sheet("2606")
+            month.append(["2026年", "汇总", "大弟"])
+            month.append([46174, 100, 100])
+            sales_wb.save(sales_file)
+
+            owner_map = root / "store_owner_map.json"
+            accounts = root / "operator_accounts.json"
+            sales_db = root / "daily_sales.json"
+            review_file = root / "基础信息导入整理表.xlsx"
+
+            with patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_map), \
+                 patch.object(daily_ops_app, "OPERATOR_ACCOUNTS_FILE", accounts), \
+                 patch.object(daily_ops_app, "DAILY_SALES_FILE", sales_db), \
+                 patch.object(daily_ops_app, "MASTER_IMPORT_REVIEW_FILE", review_file), \
+                 patch.object(adapter, "SALES_DB_PATH", sales_db):
+                owner_result = adapter.import_owner_master_payload({"role": "admin", "user": "管理员", "path": str(owner_file)})
+                sales_result = adapter.import_sales_history_payload({"role": "admin", "user": "管理员", "path": str(sales_file)})
+                report = adapter.sales_report_payload({"role": "admin", "user": "管理员", "platform": "Temu", "store": "一弟", "date_from": "2026-06-01", "date_to": "2026-06-30"})
+
+            self.assertEqual(owner_result["assignment_count"], 1)
+            self.assertEqual(owner_result["account_count"], 1)
+            self.assertEqual(sales_result["created"], 1)
+            self.assertEqual(report["summary"]["total_sales"], 100)
+
     def test_mac_launcher_uses_desktop_entrypoint_not_local_url(self):
         text = (ROOT / "启动日常运营工作台.command").read_text(encoding="utf-8")
         self.assertIn("npm start", text)

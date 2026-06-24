@@ -158,6 +158,20 @@ def command(argv):
         return ok(adapter.export_sales_payload(read_payload()))
     if name == "sales-compare":
         return ok(adapter.sales_compare_payload(read_payload()))
+    if name == "operator-accounts":
+        return ok(adapter.operator_accounts_payload(read_payload()))
+    if name == "reset-operator-password":
+        return ok(adapter.reset_operator_account_payload(read_payload()))
+    if name == "import-owner-master":
+        return ok(adapter.import_owner_master_payload(read_payload()))
+    if name == "import-sales-history":
+        return ok(adapter.import_sales_history_payload(read_payload()))
+    if name == "sales-report":
+        return ok(adapter.sales_report_payload(read_payload()))
+    if name == "export-sales-report":
+        return ok(adapter.export_sales_report_payload(read_payload()))
+    if name == "backup-reminder":
+        return ok(adapter.backup_reminder_payload(read_payload()))
     if name == "import-matrix":
         return ok(adapter.import_matrix_payload(read_payload()))
     if name == "erp-sync":

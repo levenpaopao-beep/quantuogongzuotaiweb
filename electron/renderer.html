@@ -188,6 +188,28 @@
               <div id="salesLedgerRows" class="matrix-body"></div>
             </div>
           </div>
+          <div class="simple-panel">
+            <div class="panel-head">
+              <div>
+                <h2>销量报表查询</h2>
+                <p>按平台、店铺、时间范围查询历史销量和每天填报后的累计台账。</p>
+              </div>
+              <button class="ghost-button" id="exportSalesReportBtn" data-admin-only="sales-report-export">导出查询结果</button>
+            </div>
+            <div class="task-filters">
+              <input id="salesReportDateFrom" type="date" />
+              <input id="salesReportDateTo" type="date" />
+              <select id="salesReportPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option><option>速卖通</option><option>TK</option><option>Ozon</option></select>
+              <input id="salesReportStore" placeholder="店铺" />
+              <button class="primary-button" id="loadSalesReportBtn">查询销量报表</button>
+            </div>
+            <div class="metric-row compact-metrics" id="salesReportSummary"></div>
+            <div class="sales-report-grid">
+              <div class="output-list" id="salesReportPlatformRows"></div>
+              <div class="output-list" id="salesReportStoreRows"></div>
+            </div>
+            <div class="output-list" id="salesReportDetailRows"></div>
+          </div>
         </section>
 
         <section class="page" id="tasksPage">
@@ -366,6 +388,26 @@
             </div>
           </div>
           <div class="module-grid">
+            <section class="simple-panel" data-admin-only="master-import">
+              <h2>基础资料导入</h2>
+              <p>导入负责人表会更新店铺负责人并生成店长账号；导入跨境运营总表会写入历史销量台账。</p>
+              <div class="backup-actions">
+                <input id="ownerMasterPath" placeholder="店铺负责人对应表.xlsx 文件路径" />
+                <button class="ghost-button" id="selectOwnerMasterBtn">选择负责人表</button>
+                <button class="primary-button" id="importOwnerMasterBtn">导入负责人和账号</button>
+              </div>
+              <div class="backup-actions">
+                <input id="salesHistoryPath" placeholder="跨境运营总表new.xlsx 文件路径" />
+                <button class="ghost-button" id="selectSalesHistoryBtn">选择运营总表</button>
+                <button class="primary-button" id="importSalesHistoryBtn">导入历史销量</button>
+              </div>
+              <p id="masterImportStatus">导入后会在下载目录生成“基础信息导入整理表.xlsx”。</p>
+            </section>
+            <section class="simple-panel" data-admin-only="operator-accounts">
+              <h2>店长账号</h2>
+              <p>账号由负责人生成；密码只在生成或重置时显示一次，管理员可随时重置。</p>
+              <div id="operatorAccountRows" class="output-list"></div>
+            </section>
             <section class="simple-panel">
               <h2>平台与店铺</h2>
               <div class="flow-list">

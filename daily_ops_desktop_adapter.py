@@ -9,7 +9,7 @@ from daily_ops_sales import DailySalesStore
 from daily_ops_sales_compare import aggregate_source_sales, compare_sales
 
 
-SALES_DB_PATH = app.ROOT / "基础数据库" / "daily_sales.json"
+SALES_DB_PATH = app.DAILY_SALES_FILE
 
 
 def status():
@@ -323,6 +323,53 @@ def sales_compare_payload(payload):
         },
         "rows": rows,
     }
+
+
+def operator_accounts_payload(payload):
+    require_admin_payload(payload or {}, "维护店长账号")
+    return app.operator_accounts()
+
+
+def reset_operator_account_payload(payload):
+    require_admin_payload(payload or {}, "重置店长密码")
+    return app.reset_operator_account_password(payload.get("username", ""), payload.get("password", ""))
+
+
+def import_owner_master_payload(payload):
+    require_admin_payload(payload or {}, "导入店铺负责人")
+    return app.import_owner_master_data(payload.get("path", ""))
+
+
+def import_sales_history_payload(payload):
+    require_admin_payload(payload or {}, "导入历史销量")
+    return app.import_crossborder_sales(payload.get("path", ""))
+
+
+def sales_report_payload(payload):
+    payload = payload or {}
+    role = operator_role(payload)
+    user = operator_user(payload, "")
+    platform = payload.get("platform", "")
+    store = payload.get("store", "")
+    if role != "admin":
+        assignments = app.load_store_owner_assignments()
+        owned = [item for item in assignments if app.norm(item.get("owner")) == user]
+        allowed = {(app.norm(item.get("platform")), app.norm(item.get("store"))) for item in owned}
+        if store and (app.norm(platform), app.norm(store)) not in allowed:
+            raise PermissionError("店长只能查询自己负责店铺的销量")
+    return app.sales_report(platform, store, payload.get("date_from", ""), payload.get("date_to", ""))
+
+
+def export_sales_report_payload(payload):
+    payload = payload or {}
+    require_admin_payload(payload, "导出销量报表")
+    return app.export_sales_report(payload.get("platform", ""), payload.get("store", ""), payload.get("date_from", ""), payload.get("date_to", ""))
+
+
+def backup_reminder_payload(payload):
+    if operator_role(payload or {}) != "admin":
+        return {"backup_exists": True, "message": ""}
+    return app.monthly_backup_reminder()
 
 
 def erp_sync_payload(payload):

@@ -344,6 +344,7 @@ p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
+.compact-metrics { margin: 12px 0; }
 .metric-card {
   min-height: 102px;
   border: 1px solid var(--line-soft);
@@ -1192,6 +1193,12 @@ label { color: var(--muted); font-size: 12px; }
 .output-list { display: grid; gap: 8px; margin-top: 14px; }
 .output-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; }
 .output-row p { margin-top: 4px; }
+.sales-report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
 
 .rules-grid {
   display: grid;
@@ -1400,7 +1407,7 @@ label { color: var(--muted); font-size: 12px; }
   .titlebar, .page-intro { align-items: flex-start; flex-direction: column; height: auto; gap: 10px; padding: 12px 0; }
   .top-actions, .global-operator { width: 100%; }
   .global-operator { grid-template-columns: 1fr; }
-  .metric-row, .task-summary, .report-grid, .rules-grid, .erp-settings-grid { grid-template-columns: 1fr; }
+  .metric-row, .task-summary, .report-grid, .rules-grid, .erp-settings-grid, .sales-report-grid { grid-template-columns: 1fr; }
   .backup-actions { grid-template-columns: 1fr; }
   .workflow-head { flex-direction: column; }
   .workflow-head p { text-align: left; }
