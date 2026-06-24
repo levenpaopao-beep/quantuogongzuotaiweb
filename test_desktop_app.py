@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import daily_ops_app
+from openpyxl import load_workbook
 from PIL import Image
 
 
@@ -92,6 +93,52 @@ class DesktopAppTest(unittest.TestCase):
             self.assertEqual(result["files"][0]["file"], "source.xlsx")
             self.assertTrue((target_dir / "source.xlsx").exists())
             self.assertIn("pending_batches", manifest.read_text(encoding="utf-8"))
+
+    def test_desktop_adapter_owner_export_sales_is_scoped_to_owner(self):
+        import daily_ops_desktop_adapter as adapter
+
+        assignments = [
+            {"platform": "Temu", "store": "七弟", "owner": "小琴"},
+            {"platform": "Shein", "store": "琪琪", "owner": "胡娟"},
+        ]
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sales_db = root / "daily_sales.json"
+            output_dir = root / "outputs"
+            with patch.object(adapter, "SALES_DB_PATH", sales_db), \
+                 patch.object(daily_ops_app, "OUTPUT_DIR", output_dir), \
+                 patch.object(daily_ops_app, "load_store_owner_assignments", return_value=assignments):
+                adapter.submit_sales_payload({
+                    "role": "admin",
+                    "user": "管理员",
+                    "date": "2026-06-23",
+                    "platform": "Temu",
+                    "store": "七弟",
+                    "sales": "12",
+                })
+                adapter.submit_sales_payload({
+                    "role": "admin",
+                    "user": "管理员",
+                    "date": "2026-06-23",
+                    "platform": "Shein",
+                    "store": "琪琪",
+                    "sales": "88",
+                })
+                result = adapter.export_sales_payload({
+                    "role": "owner",
+                    "user": "小琴",
+                    "date": "2026-06-23",
+                })
+
+            workbook = load_workbook(result["path"], data_only=True)
+            detail = workbook["每日销量明细"]
+            summary = workbook["平台汇总"]
+            self.assertIn("小琴", result["file"])
+            self.assertEqual(detail.max_row, 2)
+            self.assertEqual(detail["C2"].value, "七弟")
+            self.assertEqual(detail["D2"].value, "小琴")
+            self.assertEqual(summary.max_row, 2)
+            self.assertEqual(summary["A2"].value, "Temu")
 
     def test_mac_launcher_uses_desktop_entrypoint_not_local_url(self):
         text = (ROOT / "启动日常运营工作台.command").read_text(encoding="utf-8")
