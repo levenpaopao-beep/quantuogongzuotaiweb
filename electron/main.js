@@ -141,6 +141,29 @@ function renderSmokeScript() {
         const value = document.querySelector(selector)?.textContent || "";
         if (!value.includes(text)) errors.push(label + "缺少“" + text + "”");
       };
+      const checkNoHorizontalOverflow = (label) => {
+        const offenders = Array.from(document.querySelectorAll("body *")).filter((element) => {
+          const rect = element.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0 || rect.right <= window.innerWidth + 8) return false;
+          let parent = element.parentElement;
+          while (parent && parent !== document.body) {
+            const style = window.getComputedStyle(parent);
+            if (/(auto|scroll|hidden)/.test(style.overflowX)) return false;
+            parent = parent.parentElement;
+          }
+          return true;
+        });
+        if (offenders.length) {
+          const first = offenders[0];
+          errors.push(label + "存在横向溢出：" + (first.id ? "#" + first.id : first.className || first.tagName));
+        }
+      };
+      const openPage = async (page, selector, label) => {
+        document.querySelector('[data-page="' + page + '"]')?.click();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        requireVisible(selector, label);
+        checkNoHorizontalOverflow(label);
+      };
       localStorage.setItem("dailyOpsOperator", JSON.stringify({ role: "admin", user: "管理员" }));
       const role = document.querySelector("#operatorRole");
       const user = document.querySelector("#operatorUser");
@@ -162,26 +185,28 @@ function renderSmokeScript() {
       requireVisible("#todayGuideSteps .guide-step", "开始使用清单");
       requireVisible("#todaySalesMetrics .metric-card", "销量指标");
       requireVisible("#todayActionList .action-route", "今日待办入口");
-      if (document.body.scrollWidth > window.innerWidth + 8) {
-        errors.push("首屏存在横向溢出：" + document.body.scrollWidth + " > " + window.innerWidth);
-      }
+      checkNoHorizontalOverflow("今日工作台首屏");
       const brokenImages = Array.from(document.images).filter((image) => image.complete && image.naturalWidth === 0);
       if (brokenImages.length) errors.push("存在破图：" + brokenImages.length);
-      document.querySelector('[data-page="sales"]')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      requireVisible("#salesPage.page-active", "销量管理页面");
+      await openPage("sales", "#salesPage.page-active", "销量管理页面");
       requireVisible("#salesFocusBar", "销量筛选条");
-      document.querySelector('[data-page="tasks"]')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      requireVisible("#tasksPage.page-active", "商品任务页面");
+      await openPage("tasks", "#tasksPage.page-active", "商品任务页面");
       requireVisible("#taskWorkbar", "任务工作条");
       requireVisible('[data-admin-only="task-push"]', "管理员批量推送按钮");
       requireVisible('[data-admin-only="task-review"]', "管理员批量确认按钮");
-      document.querySelector('[data-page="imports"]')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      requireVisible("#importPage.page-active", "数据导入页面");
+      await openPage("imports", "#importPage.page-active", "数据导入页面");
       requireVisible("#importHealthBar", "导入健康条");
       requireVisible('[data-admin-only="report-generate"]', "管理员生成就绪报表按钮");
+      await openPage("reports", "#reportsPage.page-active", "经营报表页面");
+      requireVisible("#reportReadinessBar", "报表生成前体检");
+      requireText("#reportsPage", "生成报表", "报表卡片区");
+      requireVisible("#reportSalesMetrics", "平台经营看板");
+      await openPage("masterdata", "#masterDataPage.page-active", "基础资料页面");
+      requireVisible("#saveStoreOwnersBtn", "保存店铺配置按钮");
+      requireVisible("#platformChipList", "平台标签");
+      await openPage("rules", "#rulesPage.page-active", "系统设置页面");
+      requireVisible("#erpSettingsForm", "ERP 接口设置");
+      requireVisible("#doctorResult", "系统自检结果区");
       if (role && user && switchButton) {
         role.value = "owner";
         user.value = "";
@@ -207,14 +232,16 @@ function renderSmokeScript() {
             }
           });
           requireText("#todayWorkflowTitle", "店长每日流程", "店长工作流");
-          document.querySelector('[data-page="tasks"]')?.click();
-          await new Promise((resolve) => setTimeout(resolve, 80));
+          await openPage("tasks", "#tasksPage.page-active", "店长商品任务页面");
           requireVisible('[data-owner-only="task-submit"]', "店长整包处理按钮");
           if (visible('[data-admin-only="task-push"]')) errors.push("店长视角仍显示管理员推送按钮");
           if (visible('[data-admin-only="task-review"]')) errors.push("店长视角仍显示管理员确认按钮");
-          document.querySelector('[data-page="imports"]')?.click();
-          await new Promise((resolve) => setTimeout(resolve, 80));
+          await openPage("imports", "#importPage.page-active", "店长数据导入页面");
           if (visible('[data-admin-only="report-generate"]')) errors.push("店长视角仍显示管理员报表生成按钮");
+          await openPage("reports", "#reportsPage.page-active", "店长经营报表页面");
+          if (visible('[data-report-action="generate-weekly"]')) errors.push("店长视角仍显示周报生成按钮");
+          await openPage("rules", "#rulesPage.page-active", "店长系统设置页面");
+          if (visible('[data-admin-only="system-check"]')) errors.push("店长视角仍显示系统自检管理员区");
         }
         role.value = "admin";
         user.value = "管理员";

@@ -900,7 +900,7 @@ label { color: var(--muted); font-size: 12px; }
 
 .task-filters {
   display: grid;
-  grid-template-columns: 96px 120px 220px 118px 118px 128px 100px 116px 108px repeat(4, auto) 86px;
+  grid-template-columns: repeat(6, minmax(116px, 1fr));
   gap: 7px;
   margin-bottom: 10px;
   align-items: center;
@@ -908,8 +908,11 @@ label { color: var(--muted); font-size: 12px; }
 .task-filters input,
 .task-filters select { height: 32px; padding: 0 8px; font-size: 13px; }
 .task-filters label { white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+#taskSearch { grid-column: span 2; }
 
 .task-table {
+  min-width: 0;
+  width: 100%;
   border: 1px solid var(--line);
   border-radius: 14px;
   overflow: auto;
