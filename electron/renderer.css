@@ -323,7 +323,10 @@ button { cursor: pointer; }
 .span-3 { grid-column: 1 / -1; }
 .today-card,
 .simple-panel,
-.panel { padding: 18px; }
+.panel {
+  min-width: 0;
+  padding: 18px;
+}
 .today-card h2,
 .simple-panel h2,
 .panel h2 { margin: 0; font-size: 17px; letter-spacing: 0; }
@@ -704,9 +707,10 @@ label { color: var(--muted); font-size: 12px; }
 .source-panel { min-height: 680px; }
 .queue-panel { min-height: 680px; display: flex; flex-direction: column; }
 .source-table {
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 14px;
-  overflow: hidden;
+  overflow: auto;
   background: #fff;
 }
 .table-row {

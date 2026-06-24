@@ -280,9 +280,11 @@ async function runRenderSmoke(win) {
 
 function createWindow() {
   const smokeMode = process.env.PETCIRCLE_RENDER_SMOKE === "1";
+  const smokeWidth = Number(process.env.PETCIRCLE_RENDER_SMOKE_WIDTH || 1488);
+  const smokeHeight = Number(process.env.PETCIRCLE_RENDER_SMOKE_HEIGHT || 980);
   const win = new BrowserWindow({
-    width: 1488,
-    height: 980,
+    width: smokeMode ? smokeWidth : 1488,
+    height: smokeMode ? smokeHeight : 980,
     minWidth: 1180,
     minHeight: 760,
     show: !smokeMode,
