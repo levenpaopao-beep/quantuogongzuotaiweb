@@ -61,10 +61,10 @@ def command(argv):
     if name == "reports":
         return ok(adapter.reports())
     if name == "source-groups":
-        return ok(adapter.source_groups())
+        return ok(adapter.source_groups(read_payload()))
     if name == "outputs":
         limit = int(args[0]) if args else 80
-        return ok(adapter.outputs(limit))
+        return ok(adapter.outputs(limit, read_payload()))
     if name == "import-source":
         if len(args) < 2:
             raise ValueError("import-source 需要分类和文件路径")
@@ -85,10 +85,12 @@ def command(argv):
         require_admin(read_payload(), "生成本周报表")
         return ok(adapter.generate_weekly_reports())
     if name == "open-output":
+        require_admin(read_payload(), "打开全局输出文件")
         path = adapter.output_file_path(args[0])
         adapter.open_path(path)
         return ok({"path": str(path)})
     if name == "reveal-output":
+        require_admin(read_payload(), "查看全局输出文件夹")
         path = adapter.output_file_path(args[0])
         adapter.reveal_path(path)
         return ok({"path": str(path)})

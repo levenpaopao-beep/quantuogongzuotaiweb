@@ -2,9 +2,9 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("dailyOps", {
   status: (payload) => ipcRenderer.invoke("api:status", payload || {}),
-  outputs: (limit) => ipcRenderer.invoke("api:outputs", limit),
+  outputs: (limit, payload) => ipcRenderer.invoke("api:outputs", limit, payload || {}),
   reports: () => ipcRenderer.invoke("api:reports"),
-  sourceGroups: () => ipcRenderer.invoke("api:source-groups"),
+  sourceGroups: (payload) => ipcRenderer.invoke("api:source-groups", payload || {}),
   selectFiles: (group) => ipcRenderer.invoke("api:select-files", group),
   selectBackup: () => ipcRenderer.invoke("api:select-backup"),
   uploadSource: (group, filePaths, payload) => ipcRenderer.invoke("api:upload-source", group, filePaths, payload || {}),
@@ -12,8 +12,8 @@ contextBridge.exposeInMainWorld("dailyOps", {
   clearUpload: (category, payload) => ipcRenderer.invoke("api:clear-upload", category, payload || {}),
   generateWeekly: (payload) => ipcRenderer.invoke("api:generate-weekly", payload || {}),
   generateReport: (reportId, version, payload) => ipcRenderer.invoke("api:generate-report", reportId, version, payload || {}),
-  openOutput: (name) => ipcRenderer.invoke("api:open-output", name),
-  revealOutput: (name) => ipcRenderer.invoke("api:reveal-output", name),
+  openOutput: (name, payload) => ipcRenderer.invoke("api:open-output", name, payload || {}),
+  revealOutput: (name, payload) => ipcRenderer.invoke("api:reveal-output", name, payload || {}),
   loadRules: () => ipcRenderer.invoke("api:load-rules"),
   saveRules: (payload) => ipcRenderer.invoke("api:save-rules", payload || {}),
   search: (query, limit, payload) => ipcRenderer.invoke("api:search", query, limit, payload || {}),

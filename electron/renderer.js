@@ -578,8 +578,8 @@ function renderReportCards() {
     card.querySelector('[data-action="generate"]')?.addEventListener("click", () => generateReport(reportId));
     const openButton = card.querySelector('[data-action="open"]');
     const folderButton = card.querySelector('[data-action="folder"]');
-    if (openButton && latest) openButton.addEventListener("click", () => api.openOutput(latest.name));
-    if (folderButton && latest) folderButton.addEventListener("click", () => api.revealOutput(latest.name));
+    if (openButton && latest) openButton.addEventListener("click", () => api.openOutput(latest.name, operatorPayload()));
+    if (folderButton && latest) folderButton.addEventListener("click", () => api.revealOutput(latest.name, operatorPayload()));
     wrap.appendChild(card);
   });
 }
@@ -592,8 +592,8 @@ function renderOutputs() {
     const row = document.createElement("div");
     row.className = "output-row";
     row.innerHTML = `<div><strong>${item.name}</strong><p>${item.modified} · ${formatSize(item.size)}</p></div><button class="ghost-button">打开</button><button class="ghost-button">所在文件夹</button>`;
-    row.children[1].addEventListener("click", () => api.openOutput(item.name));
-    row.children[2].addEventListener("click", () => api.revealOutput(item.name));
+    row.children[1].addEventListener("click", () => api.openOutput(item.name, operatorPayload()));
+    row.children[2].addEventListener("click", () => api.revealOutput(item.name, operatorPayload()));
     wrap.appendChild(row);
   });
 }
@@ -2874,7 +2874,7 @@ async function refreshAll() {
     applyOperatorToTasks();
     state.status = await api.status(operatorPayload());
     state.reports = state.status.reports || await api.reports();
-    state.outputs = state.status.outputs || await api.outputs(80);
+    state.outputs = state.status.outputs || await api.outputs(80, operatorPayload());
     state.rules = state.status.rules || await api.loadRules();
     state.reportTasks = state.status.report_tasks || {};
     renderSources(state.status.source_groups || []);

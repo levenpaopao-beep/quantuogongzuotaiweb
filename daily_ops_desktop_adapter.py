@@ -21,11 +21,17 @@ def reports():
     return app.REPORTS
 
 
-def source_groups():
-    return app.source_group_status()
+def source_groups(payload=None):
+    payload = payload or {}
+    groups = app.source_group_status()
+    if operator_role(payload) == "admin":
+        return groups
+    return app.desktop_status_for_operator({"source_groups": groups}, operator_role(payload)).get("source_groups", [])
 
 
-def outputs(limit=80):
+def outputs(limit=80, payload=None):
+    if operator_role(payload or {}) != "admin":
+        return []
     return app.recent_outputs(limit)
 
 

@@ -473,15 +473,15 @@ app.on("window-all-closed", () => {
 });
 
 ipcMain.handle("api:status", (_event, payload) => runPython("status", [], JSON.stringify(payload || {})));
-ipcMain.handle("api:outputs", (_event, limit) => runPython("outputs", [limit || 80]));
+ipcMain.handle("api:outputs", (_event, limit, payload) => runPython("outputs", [limit || 80], JSON.stringify(payload || {})));
 ipcMain.handle("api:reports", () => runPython("reports"));
-ipcMain.handle("api:source-groups", () => runPython("source-groups"));
+ipcMain.handle("api:source-groups", (_event, payload) => runPython("source-groups", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:finish-upload", (_event, category, payload) => runPython("finish-upload", [category], JSON.stringify(payload || {})));
 ipcMain.handle("api:clear-upload", (_event, category, payload) => runPython("clear-upload", [category], JSON.stringify(payload || {})));
 ipcMain.handle("api:generate-weekly", (_event, payload) => runPython("generate-weekly", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:generate-report", (_event, reportId, version, payload) => runPython("generate-report", [reportId, version || "V1"], JSON.stringify(payload || {})));
-ipcMain.handle("api:open-output", (_event, name) => runPython("open-output", [name]));
-ipcMain.handle("api:reveal-output", (_event, name) => runPython("reveal-output", [name]));
+ipcMain.handle("api:open-output", (_event, name, payload) => runPython("open-output", [name], JSON.stringify(payload || {})));
+ipcMain.handle("api:reveal-output", (_event, name, payload) => runPython("reveal-output", [name], JSON.stringify(payload || {})));
 ipcMain.handle("api:load-rules", () => runPython("load-rules"));
 ipcMain.handle("api:save-rules", (_event, payload) => runPython("save-rules", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:search", (_event, query, limit, payload) => runPython("search", [query, limit || 200], JSON.stringify(payload || {})));
