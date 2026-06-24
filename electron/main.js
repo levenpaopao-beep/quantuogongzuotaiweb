@@ -270,7 +270,7 @@ async function runRenderSmoke(win) {
       app.exit(1);
       return;
     }
-    console.log(`渲染烟测通过：${result.viewport.width}x${result.viewport.height} 首屏、导航、管理员/店长跨页面权限按钮、破图和横向溢出均已检查。`);
+    console.log(`渲染烟测通过：${result.viewport.width}x${result.viewport.height} 全核心模块页面、管理员/店长跨页面权限按钮、破图和横向溢出均已检查。`);
     app.exit(0);
   } catch (error) {
     console.error(`渲染烟测执行失败：${error.message || error}`);
