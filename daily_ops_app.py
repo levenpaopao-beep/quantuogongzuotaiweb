@@ -208,6 +208,9 @@ DEFAULT_RULES = {
     },
 }
 
+LEGACY_ERP_PRODUCT_ENDPOINT = "vip_api_goods_query.php"
+LEGACY_ERP_STOCK_ENDPOINT = "api_goods_stock_change_query.php"
+
 OWNER_STORE_CODE_MAP = {
     "弟弟": "1",
     "一弟": "1",
@@ -889,14 +892,24 @@ def merge_dict(default, current):
     return merged
 
 
+def migrate_rules(rules):
+    erp_api = rules.get("erp_api")
+    if isinstance(erp_api, dict):
+        if erp_api.get("product_endpoint") == LEGACY_ERP_PRODUCT_ENDPOINT:
+            erp_api["product_endpoint"] = DEFAULT_RULES["erp_api"]["product_endpoint"]
+        if erp_api.get("stock_endpoint") == LEGACY_ERP_STOCK_ENDPOINT:
+            erp_api["stock_endpoint"] = DEFAULT_RULES["erp_api"]["stock_endpoint"]
+    return rules
+
+
 def load_rules():
     if not RULES_FILE.exists():
-        return merge_dict(DEFAULT_RULES, {})
+        return migrate_rules(merge_dict(DEFAULT_RULES, {}))
     try:
         current = json.loads(RULES_FILE.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         current = {}
-    return merge_dict(DEFAULT_RULES, current)
+    return migrate_rules(merge_dict(DEFAULT_RULES, current))
 
 
 def save_rules(payload):

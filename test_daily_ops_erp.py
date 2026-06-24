@@ -6,6 +6,7 @@ from unittest.mock import patch
 from openpyxl import load_workbook
 
 import daily_ops_erp
+import daily_ops_app
 
 
 class ErpSyncTest(unittest.TestCase):
@@ -26,6 +27,37 @@ class ErpSyncTest(unittest.TestCase):
             result = daily_ops_erp.manual_sync({"base_url": "https://api.wangdian.cn/openapi2"}, Path(tmp))
             self.assertEqual(result["status"], "blocked")
             self.assertEqual(list(Path(tmp).glob("*.xlsx")), [])
+
+    def test_load_rules_migrates_legacy_erp_default_endpoints(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules_file = Path(tmp) / "report_rules.json"
+            rules_file.write_text("""{
+              "erp_api": {
+                "product_endpoint": "vip_api_goods_query.php",
+                "stock_endpoint": "api_goods_stock_change_query.php"
+              }
+            }""", encoding="utf-8")
+            with patch.object(daily_ops_app, "RULES_FILE", rules_file):
+                rules = daily_ops_app.load_rules()
+
+        self.assertEqual(rules["erp_api"]["product_endpoint"], daily_ops_erp.PRODUCT_ENDPOINT)
+        self.assertEqual(rules["erp_api"]["stock_endpoint"], daily_ops_erp.STOCK_ENDPOINT)
+        self.assertEqual(rules["erp_api"]["warehouse_name"], "宠物圈仓库")
+
+    def test_load_rules_keeps_custom_erp_endpoints(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules_file = Path(tmp) / "report_rules.json"
+            rules_file.write_text("""{
+              "erp_api": {
+                "product_endpoint": "custom_goods.php",
+                "stock_endpoint": "custom_stock.php"
+              }
+            }""", encoding="utf-8")
+            with patch.object(daily_ops_app, "RULES_FILE", rules_file):
+                rules = daily_ops_app.load_rules()
+
+        self.assertEqual(rules["erp_api"]["product_endpoint"], "custom_goods.php")
+        self.assertEqual(rules["erp_api"]["stock_endpoint"], "custom_stock.php")
 
     def test_product_rows_map_to_existing_erp_headers(self):
         rows = daily_ops_erp.normalize_product_rows([{
