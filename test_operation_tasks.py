@@ -2104,7 +2104,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             result = daily_ops_cli.command(["store-owners"])
         self.assertTrue(result["ok"])
 
-    def test_desktop_source_import_commands_enforce_operator_role(self):
+    def test_desktop_source_import_commands_allow_store_owner_uploads(self):
         owner_payload = {"role": "owner", "user": "小琴"}
         admin_payload = {"role": "admin", "user": "管理员"}
         source_commands = [
@@ -2117,13 +2117,20 @@ class OperationTaskStoreTest(unittest.TestCase):
             with self.subTest(command=argv[0]):
                 with patch("sys.stdin", io.StringIO(json.dumps(owner_payload, ensure_ascii=False))), \
                      patch.object(daily_ops_desktop_adapter, target.__name__, return_value=return_value):
-                    with self.assertRaises(PermissionError):
-                        daily_ops_cli.command(argv)
+                    owner_result = daily_ops_cli.command(argv)
+                self.assertTrue(owner_result["ok"])
 
                 with patch("sys.stdin", io.StringIO(json.dumps(admin_payload, ensure_ascii=False))), \
                      patch.object(daily_ops_desktop_adapter, target.__name__, return_value=return_value):
                     result = daily_ops_cli.command(argv)
                 self.assertTrue(result["ok"])
+
+    def test_desktop_source_import_commands_require_named_owner(self):
+        owner_payload = {"role": "owner", "user": ""}
+        with patch("sys.stdin", io.StringIO(json.dumps(owner_payload, ensure_ascii=False))):
+            with self.assertRaises(PermissionError) as ctx:
+                daily_ops_cli.command(["finish-upload", "temu_platform"])
+        self.assertIn("当前店长", str(ctx.exception))
 
     def test_completed_task_cannot_be_reassigned(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
@@ -2513,9 +2520,13 @@ class OperationTaskStoreTest(unittest.TestCase):
         owner = daily_ops_app.login_operator("owner", "小琴", "")
         admin = daily_ops_app.login_operator("admin", "管理员", "")
 
-        status, _content_type, body = daily_ops_app.handle_admin_api("上传数据源", {})
+        status, _content_type, body = daily_ops_app.handle_upload_operator_api("上传数据源", {})
         self.assertEqual(status, 401)
         self.assertIn("请先登录", json.loads(body)["error"])
+
+        status, _content_type, body = daily_ops_app.handle_upload_operator_api("上传数据源", {"X-Operator-Token": owner["token"]})
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["operator"]["role"], "owner")
 
         status, _content_type, body = daily_ops_app.handle_admin_api("生成报表", {"X-Operator-Token": owner["token"]})
         self.assertEqual(status, 403)

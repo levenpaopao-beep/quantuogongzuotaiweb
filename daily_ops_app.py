@@ -2264,6 +2264,20 @@ def handle_admin_api(action, headers):
         return json_bytes({"ok": False, "error": str(exc)}, status=500)
 
 
+def handle_upload_operator_api(action, headers):
+    try:
+        operator = operator_from_token(token_from_headers(headers))
+        if operator.get("role") not in {"admin", "owner"}:
+            return json_bytes({"ok": False, "error": f"{action}需要管理员或店长"}, status=403)
+        if operator.get("role") == "owner" and not norm(operator.get("user")):
+            return json_bytes({"ok": False, "error": f"{action}需要先填写当前店长"}, status=403)
+        return json_bytes({"ok": True, "operator": operator})
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
 def handle_backup_api(action, headers, payload=None):
     try:
         operator = operator_from_token(token_from_headers(headers))
@@ -3680,7 +3694,7 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/upload":
                 cancel_scheduled_shutdown()
-                if not self.require_admin_request("上传数据源"):
+                if not self.require_upload_operator_request("上传数据源"):
                     return
                 self.handle_upload()
             elif parsed.path == "/api/session/login":
@@ -3711,13 +3725,13 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 self.send_payload(*handle_store_owners_api("POST_SAVE", self.headers, self.read_json()))
             elif parsed.path == "/api/upload/finish-batch":
                 cancel_scheduled_shutdown()
-                if not self.require_admin_request("结束上传"):
+                if not self.require_upload_operator_request("结束上传"):
                     return
                 payload = self.read_json()
                 self.send_json({"ok": True, "source_state": finish_upload_batch(payload.get("category", ""))})
             elif parsed.path == "/api/upload/clear-batch":
                 cancel_scheduled_shutdown()
-                if not self.require_admin_request("清空待提交文件"):
+                if not self.require_upload_operator_request("清空待提交文件"):
                     return
                 payload = self.read_json()
                 self.send_json({"ok": True, **clear_upload_batch(payload.get("category", ""))})
@@ -3782,6 +3796,13 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
 
     def require_admin_request(self, action):
         status, content_type, body = handle_admin_api(action, self.headers)
+        if status == 200:
+            return True
+        self.send_payload(status, content_type, body)
+        return False
+
+    def require_upload_operator_request(self, action):
+        status, content_type, body = handle_upload_operator_api(action, self.headers)
         if status == 200:
             return True
         self.send_payload(status, content_type, body)

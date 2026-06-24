@@ -21,6 +21,16 @@ def require_admin(payload, action):
     adapter.require_admin_payload(payload or {}, action)
 
 
+def require_upload_operator(payload, action):
+    payload = payload or {}
+    role = adapter.operator_role(payload)
+    user = adapter.operator_user(payload, "")
+    if role not in {"admin", "owner"}:
+        raise PermissionError(f"{action}需要管理员或店长")
+    if role == "owner" and not user:
+        raise PermissionError(f"{action}需要先填写当前店长")
+
+
 def task_payload(payload):
     payload = dict(payload or {})
     if "filters" not in payload:
@@ -58,13 +68,13 @@ def command(argv):
     if name == "import-source":
         if len(args) < 2:
             raise ValueError("import-source 需要分类和文件路径")
-        require_admin(read_payload(), "上传数据源")
+        require_upload_operator(read_payload(), "上传数据源")
         return ok(adapter.import_source_files(args[0], args[1:]))
     if name == "finish-upload":
-        require_admin(read_payload(), "结束上传")
+        require_upload_operator(read_payload(), "结束上传")
         return ok(adapter.finish_upload(args[0]))
     if name == "clear-upload":
-        require_admin(read_payload(), "清空待提交文件")
+        require_upload_operator(read_payload(), "清空待提交文件")
         return ok(adapter.clear_upload(args[0]))
     if name == "generate-report":
         report_id = args[0]
