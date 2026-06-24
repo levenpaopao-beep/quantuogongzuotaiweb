@@ -8,6 +8,8 @@ const main = fs.readFileSync(path.join(ROOT, "electron", "main.js"), "utf8");
 const preload = fs.readFileSync(path.join(ROOT, "electron", "preload.js"), "utf8");
 const appPy = fs.readFileSync(path.join(ROOT, "daily_ops_app.py"), "utf8");
 const cli = fs.readFileSync(path.join(ROOT, "daily_ops_cli.py"), "utf8");
+const gitignore = fs.readFileSync(path.join(ROOT, ".gitignore"), "utf8");
+const releaseCheck = fs.readFileSync(path.join(ROOT, "scripts", "check-release.js"), "utf8");
 
 function bundledPython() {
   const candidate = path.join(os.homedir(), ".cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3");
@@ -83,6 +85,8 @@ expect(appPy.includes("allowed_roots") && appPy.includes("allowed_files"), "备�
 expect(appPy.includes("target = (ROOT / name).resolve()"), "备份恢复缺少目标路径 resolve");
 expect(appPy.includes("ROOT.resolve() not in target.parents"), "备份恢复缺少路径穿越拦截");
 expect(appPy.includes("outputs") && appPy.includes("图片产物"), "备份清单缺少产物排除说明");
+expect(gitignore.includes(".env") && gitignore.includes("*.pem") && gitignore.includes("*token*"), "本地密钥和授权文件缺少 git 忽略规则");
+expect(releaseCheck.includes("\\.env") && releaseCheck.includes("token|secret") && releaseCheck.includes("pem|key"), "发布范围检查缺少密钥和 token 文件拦截");
 
 const release = run("发布范围检查", process.execPath, [path.join(ROOT, "scripts", "check-release.js")]);
 expect(release.status === 0, "发布范围检查失败");

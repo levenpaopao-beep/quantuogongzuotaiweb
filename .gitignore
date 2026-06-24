@@ -18,6 +18,18 @@ node_modules
 outputs/
 运营备份/
 
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.secret
+*token*
+*secret*
+
 # Local business data and databases
 基础数据库/*
 !基础数据库/report_rules.json
