@@ -168,6 +168,17 @@ function renderSmokeScript() {
         requireVisible(selector, label);
         checkNoHorizontalOverflow(label);
       };
+      const clickRoute = async (selector, targetSelector, label) => {
+        const button = document.querySelector(selector);
+        if (!button) {
+          errors.push(label + "按钮缺失");
+          return;
+        }
+        button.click();
+        await new Promise((resolve) => setTimeout(resolve, 140));
+        requireVisible(targetSelector, label);
+        checkNoHorizontalOverflow(label);
+      };
       localStorage.setItem("dailyOpsOperator", JSON.stringify({ role: "admin", user: "管理员" }));
       const role = document.querySelector("#operatorRole");
       const user = document.querySelector("#operatorUser");
@@ -192,6 +203,15 @@ function renderSmokeScript() {
       checkNoHorizontalOverflow("今日工作台首屏");
       const brokenImages = Array.from(document.images).filter((image) => image.complete && image.naturalWidth === 0);
       if (brokenImages.length) errors.push("存在破图：" + brokenImages.length);
+      await clickRoute('#todayWorkflowSteps [data-empty-page="sales"][data-sales-focus="missing"]', "#salesPage.page-active", "管理员今日流程销量入口");
+      requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "管理员销量未填筛选");
+      await openPage("today", "#todayPage.page-active", "管理员返回今日工作台");
+      await clickRoute('#todayWorkflowSteps [data-empty-page="imports"][data-import-focus="blocked"]', "#importPage.page-active", "管理员今日流程导入入口");
+      requireActive('.import-health-tabs [data-import-focus="blocked"]', "管理员导入需处理筛选");
+      await openPage("today", "#todayPage.page-active", "管理员返回今日工作台");
+      await clickRoute('#todayWorkflowSteps [data-empty-page="tasks"][data-task-status="待推送"][data-task-open-only="true"]', "#tasksPage.page-active", "管理员今日流程推送入口");
+      if (document.querySelector("#taskStatus")?.value !== "待推送") errors.push("管理员任务入口未带待推送筛选");
+      if (!document.querySelector("#taskOpenOnly")?.checked) errors.push("管理员任务入口未带只看未完成筛选");
       await openPage("sales", "#salesPage.page-active", "销量管理页面");
       requireVisible("#salesFocusBar", "销量筛选条");
       await openPage("tasks", "#tasksPage.page-active", "商品任务页面");
@@ -236,6 +256,17 @@ function renderSmokeScript() {
             }
           });
           requireText("#todayWorkflowTitle", "店长每日流程", "店长工作流");
+          await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
+          await clickRoute('#todayWorkflowSteps [data-empty-page="sales"][data-sales-focus="missing"]', "#salesPage.page-active", "店长今日流程销量入口");
+          requireText("#salesFocusTitle", "今天先补未填", "店长销量入口主筛选");
+          requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长销量入口未填筛选");
+          await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
+          await clickRoute('#todayWorkflowSteps [data-empty-page="tasks"][data-task-status="待店长处理"][data-task-open-only="true"]', "#tasksPage.page-active", "店长今日流程任务入口");
+          if (document.querySelector("#taskStatus")?.value !== "待店长处理") errors.push("店长任务入口未带待店长处理筛选");
+          if (!document.querySelector("#taskOpenOnly")?.checked) errors.push("店长任务入口未带只看未完成筛选");
+          await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
+          await clickRoute('#todayWorkflowSteps [data-empty-page="imports"][data-import-focus="blocked"]', "#importPage.page-active", "店长今日流程导入入口");
+          requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长导入入口需处理筛选");
           await openPage("sales", "#salesPage.page-active", "店长销量管理页面");
           requireVisible("#salesFocusBar", "店长销量筛选条");
           requireText("#salesFocusTitle", "今天先补未填", "店长销量主筛选");
@@ -280,7 +311,7 @@ async function runRenderSmoke(win) {
       app.exit(1);
       return;
     }
-    console.log(`渲染烟测通过：${result.viewport.width}x${result.viewport.height} 全核心模块页面、管理员/店长跨页面权限按钮、破图和横向溢出均已检查。`);
+    console.log(`渲染烟测通过：${result.viewport.width}x${result.viewport.height} 全核心模块页面、今日流程真实点击路径、管理员/店长跨页面权限按钮、破图和横向溢出均已检查。`);
     app.exit(0);
   } catch (error) {
     console.error(`渲染烟测执行失败：${error.message || error}`);

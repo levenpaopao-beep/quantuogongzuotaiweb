@@ -76,7 +76,7 @@ npm run check:ready
 
 ```bash
 npm run check:design    # 产品设计检查：青春配色、响应式、角色化工作流、图片兜底
-npm run check:render    # 真实渲染烟测：标准/最小窗口、全核心模块页面、管理员/店长跨页面权限按钮、破图和横向溢出
+npm run check:render    # 真实渲染烟测：标准/最小窗口、全核心模块页面、今日流程真实点击路径、管理员/店长跨页面权限按钮、破图和横向溢出
 npm run check:security  # 安全体检：Electron 隔离、IPC 暴露、权限边界、备份恢复白名单
 npm run check:modules   # 模块体检：今日工作台、销量、任务、导入、报表、基础资料、ERP、备份
 npm run check:journeys  # 角色旅程检查：管理员和店长关键路径是否顺畅
