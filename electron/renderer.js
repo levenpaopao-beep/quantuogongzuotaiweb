@@ -1336,7 +1336,10 @@ function renderSalesCompare() {
 async function loadSales(showToastOnDone = false) {
   if (!api.sales) return;
   try {
-    state.sales = await api.sales(operatorPayload({ date: salesDateValue() }));
+    const smokeSales = window.__PETCIRCLE_RENDER_SMOKE_SALES__;
+    state.sales = smokeSales?.sales
+      ? await smokeSales.sales(operatorPayload({ date: salesDateValue() }))
+      : await api.sales(operatorPayload({ date: salesDateValue() }));
     renderSalesManagement();
     renderOperatorOwnerOptions();
     renderTodayDashboard();
@@ -1349,7 +1352,10 @@ async function loadSales(showToastOnDone = false) {
 async function loadSalesCompare(showToastOnDone = false) {
   if (!api.salesCompare) return;
   try {
-    state.salesCompare = await api.salesCompare(operatorPayload({ date: salesDateValue() }));
+    const smokeSales = window.__PETCIRCLE_RENDER_SMOKE_SALES__;
+    state.salesCompare = smokeSales?.salesCompare
+      ? await smokeSales.salesCompare(operatorPayload({ date: salesDateValue() }))
+      : await api.salesCompare(operatorPayload({ date: salesDateValue() }));
     renderSalesCompare();
     if (showToastOnDone) showToast("销量差异已重新比对");
   } catch (error) {
@@ -1381,13 +1387,19 @@ async function submitSalesEntry(index) {
     return;
   }
   try {
-    await api.submitSales(operatorPayload({
+    const payload = operatorPayload({
       date: salesDateValue(),
       platform: entry.platform,
       store: entry.store,
       sales,
       remark: remarkInput?.value.trim() || "",
-    }));
+    });
+    const smokeSales = window.__PETCIRCLE_RENDER_SMOKE_SALES__;
+    if (smokeSales?.submitSales) {
+      await smokeSales.submitSales(payload);
+    } else {
+      await api.submitSales(payload);
+    }
     await loadSales(false);
     await loadSalesCompare(false);
     showToast("销量已保存");

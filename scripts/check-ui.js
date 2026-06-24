@@ -146,10 +146,11 @@ const renderSmokeBody = functionBody(main, "renderSmokeScript");
 if (
   !renderSmokeBody.includes("店长今日待办销量入口") ||
   !renderSmokeBody.includes("店长开始清单任务入口") ||
-  !renderSmokeBody.includes("管理员今日待办导入入口")
+  !renderSmokeBody.includes("管理员今日待办导入入口") ||
+  !renderSmokeBody.includes("店长销量回车提交")
 ) {
   fail("真实渲染烟测未覆盖首页待办和开始清单入口", [
-    "首页不止流程卡片可点击；今日待办和开始使用清单也必须在真实窗口里点击验证，并带上销量、导入、任务上下文。",
+    "首页不止流程卡片可点击；今日待办、开始使用清单和销量回车提交也必须在真实窗口里验证，并带上销量、导入、任务上下文。",
   ]);
 }
 const renderSalesBody = functionBody(renderer, "renderSalesManagement");

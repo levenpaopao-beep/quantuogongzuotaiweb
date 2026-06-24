@@ -299,6 +299,76 @@ function renderSmokeScript() {
           requireVisible("#salesFocusBar", "店长销量筛选条");
           requireText("#salesFocusTitle", "今天先补未填", "店长销量主筛选");
           requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长销量未填筛选");
+          const smokeSalesEntry = {
+            platform: "Temu",
+            store: "烟测店铺",
+            owner: ownerName,
+            sales: "",
+            remark: "",
+            submitted: false,
+            status: "未填",
+            abnormal: "",
+          };
+          let capturedSalesSubmit = null;
+          let smokeSalesSubmitted = false;
+          try {
+            window.__PETCIRCLE_RENDER_SMOKE_SALES__ = {};
+            window.__PETCIRCLE_RENDER_SMOKE_SALES__.sales = async () => ({
+              summary: {
+                required: 1,
+                submitted: smokeSalesSubmitted ? 1 : 0,
+                missing: smokeSalesSubmitted ? 0 : 1,
+                abnormal: 0,
+                total_sales: smokeSalesSubmitted ? 37 : 0,
+              },
+              entries: [{
+                ...smokeSalesEntry,
+                sales: smokeSalesSubmitted ? "37" : "",
+                remark: smokeSalesSubmitted ? "店长销量回车提交" : "",
+                submitted: smokeSalesSubmitted,
+                status: smokeSalesSubmitted ? "已填写" : "未填",
+              }],
+              platforms: [{
+                platform: "Temu",
+                sales: smokeSalesSubmitted ? 37 : 0,
+                submitted: smokeSalesSubmitted ? 1 : 0,
+                required: 1,
+                missing: smokeSalesSubmitted ? 0 : 1,
+                abnormal: 0,
+              }],
+            });
+            window.__PETCIRCLE_RENDER_SMOKE_SALES__.submitSales = async (payload) => {
+              capturedSalesSubmit = payload;
+              smokeSalesSubmitted = true;
+              return { ok: true };
+            };
+            window.__PETCIRCLE_RENDER_SMOKE_SALES__.salesCompare = async () => ({ summary: { checked: 1, alerts: 0, source_platforms: [] }, rows: [] });
+            document.querySelector('[data-page="sales"]')?.click();
+            document.querySelector("#loadSalesHeaderBtn")?.click();
+            await waitFor(() => document.querySelector("#salesFocusTitle")?.textContent.includes("1 条"));
+            const salesInput = document.querySelector("#salesEntryList [data-sales-index]");
+            if (!salesInput) {
+              errors.push("店长销量回车提交输入框缺失");
+            } else {
+              salesInput.value = "37";
+              salesInput.dispatchEvent(new Event("input", { bubbles: true }));
+              salesInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+              await waitFor(() => capturedSalesSubmit && document.querySelector("#salesStatusLine")?.textContent.includes("已填 1"));
+              if (!capturedSalesSubmit) {
+                errors.push("店长销量回车提交未触发保存");
+              } else {
+                if (capturedSalesSubmit.role !== "owner" || capturedSalesSubmit.user !== ownerName) errors.push("店长销量回车提交未带店长身份");
+                if (capturedSalesSubmit.platform !== "Temu" || capturedSalesSubmit.store !== "烟测店铺") errors.push("店长销量回车提交店铺口径错误");
+                if (String(capturedSalesSubmit.sales) !== "37") errors.push("店长销量回车提交销量数错误");
+              }
+              requireText("#salesFocusTitle", "今天先补未填", "店长销量回车提交");
+              requireText("#salesStatusLine", "已填 1", "店长销量回车提交状态");
+            }
+          } finally {
+            delete window.__PETCIRCLE_RENDER_SMOKE_SALES__;
+            document.querySelector('[data-page="sales"]')?.click();
+            await new Promise((resolve) => setTimeout(resolve, 120));
+          }
           await openPage("tasks", "#tasksPage.page-active", "店长商品任务页面");
           requireVisible('[data-owner-only="task-submit"]', "店长整包处理按钮");
           if (visible('[data-admin-only="task-push"]')) errors.push("店长视角仍显示管理员推送按钮");
