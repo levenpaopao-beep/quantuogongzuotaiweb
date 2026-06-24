@@ -12,7 +12,9 @@ ROOT = Path(__file__).resolve().parent
 OUTPUT_DIR = ROOT / "outputs"
 VERSION = "v2.0"
 DATE_CODE = datetime.now().strftime("%y%m%d")
-PACKAGE_NAME = f"DailyOpsWorkbench_{VERSION}_Win11_InstallPackage_{DATE_CODE}"
+APP_NAME = "PETCIRCLE跨境工作台"
+APP_ID = "PETCIRCLECrossBorderWorkbench"
+PACKAGE_NAME = f"{APP_ID}_{VERSION}_Win11_InstallPackage_{DATE_CODE}"
 BUILD_ROOT = OUTPUT_DIR / PACKAGE_NAME
 ZIP_PATH = OUTPUT_DIR / f"{PACKAGE_NAME}.zip"
 CACHE_DIR = OUTPUT_DIR / "_build_cache"
@@ -94,10 +96,10 @@ pause
 $PackageRoot = Split-Path -Parent $PSScriptRoot
 $SourceApp = Join-Path $PackageRoot 'app'
 $RuntimeZip = Join-Path $PackageRoot 'runtime_bundle\\{PYTHON_EMBED_ZIP}'
-$InstallDir = Join-Path $env:LOCALAPPDATA 'DailyOpsWorkbenchV2'
+$InstallDir = Join-Path $env:LOCALAPPDATA '{APP_ID}V2'
 $RuntimeDir = Join-Path $InstallDir 'runtime\\python'
 
-Write-Host '正在安装日常运营工作台 {VERSION}...'
+Write-Host '正在安装{APP_NAME} {VERSION}...'
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 robocopy $SourceApp $InstallDir /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
 if(Test-Path $RuntimeDir) {{
@@ -108,7 +110,7 @@ Expand-Archive -Path $RuntimeZip -DestinationPath $RuntimeDir -Force
 Get-ChildItem $RuntimeDir -Filter 'python*._pth' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
 $desktop = [Environment]::GetFolderPath('Desktop')
-$shortcutPath = Join-Path $desktop '日常运营工作台 v2.0.lnk'
+$shortcutPath = Join-Path $desktop '{APP_NAME} {VERSION}.lnk'
 $targetPath = Join-Path $InstallDir '启动日常运营工作台.bat'
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
@@ -120,58 +122,58 @@ Write-Host '安装完成。'
 Write-Host ('安装目录：' + $InstallDir)
 Start-Process $targetPath
 """
-    uninstall_ps1 = """$ErrorActionPreference = 'Stop'
-$InstallDir = Join-Path $env:LOCALAPPDATA 'DailyOpsWorkbenchV2'
+    uninstall_ps1 = f"""$ErrorActionPreference = 'Stop'
+$InstallDir = Join-Path $env:LOCALAPPDATA '{APP_ID}V2'
 $desktop = [Environment]::GetFolderPath('Desktop')
-$shortcutPath = Join-Path $desktop '日常运营工作台 v2.0.lnk'
+$shortcutPath = Join-Path $desktop '{APP_NAME} {VERSION}.lnk'
 
-if(Test-Path $InstallDir) {
+if(Test-Path $InstallDir) {{
   Remove-Item $InstallDir -Recurse -Force
-}
-if(Test-Path $shortcutPath) {
+}}
+if(Test-Path $shortcutPath) {{
   Remove-Item $shortcutPath -Force
-}
-Write-Host '日常运营工作台 v2.0 已卸载。'
+}}
+Write-Host '{APP_NAME} {VERSION} 已卸载。'
 """
-    inno_script = '''[Setup]
-AppName=DailyOpsWorkbench
+    inno_script = f'''[Setup]
+AppName={APP_NAME}
 AppVersion=2.0
-DefaultDirName={localappdata}\\DailyOpsWorkbenchV2
-DefaultGroupName=DailyOpsWorkbench
+DefaultDirName={{localappdata}}\\{APP_ID}V2
+DefaultGroupName={APP_NAME}
 Compression=lzma
 SolidCompression=yes
-OutputBaseFilename=DailyOpsWorkbench_v2.0_Setup
+OutputBaseFilename={APP_ID}_v2.0_Setup
 
 [Files]
-Source: "..\\app\\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
-Source: "..\\runtime_bundle\\*"; DestDir: "{tmp}\\runtime_bundle"; Flags: ignoreversion
+Source: "..\\app\\*"; DestDir: "{{app}}"; Flags: recursesubdirs ignoreversion
+Source: "..\\runtime_bundle\\*"; DestDir: "{{tmp}}\\runtime_bundle"; Flags: ignoreversion
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\\scripts\\install_workbench_v2.ps1"""; Flags: runhidden
-Filename: "{app}\\启动日常运营工作台.bat"; Description: "启动日常运营工作台 v2.0"; Flags: postinstall skipifsilent
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{{app}}\\scripts\\install_workbench_v2.ps1"""; Flags: runhidden
+Filename: "{{app}}\\启动日常运营工作台.bat"; Description: "启动{APP_NAME} {VERSION}"; Flags: postinstall skipifsilent
 '''
-    write_text(package_root / "安装日常运营工作台_v2.0.bat", install_bat)
-    write_text(package_root / "卸载日常运营工作台_v2.0.bat", uninstall_bat)
+    write_text(package_root / f"安装{APP_NAME}_{VERSION}.bat", install_bat)
+    write_text(package_root / f"卸载{APP_NAME}_{VERSION}.bat", uninstall_bat)
     write_text(package_root / "scripts" / "install_workbench_v2.ps1", install_ps1)
     write_text(package_root / "scripts" / "uninstall_workbench_v2.ps1", uninstall_ps1)
-    write_text(package_root / "scripts" / "DailyOpsWorkbench_v2.0_InnoSetup.iss", inno_script)
+    write_text(package_root / "scripts" / f"{APP_ID}_v2.0_InnoSetup.iss", inno_script)
 
 
 def make_readme(package_root):
-    text = f"""日常运营工作台 {VERSION} - Windows 11 安装包
+    text = f"""{APP_NAME} {VERSION} - Windows 11 安装包
 
 本版本已合并：
-1. 原日常运营工作台
+1. {APP_NAME}
 2. Temu核价回复
 3. 店铺低分产品预警
 
 推荐安装方式：
 1. 解压整个压缩包。
-2. 双击“安装日常运营工作台_v2.0.bat”。
-3. 安装完成后，桌面会生成“日常运营工作台 v2.0”快捷方式。
+2. 双击“安装{APP_NAME}_{VERSION}.bat”。
+3. 安装完成后，桌面会生成“{APP_NAME} {VERSION}”快捷方式。
 
 安装后软件位置：
-- %LOCALAPPDATA%\\DailyOpsWorkbenchV2
+- %LOCALAPPDATA%\\{APP_ID}V2
 
 本安装包特性：
 - 面向 Windows 11 家庭版
@@ -182,7 +184,7 @@ def make_readme(package_root):
 - 报表输出目录为安装目录下的 outputs
 - 首次安装完成会自动启动工作台
 - 如需停止工作台，直接关闭桌面窗口即可
-- 如需重新封装为 exe 安装向导，可在 Windows 上使用 scripts\\DailyOpsWorkbench_v2.0_InnoSetup.iss
+- 如需重新封装为 exe 安装向导，可在 Windows 上使用 scripts\\{APP_ID}_v2.0_InnoSetup.iss
 """
     write_text(package_root / "README_安装说明.txt", text)
 

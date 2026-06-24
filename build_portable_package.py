@@ -6,7 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PY_RUNTIME = Path.home() / ".cache" / "codex-runtimes" / "codex-primary-runtime" / "dependencies" / "python"
-PACKAGE_NAME = f"DailyOpsWorkbench_Portable_{datetime.now():%y%m%d}"
+APP_NAME = "PETCIRCLE跨境工作台"
+PACKAGE_NAME = f"PETCIRCLECrossBorderWorkbench_Portable_{datetime.now():%y%m%d}"
 BUILD_ROOT = ROOT / "outputs" / PACKAGE_NAME
 ZIP_PATH = ROOT / "outputs" / f"{PACKAGE_NAME}.zip"
 
@@ -54,10 +55,10 @@ if not exist "%PY%" (
   exit /b 1
 )
 
-echo Starting Daily Ops Workbench...
+echo Starting PETCIRCLE Cross Border Workbench...
 "%PY%" -W ignore::DeprecationWarning "%~dp0daily_ops_desktop.py"
 echo.
-echo 日常运营工作台桌面版已退出。
+echo PETCIRCLE跨境工作台桌面版已退出。
 pause
 """,
     )
@@ -66,7 +67,7 @@ pause
 def make_readme(package_root):
     write_text(
         package_root / "README_使用说明.txt",
-        """日常运营工作台 - 绿色离线版
+        f"""{APP_NAME} - 绿色离线版
 
 使用方式：
 1. 解压整个文件夹到任意位置。

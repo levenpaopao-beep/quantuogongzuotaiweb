@@ -14,6 +14,7 @@ SYSTEM_PANEL = "#FFFFFF"
 SYSTEM_LINE = "#D1D1D6"
 SYSTEM_TEXT = "#1D1D1F"
 SYSTEM_MUTED = "#6E6E73"
+APP_NAME = "PETCIRCLE跨境工作台"
 
 
 class ScrollFrame(ttk.Frame):
@@ -36,7 +37,7 @@ class ScrollFrame(ttk.Frame):
 class DailyOpsDesktop(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("日常运营工作台")
+        self.title(APP_NAME)
         self.geometry("1240x780")
         self.minsize(1060, 680)
         self.events = queue.Queue()
@@ -93,7 +94,7 @@ class DailyOpsDesktop(tk.Tk):
 
         top = ttk.Frame(self.content_area, padding=(18, 12))
         top.pack(fill="x")
-        ttk.Label(top, text="日常运营工作台", style="Title.TLabel").pack(side="left", expand=True)
+        ttk.Label(top, text=APP_NAME, style="Title.TLabel").pack(side="left", expand=True)
         ttk.Button(top, text="刷新", command=self.refresh_all).pack(side="right", padx=(8, 0))
         ttk.Button(top, text="设置", command=lambda: self._show_page("rules")).pack(side="right", padx=(8, 0))
 
@@ -130,7 +131,7 @@ class DailyOpsDesktop(tk.Tk):
     def _build_sidebar(self):
         brand = ttk.Frame(self.sidebar, style="Sidebar.TFrame", padding=(14, 18, 14, 12))
         brand.pack(fill="x")
-        tk.Label(brand, text="日常运营工作台", bg="#F2F3F6", fg=SYSTEM_TEXT, font=("Arial", 14, "bold")).pack(anchor="w")
+        tk.Label(brand, text=APP_NAME, bg="#F2F3F6", fg=SYSTEM_TEXT, font=("Arial", 14, "bold")).pack(anchor="w")
         self._sidebar_item("概览", "task")
         self._sidebar_group("工作流")
         self._sidebar_item("每日工作流", "task")

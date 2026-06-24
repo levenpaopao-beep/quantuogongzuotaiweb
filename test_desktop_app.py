@@ -284,6 +284,29 @@ class DesktopAppTest(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertIn("data", payload)
 
+    def test_delivery_scripts_use_petcircle_cross_border_name(self):
+        import build_windows_install_package_v2 as win_pack
+
+        files = [
+            ROOT / "build_portable_package.py",
+            ROOT / "build_windows_install_package_v2.py",
+            ROOT / "daily_ops_desktop.py",
+        ]
+        combined = "\n".join(path.read_text(encoding="utf-8") for path in files)
+        self.assertIn("PETCIRCLE跨境工作台", combined)
+        self.assertIn("PETCIRCLECrossBorderWorkbench", combined)
+        for legacy in ["正在安装日常运营工作台", "日常运营工作台 v2.0", "DailyOpsWorkbench_v2.0_Setup"]:
+            self.assertNotIn(legacy, combined)
+
+        with TemporaryDirectory() as tmp:
+            package_root = Path(tmp)
+            win_pack.make_install_scripts(package_root)
+            scripts = "\n".join(path.read_text(encoding="utf-8") for path in (package_root / "scripts").glob("*"))
+            self.assertIn("PETCIRCLE跨境工作台 v2.0", scripts)
+            self.assertIn("PETCIRCLECrossBorderWorkbenchV2", scripts)
+            self.assertNotIn("{APP_NAME}", scripts)
+            self.assertNotIn("{APP_ID}", scripts)
+
 
 if __name__ == "__main__":
     unittest.main()
