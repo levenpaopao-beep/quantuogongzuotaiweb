@@ -234,6 +234,10 @@ function renderSmokeScript() {
       await openPage("masterdata", "#masterDataPage.page-active", "基础资料页面");
       requireVisible("#saveStoreOwnersBtn", "保存店铺配置按钮");
       requireVisible("#platformChipList", "平台标签");
+      requireVisible('[data-admin-only="master-import"]', "管理员基础资料导入入口");
+      requireVisible('[data-admin-only="operator-accounts"]', "管理员店长账号入口");
+      requireVisible("#ownerMasterPath", "管理员负责人表导入路径");
+      requireVisible("#salesHistoryPath", "管理员历史销量导入路径");
       await openPage("rules", "#rulesPage.page-active", "系统设置页面");
       requireVisible("#erpSettingsForm", "ERP 接口设置");
       requireVisible("#doctorResult", "系统自检结果区");
@@ -369,10 +373,14 @@ function renderSmokeScript() {
             document.querySelector('[data-page="sales"]')?.click();
             await new Promise((resolve) => setTimeout(resolve, 120));
           }
+          if (visible('[data-admin-only="sales-report-export"]')) errors.push("店长视角仍显示销量报表导出按钮");
           await openPage("tasks", "#tasksPage.page-active", "店长商品任务页面");
           requireVisible('[data-owner-only="task-submit"]', "店长整包处理按钮");
           if (visible('[data-admin-only="task-push"]')) errors.push("店长视角仍显示管理员推送按钮");
           if (visible('[data-admin-only="task-review"]')) errors.push("店长视角仍显示管理员确认按钮");
+          await openPage("masterdata", "#masterDataPage.page-active", "店长基础资料页面");
+          if (visible('[data-admin-only="master-import"]')) errors.push("店长隐藏基础资料导入入口失败");
+          if (visible('[data-admin-only="operator-accounts"]')) errors.push("店长隐藏店长账号入口失败");
           await openPage("imports", "#importPage.page-active", "店长数据导入页面");
           requireVisible("#importHealthBar", "店长导入健康条");
           requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长导入需处理筛选");
