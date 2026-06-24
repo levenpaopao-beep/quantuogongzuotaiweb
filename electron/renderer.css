@@ -183,6 +183,7 @@ button { cursor: pointer; }
 
 .hero-strip,
 .workflow-panel,
+.rhythm-panel,
 .page-intro,
 .today-card,
 .simple-panel,
@@ -255,6 +256,89 @@ button { cursor: pointer; }
   width: 100%;
   min-height: 34px;
   padding: 7px 10px;
+}
+
+.rhythm-panel {
+  margin-top: 14px;
+  padding: 18px;
+}
+.rhythm-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.rhythm-head h2 {
+  margin: 9px 0 0;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+.rhythm-head p {
+  max-width: 520px;
+  text-align: right;
+}
+.rhythm-lanes {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+  gap: 12px;
+}
+.rhythm-lane {
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 14px;
+  background: #fff;
+}
+.rhythm-lane.daily {
+  background: linear-gradient(180deg, #f1fffb, #fff);
+}
+.rhythm-lane.weekly {
+  background: linear-gradient(180deg, #fff7fd, #fff);
+}
+.rhythm-lane-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.rhythm-lane-title strong {
+  font-size: 16px;
+}
+.rhythm-lane-title span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+.rhythm-actions {
+  display: grid;
+  gap: 8px;
+}
+.rhythm-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255,255,255,.84);
+}
+.rhythm-action strong,
+.rhythm-action span {
+  display: block;
+}
+.rhythm-action span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.rhythm-action button {
+  min-width: 76px;
+  white-space: nowrap;
 }
 
 .hero-strip {
@@ -1551,6 +1635,7 @@ label { color: var(--muted); font-size: 12px; }
   .span-2 { grid-column: span 1; }
   .span-3 { grid-column: span 1; }
   .workflow-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rhythm-lanes { grid-template-columns: 1fr; }
   .guide-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .daily-followup-row { grid-template-columns: 1fr; }
@@ -1567,7 +1652,11 @@ label { color: var(--muted); font-size: 12px; }
   .backup-actions { grid-template-columns: 1fr; }
   .workflow-head { flex-direction: column; }
   .workflow-head p { text-align: left; }
+  .rhythm-head { flex-direction: column; }
+  .rhythm-head p { text-align: left; }
   .workflow-steps { grid-template-columns: 1fr; }
+  .rhythm-action { grid-template-columns: 1fr; align-items: flex-start; }
+  .rhythm-action button { width: 100%; }
   .guide-steps { grid-template-columns: 1fr; }
   .task-workbar { grid-template-columns: 1fr; }
   .task-work-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }

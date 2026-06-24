@@ -142,6 +142,17 @@ if (!todayWorkflowBody.includes("data-empty-page") || !todayWorkflowBody.include
     "流程卡片里的操作按钮必须能跳到对应模块，并带任务筛选状态。",
   ]);
 }
+const operationRhythmBody = functionBody(renderer, "renderOperationRhythm");
+if (!html.includes('id="operationRhythmList"') || !operationRhythmBody.includes("每日必做") || !operationRhythmBody.includes("每周辅助")) {
+  fail("今日工作台缺少每日/每周操作节奏", [
+    "工作台需要明确每天先做什么、每周再补什么，减少店长和管理员的使用迷路感。",
+  ]);
+}
+if (!operationRhythmBody.includes("店长每天先填销量") || !operationRhythmBody.includes("管理员每天盯进度") || !operationRhythmBody.includes("bindEmptyActions(wrap)")) {
+  fail("操作节奏缺少角色化说明或跳转绑定", [
+    "管理员和店长在同一入口下需要看到不同节奏，并且每个动作都能跳到对应模块。",
+  ]);
+}
 if (!html.includes('id="salesFocusBar"') || !renderer.includes("function setSalesFocus(") || !renderer.includes("salesFocusEntries")) {
   fail("销量页缺少每日高频填报筛选", [
     "店长每天进入销量页时需要优先看到未填店铺，并能切换异常和全部，避免在长列表里找。",

@@ -1626,6 +1626,7 @@ async function exportSales() {
 function renderTodayDashboard() {
   renderRoleCopy();
   renderTodayWorkflow();
+  renderOperationRhythm();
   const operator = currentOperator();
   const ownerMode = operator.role === "owner";
   const summary = state.taskOverview || state.taskSummary || {};
@@ -1810,6 +1811,74 @@ function renderDailyFollowups() {
       </div>
     `;
   }).join("");
+  bindEmptyActions(wrap);
+}
+
+function renderOperationRhythm() {
+  const wrap = $("#operationRhythmList");
+  if (!wrap) return;
+  const operator = currentOperator();
+  const ownerMode = operator.role === "owner";
+  const hint = $("#operationRhythmHint");
+  if (hint) {
+    hint.textContent = ownerMode
+      ? "店长每天先填销量和处理已推送任务；每周只补自己店铺缺的数据。"
+      : "管理员每天盯进度和异常；每周补齐数据源、推送任务包并确认归档。";
+  }
+  const lanes = ownerMode ? [
+    {
+      label: "每日必做",
+      tone: "daily",
+      items: [
+        ["填今日销量", "只看自己负责店铺，未填优先。", "sales", "去填写", 'data-sales-focus="missing"'],
+        ["处理任务包", "已推送到你名下的任务整包提交。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
+        ["看异常提醒", "销量波动大时补原因，不影响提交。", "reports", "看提醒", ""],
+      ],
+    },
+    {
+      label: "每周辅助",
+      tone: "weekly",
+      items: [
+        ["补导入缺口", "按店铺看缺哪个数据源，能补就补。", "imports", "看缺口", 'data-focus="import-matrix" data-import-focus="blocked"'],
+        ["查看确认状态", "提交后的任务等待管理员确认。", "tasks", "查看", 'data-task-status="待管理员审核" data-task-open-only="true"'],
+      ],
+    },
+  ] : [
+    {
+      label: "每日必做",
+      tone: "daily",
+      items: [
+        ["查未填销量", "先看哪个负责人/店铺没填。", "sales", "看未填", 'data-sales-focus="missing"'],
+        ["查异常波动", "只提示风险，不硬拦提交。", "sales", "看异常", 'data-sales-focus="abnormal"'],
+        ["确认店长提交", "店长整包处理后管理员打勾归档。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
+      ],
+    },
+    {
+      label: "每周辅助",
+      tone: "weekly",
+      items: [
+        ["检查导入矩阵", "看哪个平台、店铺、数据类型缺失。", "imports", "看矩阵", 'data-focus="import-matrix" data-import-focus="blocked"'],
+        ["推送商品任务", "按任务包推送，必要时下载表格给店长。", "tasks", "去推送", 'data-task-status="待推送" data-task-open-only="true"'],
+        ["生成经营报表", "月结前先看销量、导入、任务体检。", "reports", "看体检", ""],
+      ],
+    },
+  ];
+  wrap.innerHTML = lanes.map((lane) => `
+    <div class="rhythm-lane ${lane.tone}">
+      <div class="rhythm-lane-title">
+        <strong>${lane.label}</strong>
+        <span>${lane.tone === "daily" ? "每天打开先看" : "一周集中处理"}</span>
+      </div>
+      <div class="rhythm-actions">
+        ${lane.items.map(([title, body, page, action, attrs]) => `
+          <div class="rhythm-action">
+            <div><strong>${title}</strong><span>${body}</span></div>
+            <button class="ghost-button" data-empty-page="${page}" ${attrs}>${action}</button>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `).join("");
   bindEmptyActions(wrap);
 }
 

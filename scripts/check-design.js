@@ -44,6 +44,18 @@ expect(!/letter-spacing\s*:\s*-/.test(css), "存在负字距", [
 expect(html.includes('id="todayWorkflowSteps"') && renderer.includes("renderTodayWorkflow"), "首页缺少明确工作流", [
   "用户进入后需要先看到今天怎么跑，而不是只看到状态卡。",
 ]);
+expect(html.includes('id="operationRhythmList"') && renderer.includes("function renderOperationRhythm("), "首页缺少每日/每周操作节奏", [
+  "每天用为主、每周用为辅，需要在今日工作台明确分组，避免用户不知道先做什么。",
+]);
+expect(renderer.includes("每日必做") && renderer.includes("每周辅助") && renderer.includes("renderOperationRhythm();"), "操作节奏缺少分组或未接入首页渲染", [
+  "首页需要把高频填报、任务处理和每周导入/推送分开显示。",
+]);
+expect(/\.rhythm-lanes\s*\{[\s\S]*grid-template-columns:\s*minmax/.test(css), "操作节奏缺少桌面双栏布局", [
+  "每日主线和每周辅助需要并排区分。",
+]);
+expect(/@media\s*\(max-width:\s*1260px\)\s*\{[\s\S]*\.rhythm-lanes\s*\{\s*grid-template-columns:\s*1fr/.test(css), "操作节奏缺少中屏单列布局", [
+  "中小屏不能让两组动作互相挤压。",
+]);
 expect(renderer.includes("店长每日流程") && renderer.includes("管理员日常流程"), "首页工作流缺少角色化表达", [
   "同一入口下，管理员和店长必须看到不同动作路径。",
 ]);
