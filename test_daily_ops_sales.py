@@ -34,6 +34,20 @@ class DailySalesStoreTest(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.store.submit(self.assignments, role="owner", user="别人", day="2026-06-23", platform="Temu", store="七弟", sales="12")
 
+    def test_owner_recent_records_are_limited_to_own_store(self):
+        assignments = [
+            {"platform": "Temu", "store": "七弟", "owner": "小琴"},
+            {"platform": "Shein", "store": "琪琪", "owner": "胡娟"},
+        ]
+        self.store.submit(assignments, role="admin", user="管理员", day="2026-06-22", platform="Temu", store="七弟", sales="12")
+        self.store.submit(assignments, role="admin", user="管理员", day="2026-06-22", platform="Shein", store="琪琪", sales="88")
+
+        owner_payload = self.store.daily_payload(assignments, role="owner", user="小琴", day="2026-06-22")
+        admin_payload = self.store.daily_payload(assignments, role="admin", user="管理员", day="2026-06-22")
+
+        self.assertEqual([row["store"] for row in owner_payload["records"]], ["七弟"])
+        self.assertEqual({row["store"] for row in admin_payload["records"]}, {"七弟", "琪琪"})
+
     def test_disabled_or_not_required_stores_are_not_daily_entries(self):
         assignments = [
             {"platform": "Temu", "store": "七弟", "owner": "小琴", "enabled": True, "daily_required": True},

@@ -240,7 +240,9 @@ class DailySalesStore:
     def daily_payload(self, assignments, role="admin", user="", day=""):
         day = parse_date(day).isoformat()
         visible = owner_visible_assignments(assignments, role, user)
-        records = {sales_record_id(row.get("date"), row.get("platform"), row.get("store")): row for row in self.load()["records"]}
+        all_records = self.load()["records"]
+        records = {sales_record_id(row.get("date"), row.get("platform"), row.get("store")): row for row in all_records}
+        visible_keys = {(item["platform"], item["store"]) for item in visible}
         entries = []
         for item in visible:
             key = sales_record_id(day, item["platform"], item["store"])
@@ -261,7 +263,11 @@ class DailySalesStore:
         submitted = sum(1 for item in entries if item["submitted"])
         abnormal = sum(1 for item in entries if item["abnormal"])
         total_sales = sum(int(item["sales"] or 0) for item in entries if item["submitted"])
-        recent_records = sorted(self.load()["records"], key=lambda row: (norm(row.get("date")), norm(row.get("updated_at"))), reverse=True)[:80]
+        recent_records = [
+            row for row in all_records
+            if norm(role) == "admin" or (norm(row.get("platform")), norm(row.get("store"))) in visible_keys
+        ]
+        recent_records = sorted(recent_records, key=lambda row: (norm(row.get("date")), norm(row.get("updated_at"))), reverse=True)[:80]
         return {
             "date": day,
             "summary": {

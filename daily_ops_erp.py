@@ -11,6 +11,8 @@ from openpyxl import Workbook
 
 PRODUCT_ENDPOINT = "vip_api_goods_query.php"
 STOCK_ENDPOINT = "api_goods_stock_change_query.php"
+QYB_TEST_BASE_URL = "https://sandbox.wangdian.cn/openapi2"
+QYB_PROD_BASE_URL = "https://api.wangdian.cn/openapi2"
 
 
 def _text(value):
@@ -60,9 +62,14 @@ def required_missing(settings):
 
 
 def api_base_url(settings):
-    base = _text(settings.get("base_url")) or "https://api.wangdian.cn/openapi2"
+    environment = _text(settings.get("environment"))
+    if environment in {"test", "sandbox", "测试环境"}:
+        return QYB_TEST_BASE_URL
+    if environment in {"prod", "production", "正式环境"}:
+        return QYB_PROD_BASE_URL
+    base = _text(settings.get("base_url")) or QYB_TEST_BASE_URL
     if "open.wangdian.cn" in base:
-        return "https://api.wangdian.cn/openapi2"
+        return QYB_TEST_BASE_URL
     return base.rstrip("/")
 
 
@@ -241,8 +248,8 @@ def manual_sync(settings, erp_dir, now=None):
     end_time = now.strftime("%Y-%m-%d %H:%M:%S")
     start_time = (now - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     shop_no = _text(settings.get("shop_no") or settings.get("warehouse_no"))
-    page_size = _int(settings.get("page_size") or 100, 100, minimum=1, maximum=500)
-    stock_limit = _int(settings.get("stock_limit") or 1000, 1000, minimum=1, maximum=20000)
+    page_size = _int(settings.get("page_size") or 100, 100, minimum=1, maximum=100)
+    stock_limit = _int(settings.get("stock_limit") or 1000, 1000, minimum=1, maximum=2000)
 
     product_endpoint = _text(settings.get("product_endpoint")) or PRODUCT_ENDPOINT
     stock_endpoint = _text(settings.get("stock_endpoint")) or STOCK_ENDPOINT
