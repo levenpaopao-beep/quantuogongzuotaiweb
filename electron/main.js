@@ -5,7 +5,7 @@ const fs = require("fs");
 const os = require("os");
 
 const ROOT = path.resolve(__dirname, "..");
-const APP_NAME = "PETCIRCLE 运营工作台";
+const APP_NAME = "PETCIRCLE跨境工作台";
 const PNG_ICON = path.join(__dirname, "assets", "petcircle-app-icon.png");
 const ICNS_ICON = path.join(__dirname, "assets", "petcircle-app-icon.icns");
 

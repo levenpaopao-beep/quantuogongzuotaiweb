@@ -2286,7 +2286,7 @@ HTML_PAGE = r"""<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>日常运营工作台 v2.0</title>
+  <title>PETCIRCLE跨境工作台 v2.0</title>
   <style>
     :root { --bg:#f5f7fb; --panel:#fff; --ink:#1f2937; --muted:#6b7280; --line:#d8dee9; --blue:#1f4e78; --green:#2f7d5b; --red:#b42318; --soft:#eef3f8; --amber:#8a5a00; }
     * { box-sizing:border-box; }
@@ -2440,7 +2440,7 @@ HTML_PAGE = r"""<!doctype html>
 <body class="task-dashboard-collapsed">
 <div class="app">
   <aside>
-    <div class="brand">日常运营工作台 v2.0</div>
+    <div class="brand">PETCIRCLE跨境工作台 v2.0</div>
     <nav>
       <button class="active" data-tab="overview" data-admin-only="1">数据总览</button>
       <button data-tab="tasks">任务包中心</button>
@@ -3839,7 +3839,7 @@ def main():
         OUTPUT_DIR.mkdir(exist_ok=True)
         host = configured_host()
         server = ReusableThreadingHTTPServer((host, PORT), DailyOpsHandler)
-        print(f"日常运营工作台已启动：http://{host}:{PORT}")
+        print(f"PETCIRCLE跨境工作台已启动：http://{host}:{PORT}")
         print(access_hint(host, PORT))
         print("按 Ctrl+C 停止服务")
         server.serve_forever()

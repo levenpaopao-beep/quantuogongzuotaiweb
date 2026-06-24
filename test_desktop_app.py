@@ -19,7 +19,7 @@ class DesktopAppTest(unittest.TestCase):
         main_source = (ROOT / "electron" / "main.js").read_text(encoding="utf-8")
         package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
         self.assertEqual(package["main"], "electron/main.js")
-        self.assertEqual(package["productName"], "PETCIRCLE 运营工作台")
+        self.assertEqual(package["productName"], "PETCIRCLE跨境工作台")
         self.assertIn("BrowserWindow", main_source)
         self.assertIn("daily_ops_cli.py", main_source)
         self.assertNotIn("http://127.0.0.1", main_source)
@@ -29,14 +29,14 @@ class DesktopAppTest(unittest.TestCase):
         main_source = (ROOT / "electron" / "main.js").read_text(encoding="utf-8")
         html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
         css = (ROOT / "electron" / "renderer.css").read_text(encoding="utf-8")
-        self.assertIn("PETCIRCLE 运营工作台", main_source)
+        self.assertIn("PETCIRCLE跨境工作台", main_source)
         self.assertIn("function appIcon", main_source)
         self.assertIn("petcircle-app-icon.icns", main_source)
         self.assertIn("petcircle-app-icon.png", html)
         self.assertIn("data-fallback-label", html)
         self.assertIn("installImageFallbacks", (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8"))
-        self.assertIn("PETCIRCLE", html)
-        self.assertIn("日常运营工作台", html)
+        self.assertIn("PETCIRCLE跨境工作台", html)
+        self.assertIn("全托管日常运营", html)
         self.assertIn("brand-logo", css)
 
     def test_petcircle_dock_icon_uses_transparent_rounded_corners(self):
@@ -58,7 +58,7 @@ class DesktopAppTest(unittest.TestCase):
                 self.assertEqual(image.getpixel(point)[3], 0)
 
     def test_macos_app_launcher_opens_without_terminal(self):
-        app_dir = ROOT / "PETCIRCLE 运营工作台.app"
+        app_dir = ROOT / "PETCIRCLE跨境工作台.app"
         plist = app_dir / "Contents" / "Info.plist"
         launcher = app_dir / "Contents" / "MacOS" / "launcher"
         icon = app_dir / "Contents" / "Resources" / "petcircle-app-icon.icns"
@@ -71,7 +71,7 @@ class DesktopAppTest(unittest.TestCase):
             self.assertTrue(icon.exists())
             self.assertTrue(launcher.stat().st_mode & 0o111)
             plist_text = plist.read_text(encoding="utf-8")
-            self.assertIn("PETCIRCLE 运营工作台", plist_text)
+            self.assertIn("PETCIRCLE跨境工作台", plist_text)
             self.assertIn("petcircle-app-icon", plist_text)
 
     def test_desktop_adapter_upload_records_pending_batch_without_http(self):
@@ -200,7 +200,7 @@ class DesktopAppTest(unittest.TestCase):
         html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
         css = (ROOT / "electron" / "renderer.css").read_text(encoding="utf-8")
         js = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
-        for text in ["PETCIRCLE", "日常运营工作台", "今日工作台", "销量管理", "商品任务", "数据导入", "经营报表", "输出记录"]:
+        for text in ["PETCIRCLE跨境工作台", "全托管日常运营", "今日工作台", "销量管理", "商品任务", "数据导入", "经营报表", "输出记录"]:
             self.assertIn(text, html + js)
         self.assertIn("sidebar", html)
         self.assertIn("source-table", html)
