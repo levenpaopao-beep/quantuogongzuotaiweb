@@ -175,10 +175,13 @@ function renderSmokeScript() {
       await new Promise((resolve) => setTimeout(resolve, 80));
       requireVisible("#tasksPage.page-active", "商品任务页面");
       requireVisible("#taskWorkbar", "任务工作条");
+      requireVisible('[data-admin-only="task-push"]', "管理员批量推送按钮");
+      requireVisible('[data-admin-only="task-review"]', "管理员批量确认按钮");
       document.querySelector('[data-page="imports"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 80));
       requireVisible("#importPage.page-active", "数据导入页面");
       requireVisible("#importHealthBar", "导入健康条");
+      requireVisible('[data-admin-only="report-generate"]', "管理员生成就绪报表按钮");
       if (role && user && switchButton) {
         role.value = "owner";
         user.value = "";
@@ -208,6 +211,9 @@ function renderSmokeScript() {
           await new Promise((resolve) => setTimeout(resolve, 80));
           requireVisible('[data-owner-only="task-submit"]', "店长整包处理按钮");
           if (visible('[data-admin-only="task-push"]')) errors.push("店长视角仍显示管理员推送按钮");
+          if (visible('[data-admin-only="task-review"]')) errors.push("店长视角仍显示管理员确认按钮");
+          document.querySelector('[data-page="imports"]')?.click();
+          await new Promise((resolve) => setTimeout(resolve, 80));
           if (visible('[data-admin-only="report-generate"]')) errors.push("店长视角仍显示管理员报表生成按钮");
         }
         role.value = "admin";
