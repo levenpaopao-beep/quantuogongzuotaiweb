@@ -97,6 +97,12 @@ if (ownerName) {
   if ((ownerSales.records || []).some((record) => record.owner !== ownerName)) {
     fail("店长销量记录越权", [`${ownerName} 的最近销量记录里出现其他负责人店铺`]);
   }
+  const ownerSalesCompare = runCli("sales-compare", owner);
+  expectObject("店长销量差异提醒", ownerSalesCompare);
+  expectArray("店长销量差异提醒 rows", ownerSalesCompare.rows);
+  if (ownerSalesCompare.rows.some((row) => row.owner !== ownerName)) {
+    fail("店长销量差异越权", [`${ownerName} 的销量差异提醒里出现其他负责人店铺`]);
+  }
 
   const ownerTasks = runCli("tasks", { ...owner, filters: { role: "owner", user: ownerName, open_only: "1" } });
   expectObject("店长任务", ownerTasks);
