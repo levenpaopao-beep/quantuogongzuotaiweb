@@ -103,6 +103,23 @@ if (ownerName) {
   if (ownerSalesCompare.rows.some((row) => row.owner !== ownerName)) {
     fail("店长销量差异越权", [`${ownerName} 的销量差异提醒里出现其他负责人店铺`]);
   }
+  const ownerSalesReport = runCli("sales-report", owner);
+  expectObject("店长销量报表查询", ownerSalesReport);
+  expectArray("店长销量报表 rows", ownerSalesReport.rows);
+  if (ownerSalesReport.rows.some((row) => row.owner !== ownerName)) {
+    fail("店长销量报表越权", [`${ownerName} 的销量报表里出现其他负责人店铺`]);
+  }
+  const blockedOwnerSalesReport = runCliRaw(
+    "sales-report",
+    { ...owner, platform: "Temu", store: "__other_owner_store_probe__" },
+    [],
+    { allowFailure: true },
+  );
+  if (blockedOwnerSalesReport.ok) {
+    fail("店长销量报表指定其他店铺未被拒绝", [
+      "店长销量报表查询必须限定在本人负责店铺，即使手动输入店铺名也不能越权。",
+    ]);
+  }
 
   const ownerTasks = runCli("tasks", { ...owner, filters: { role: "owner", user: ownerName, open_only: "1" } });
   expectObject("店长任务", ownerTasks);
