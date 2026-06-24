@@ -32,11 +32,21 @@ function fail(message, details = []) {
   "安全体检",
   "模块体检",
   "角色旅程检查",
+  "店长进入“销量管理”",
+  "店长可以补自己负责店铺的数据源",
+  "店长可以上传自己负责店铺的数据源",
+  "店长不能生成报表",
   "不会删除文件",
   "不要批量删除",
 ].forEach((text) => {
   if (!readme.includes(text)) fail("README 缺少关键交付说明", [text]);
 });
+
+if (readme.includes("店长不能上传数据源")) {
+  fail("README 店长导入口径已过期", [
+    "最新业务逻辑是店长可以上传自己负责店铺的数据源，管理员负责全局缺失矩阵和报表生成。",
+  ]);
+}
 
 if (pkg.productName !== "PETCIRCLE跨境工作台") {
   fail("package.json 产品名不一致", [`当前 productName：${pkg.productName}`]);
