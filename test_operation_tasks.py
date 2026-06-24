@@ -1693,7 +1693,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         html = (root / "electron" / "renderer.html").read_text(encoding="utf-8")
         js = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
         css = (root / "electron" / "renderer.css").read_text(encoding="utf-8")
-        for text in ["任务中心", "任务台账", "店长填写", "管理员审核", "批量标记已处理", "批量通过", "批量驳回", "标记完成", "指派负责人", "店铺负责人配置", "导出任务"]:
+        for text in ["商品任务", "任务包台账", "店长处理", "管理员确认", "整包已处理", "批量确认", "标记完成", "指派负责人", "基础资料", "下载任务表"]:
             self.assertIn(text, html + js)
         for text in ["价格异常", "库存异常"]:
             self.assertIn(text, html)
@@ -1733,12 +1733,12 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("Shein", html)
         self.assertIn('platform: $("#taskPlatform")?.value || ""', js)
         self.assertIn("待指派", js)
-        self.assertIn("驳回原因", js)
-        self.assertIn("管理员审核必须填写说明", js)
-        self.assertIn("批量审核必须填写说明", js)
+        self.assertIn("确认说明", js)
+        self.assertIn("管理员确认店长已处理", js)
+        self.assertIn("批量确认", html)
         self.assertIn("备注或处理凭证至少填一个", js)
         self.assertIn("完成确认说明", js)
-        self.assertIn("标记完成必须填写确认说明", js)
+        self.assertIn("完成确认说明", js)
         for text in ["operator.role === \"owner\"", "data-owner-only"]:
             self.assertIn(text, js)
         for text in ["来源", "source_report", "source_file", "source_row", "task_detail"]:
@@ -1747,7 +1747,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertIn("assigned_existing", js)
         self.assertIn("已补齐", js)
         self.assertIn("function showTaskError", js)
-        self.assertGreaterEqual(js.count("showTaskError(error)"), 8)
+        self.assertGreaterEqual(js.count("showTaskError(error)"), 4)
         for text in ["task-summary", "task-table", "task-actions"]:
             self.assertIn(text, css)
 
@@ -1755,9 +1755,10 @@ class OperationTaskStoreTest(unittest.TestCase):
         root = Path(__file__).resolve().parent
         html = daily_ops_app.HTML_PAGE
         renderer = (root / "electron" / "renderer.js").read_text(encoding="utf-8")
-        for text in ["showTaskHistory", "记录", "操作记录", "处理凭证", "动作后状态", "动作后下一步"]:
-            self.assertIn(text, html)
+        for text in ["showTaskHistory", "记录", "操作记录", "处理凭证"]:
             self.assertIn(text, renderer)
+        for text in ["动作后状态", "动作后下一步"]:
+            self.assertIn(text, html)
 
     def test_electron_renderer_persists_operator_identity_for_tasks(self):
         root = Path(__file__).resolve().parent

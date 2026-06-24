@@ -98,7 +98,8 @@ class WorkbenchNetworkAddressTest(unittest.TestCase):
             ws.append(["十二", "胡娟"])
             wb.save(path)
 
-            with patch.object(daily_ops_app, "owner_files", return_value=[path]):
+            with patch.object(daily_ops_app, "owner_files", return_value=[path]), \
+                 patch.object(daily_ops_app, "load_store_owner_assignments", return_value=[]):
                 owners = daily_ops_app.load_owners()
 
             self.assertEqual(owners["十二"], "胡娟")
@@ -114,7 +115,8 @@ class WorkbenchNetworkAddressTest(unittest.TestCase):
             ws.append(["牛牛", "新负责人"])
             wb.save(path)
 
-            with patch.object(daily_ops_app, "owner_files", return_value=[path]):
+            with patch.object(daily_ops_app, "owner_files", return_value=[path]), \
+                 patch.object(daily_ops_app, "load_store_owner_assignments", return_value=[]):
                 owners = daily_ops_app.load_owners()
 
             merged = {**generate_shein_inventory_abnormal.OWNERS, **owners}
