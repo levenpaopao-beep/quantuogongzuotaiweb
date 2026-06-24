@@ -130,6 +130,29 @@ if (ownerName) {
     fail("店长导入矩阵越权", [`${ownerName} 的导入矩阵里出现其他负责人店铺`]);
   }
 
+  const ownerUploadProbe = runCliRaw(
+    "import-source",
+    owner,
+    ["temu_platform", path.join(os.tmpdir(), "__petcircle_missing_owner_upload_probe__.xlsx")],
+    { allowFailure: true },
+  );
+  if (ownerUploadProbe.ok || !String(ownerUploadProbe.error || "").includes("文件不存在")) {
+    fail("店长导入命令权限异常", [
+      "店长应能进入上传流程；探针使用不存在文件时应返回文件不存在，而不是管理员权限错误。",
+    ]);
+  }
+  const unnamedOwnerUploadProbe = runCliRaw(
+    "import-source",
+    { role: "owner", user: "" },
+    ["temu_platform", path.join(os.tmpdir(), "__petcircle_missing_owner_upload_probe__.xlsx")],
+    { allowFailure: true },
+  );
+  if (unnamedOwnerUploadProbe.ok || !String(unnamedOwnerUploadProbe.error || "").includes("当前店长")) {
+    fail("店长导入缺少操作人校验", [
+      "店长上传数据源前必须先选定负责人，避免导入责任无法追踪。",
+    ]);
+  }
+
   [
     ["store-owners", "负责人配置"],
     ["task-suppressions", "屏蔽清单"],
