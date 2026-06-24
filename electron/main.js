@@ -212,6 +212,12 @@ function renderSmokeScript() {
       await clickRoute('#todayWorkflowSteps [data-empty-page="tasks"][data-task-status="待推送"][data-task-open-only="true"]', "#tasksPage.page-active", "管理员今日流程推送入口");
       if (document.querySelector("#taskStatus")?.value !== "待推送") errors.push("管理员任务入口未带待推送筛选");
       if (!document.querySelector("#taskOpenOnly")?.checked) errors.push("管理员任务入口未带只看未完成筛选");
+      await openPage("today", "#todayPage.page-active", "管理员返回今日工作台");
+      await clickRoute('#todayActionList [data-empty-page="imports"][data-import-focus="blocked"]', "#importPage.page-active", "管理员今日待办导入入口");
+      requireActive('.import-health-tabs [data-import-focus="blocked"]', "管理员今日待办导入需处理筛选");
+      await openPage("today", "#todayPage.page-active", "管理员返回今日工作台");
+      await clickRoute('#todayGuideSteps [data-empty-page="imports"][data-import-focus="blocked"]', "#importPage.page-active", "管理员开始清单导入入口");
+      requireActive('.import-health-tabs [data-import-focus="blocked"]', "管理员开始清单导入需处理筛选");
       await openPage("sales", "#salesPage.page-active", "销量管理页面");
       requireVisible("#salesFocusBar", "销量筛选条");
       await openPage("tasks", "#tasksPage.page-active", "商品任务页面");
@@ -267,6 +273,28 @@ function renderSmokeScript() {
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
           await clickRoute('#todayWorkflowSteps [data-empty-page="imports"][data-import-focus="blocked"]', "#importPage.page-active", "店长今日流程导入入口");
           requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长导入入口需处理筛选");
+          await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
+          await clickRoute('#todayActionList [data-empty-page="sales"][data-sales-focus="missing"]', "#salesPage.page-active", "店长今日待办销量入口");
+          requireText("#salesFocusTitle", "今天先补未填", "店长今日待办销量主筛选");
+          requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长今日待办销量未填筛选");
+          await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
+          await clickRoute('#todayActionList [data-empty-page="tasks"][data-task-status="待店长处理"][data-task-open-only="true"]', "#tasksPage.page-active", "店长今日待办任务入口");
+          if (document.querySelector("#taskStatus")?.value !== "待店长处理") errors.push("店长今日待办任务入口未带待店长处理筛选");
+          if (!document.querySelector("#taskOpenOnly")?.checked) errors.push("店长今日待办任务入口未带只看未完成筛选");
+          await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
+          await clickRoute('#todayActionList [data-empty-page="imports"][data-import-focus="blocked"]', "#importPage.page-active", "店长今日待办导入入口");
+          requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长今日待办导入需处理筛选");
+          await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
+          await clickRoute('#todayGuideSteps [data-empty-page="sales"][data-sales-focus="missing"]', "#salesPage.page-active", "店长开始清单销量入口");
+          requireText("#salesFocusTitle", "今天先补未填", "店长开始清单销量主筛选");
+          requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长开始清单销量未填筛选");
+          await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
+          await clickRoute('#todayGuideSteps [data-empty-page="tasks"][data-task-status="待店长处理"][data-task-open-only="true"]', "#tasksPage.page-active", "店长开始清单任务入口");
+          if (document.querySelector("#taskStatus")?.value !== "待店长处理") errors.push("店长开始清单任务入口未带待店长处理筛选");
+          if (!document.querySelector("#taskOpenOnly")?.checked) errors.push("店长开始清单任务入口未带只看未完成筛选");
+          await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
+          await clickRoute('#todayGuideSteps [data-empty-page="imports"][data-import-focus="blocked"]', "#importPage.page-active", "店长开始清单导入入口");
+          requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长开始清单导入需处理筛选");
           await openPage("sales", "#salesPage.page-active", "店长销量管理页面");
           requireVisible("#salesFocusBar", "店长销量筛选条");
           requireText("#salesFocusTitle", "今天先补未填", "店长销量主筛选");
@@ -311,7 +339,7 @@ async function runRenderSmoke(win) {
       app.exit(1);
       return;
     }
-    console.log(`渲染烟测通过：${result.viewport.width}x${result.viewport.height} 全核心模块页面、今日流程真实点击路径、管理员/店长跨页面权限按钮、破图和横向溢出均已检查。`);
+    console.log(`渲染烟测通过：${result.viewport.width}x${result.viewport.height} 全核心模块页面、首页入口真实点击路径、管理员/店长跨页面权限按钮、破图和横向溢出均已检查。`);
     app.exit(0);
   } catch (error) {
     console.error(`渲染烟测执行失败：${error.message || error}`);

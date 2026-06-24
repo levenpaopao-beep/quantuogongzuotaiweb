@@ -1462,7 +1462,7 @@ function renderTodayDashboard() {
   const actionList = $("#todayActionList");
   if (actionList) {
     const rows = ownerMode ? [
-      ["我的待填销量", salesSummary.missing ?? 0, "当天销量是每天第一优先级。", "sales", "去填写", ""],
+      ["我的待填销量", salesSummary.missing ?? 0, "当天销量是每天第一优先级。", "sales", "去填写", 'data-sales-focus="missing"'],
       ["我的待处理任务包", status["待店长处理"] || 0, "按任务包整包处理，备注或凭证至少填一个。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
       ["我的导入待提交", pendingSources + missingSources, "每周导入自己店铺需要补的数据。", "imports", "去导入", 'data-focus="import-matrix" data-import-focus="blocked"'],
       ["等待管理员确认", status["待管理员审核"] || 0, "提交后由管理员打勾，完成后从待办消失。", "tasks", "查看", 'data-task-status="待管理员审核" data-task-open-only="true"'],

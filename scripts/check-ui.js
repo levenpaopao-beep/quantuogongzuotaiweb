@@ -142,6 +142,16 @@ if (!applyRouteIntentBody.includes("route.salesFocus") || !todayWorkflowBody.inc
     "首页“去填写/看销量”应把销量页切到未填口径，符合每天先补未填的主流程。",
   ]);
 }
+const renderSmokeBody = functionBody(main, "renderSmokeScript");
+if (
+  !renderSmokeBody.includes("店长今日待办销量入口") ||
+  !renderSmokeBody.includes("店长开始清单任务入口") ||
+  !renderSmokeBody.includes("管理员今日待办导入入口")
+) {
+  fail("真实渲染烟测未覆盖首页待办和开始清单入口", [
+    "首页不止流程卡片可点击；今日待办和开始使用清单也必须在真实窗口里点击验证，并带上销量、导入、任务上下文。",
+  ]);
+}
 const renderSalesBody = functionBody(renderer, "renderSalesManagement");
 if (!renderSalesBody.includes('event.key === "Enter"') || !renderSalesBody.includes("submitSalesEntry(Number(")) {
   fail("销量填报缺少回车提交", [
