@@ -28,6 +28,7 @@ function runCli(command, payload = {}, args = []) {
 function runCliRaw(command, payload = {}, args = [], options = {}) {
   const result = spawnSync(bundledPython(), ["daily_ops_cli.py", command, ...args.map(String)], {
     cwd: ROOT,
+    env: { ...process.env, DAILY_OPS_IGNORE_LOCAL_ERP_CREDENTIALS: "1" },
     input: JSON.stringify(payload),
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,

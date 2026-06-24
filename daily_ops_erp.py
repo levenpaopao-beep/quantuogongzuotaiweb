@@ -9,10 +9,21 @@ from pathlib import Path
 from openpyxl import Workbook
 
 
-PRODUCT_ENDPOINT = "goods_query.php"
+PRODUCT_ENDPOINT = "vip_api_goods_query.php"
 STOCK_ENDPOINT = "stock_query.php"
+STOCK_CHANGE_ENDPOINT = "api_goods_stock_change_query.php"
 QYB_TEST_BASE_URL = "https://sandbox.wangdian.cn/openapi2"
 QYB_PROD_BASE_URL = "https://api.wangdian.cn/openapi2"
+Y_TEST_BASE_URL = "https://openapi.ali.huice.cc/openapi"
+Y_PROD_BASE_URL = "https://openapi.huice.com/openapi"
+PRODUCT_PAGE_SIZE_MIN = 1
+PRODUCT_PAGE_SIZE_MAX = 1000
+STOCK_LIMIT_MIN = 100
+STOCK_LIMIT_MAX = 20000
+SYNC_MAX_PAGES_DEFAULT = 1000
+REQUEST_INTERVAL_SECONDS_DEFAULT = 1.1
+RATE_LIMIT_RETRY_SECONDS_DEFAULT = 300
+RATE_LIMIT_RETRIES_DEFAULT = 2
 
 
 def _text(value):
@@ -22,6 +33,17 @@ def _text(value):
 def _int(value, default, minimum=1, maximum=None):
     try:
         result = int(value)
+    except (TypeError, ValueError):
+        result = default
+    result = max(minimum, result)
+    if maximum is not None:
+        result = min(maximum, result)
+    return result
+
+
+def _float(value, default, minimum=0.0, maximum=None):
+    try:
+        result = float(value)
     except (TypeError, ValueError):
         result = default
     result = max(minimum, result)
@@ -64,12 +86,12 @@ def required_missing(settings):
 def api_base_url(settings):
     environment = _text(settings.get("environment"))
     if environment in {"test", "sandbox", "测试环境"}:
-        return QYB_TEST_BASE_URL
+        return Y_TEST_BASE_URL
     if environment in {"prod", "production", "正式环境"}:
-        return QYB_PROD_BASE_URL
-    base = _text(settings.get("base_url")) or QYB_TEST_BASE_URL
+        return Y_PROD_BASE_URL
+    base = _text(settings.get("base_url")) or Y_TEST_BASE_URL
     if "open.wangdian.cn" in base:
-        return QYB_TEST_BASE_URL
+        return Y_TEST_BASE_URL
     return base.rstrip("/")
 
 
@@ -169,17 +191,32 @@ def _response_error(data):
     return _text(data.get("message") or data.get("msg") or f"接口返回 code={code}")
 
 
+def _is_rate_limit_error(message):
+    return "频率超限" in _text(message) or "rate limit" in _text(message).lower()
+
+
 def fetch_paged_rows(settings, endpoint, base_params, row_keys, page_size, max_pages=50, row_limit=None):
     all_rows = []
     messages = []
     total = None
     pages = 0
+    request_interval = _float(settings.get("request_interval_seconds"), 0)
+    rate_limit_retry_seconds = _float(settings.get("rate_limit_retry_seconds"), RATE_LIMIT_RETRY_SECONDS_DEFAULT)
+    rate_limit_retries = _int(settings.get("rate_limit_retries") or RATE_LIMIT_RETRIES_DEFAULT, RATE_LIMIT_RETRIES_DEFAULT, minimum=0, maximum=10)
     for page_no in range(max_pages):
+        if page_no > 0 and request_interval:
+            time.sleep(request_interval)
         params = dict(base_params or {})
         params.update({"page_size": page_size, "page_no": page_no})
-        data = post_api(settings, endpoint, params)
+        attempts = 0
+        while True:
+            data = post_api(settings, endpoint, params)
+            error = _response_error(data)
+            if not error or not _is_rate_limit_error(error) or attempts >= rate_limit_retries:
+                break
+            attempts += 1
+            time.sleep(rate_limit_retry_seconds)
         pages += 1
-        error = _response_error(data)
         if error:
             messages.append(f"第 {page_no + 1} 页：{error}")
             break
@@ -194,6 +231,32 @@ def fetch_paged_rows(settings, endpoint, base_params, row_keys, page_size, max_p
         if not _has_next_page(data, rows, page_no, page_size, total):
             break
     return {"rows": all_rows, "pages": pages, "total": total, "messages": messages}
+
+
+def fetch_stock_change_rows(settings, endpoint, shop_id, shop_no, stock_limit):
+    params = {
+        "limit": stock_limit,
+    }
+    if _text(shop_id):
+        params["shop_id"] = _text(shop_id)
+    elif _text(shop_no):
+        params["shop_id"] = _text(shop_no)
+    data = post_api(settings, endpoint, params)
+    error = _response_error(data)
+    if error:
+        return {"rows": [], "pages": 1, "total": None, "messages": [f"库存同步：{error}"]}
+    rows = _rows_from_response(data, ["stock_change_list", "stock_list", "goods_list", "data"])
+    total = _total_from_response(data)
+    if total is None and isinstance(data, dict):
+        total = _int(data.get("current_count"), len(rows), minimum=0) if data.get("current_count") not in (None, "") else len(rows)
+    return {"rows": rows[:stock_limit], "pages": 1, "total": total, "messages": []}
+
+
+def fetch_available_stock_rows(settings, endpoint, start_time, end_time, page_size, stock_limit, max_pages=SYNC_MAX_PAGES_DEFAULT):
+    return fetch_paged_rows(settings, endpoint, {
+        "start_time": start_time,
+        "end_time": end_time,
+    }, ["stock_list", "stocks", "data", "goods_list"], page_size, max_pages=max_pages, row_limit=stock_limit)
 
 
 def _write_rows(path, headers, rows):
@@ -258,8 +321,8 @@ def normalize_stock_rows(items, warehouse_no="", warehouse_name=""):
             "商家编码": merchant_code,
             "货品名称": _text(item.get("goods_name") or item.get("api_goods_name")),
             "规格名称": _text(item.get("spec_name") or item.get("api_spec_name")),
-            "可销库存": _text(item.get("stock_num") or item.get("available_stock") or item.get("available_num") or item.get("stock")),
-            "实际库存": _text(item.get("real_stock") or item.get("actual_stock") or item.get("stock_num")),
+            "可销库存": _text(item.get("sync_stock") or item.get("stock_num") or item.get("available_stock") or item.get("available_num") or item.get("stock")),
+            "实际库存": _text(item.get("real_stock") or item.get("actual_stock") or item.get("stock_num") or item.get("sync_stock")),
             "占用库存": _text(item.get("occupy_stock") or item.get("lock_stock") or item.get("occupied_num")),
             "修改时间": _text(item.get("modified")),
             "来源接口": STOCK_ENDPOINT,
@@ -277,26 +340,25 @@ def manual_sync(settings, erp_dir, now=None):
     days = max(1, min(days, 30))
     end_time = now.strftime("%Y-%m-%d %H:%M:%S")
     start_time = (now - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    shop_id = _text(settings.get("shop_id") or settings.get("shop_no"))
     shop_no = _text(settings.get("shop_no"))
     warehouse_no = _text(settings.get("warehouse_no"))
     warehouse_name = _text(settings.get("warehouse_name") or "宠物圈仓库")
-    page_size = _int(settings.get("page_size") or 100, 100, minimum=1, maximum=100)
-    stock_limit = _int(settings.get("stock_limit") or 1000, 1000, minimum=1, maximum=2000)
+    page_size = _int(settings.get("page_size") or 100, 100, minimum=PRODUCT_PAGE_SIZE_MIN, maximum=PRODUCT_PAGE_SIZE_MAX)
+    stock_limit = _int(settings.get("stock_limit") or 1000, 1000, minimum=STOCK_LIMIT_MIN, maximum=STOCK_LIMIT_MAX)
+    max_pages = _int(settings.get("max_pages") or SYNC_MAX_PAGES_DEFAULT, SYNC_MAX_PAGES_DEFAULT, minimum=1, maximum=SYNC_MAX_PAGES_DEFAULT)
 
     product_endpoint = _text(settings.get("product_endpoint")) or PRODUCT_ENDPOINT
     stock_endpoint = _text(settings.get("stock_endpoint")) or STOCK_ENDPOINT
     product_sync = fetch_paged_rows(settings, product_endpoint, {
         "start_time": start_time,
         "end_time": end_time,
-        "shop_no": shop_no,
-    }, ["goods_list", "data"], page_size)
-    stock_sync = fetch_paged_rows(settings, stock_endpoint, {
-        "start_time": start_time,
-        "end_time": end_time,
-        "shop_no": shop_no,
-        "warehouse_no": warehouse_no,
-        "limit": stock_limit,
-    }, ["stock_list", "stock_change_list", "goods_list", "data"], page_size, row_limit=stock_limit)
+        "shop_id": shop_id,
+    }, ["goods_list", "data"], page_size, max_pages=max_pages)
+    if stock_endpoint == STOCK_CHANGE_ENDPOINT:
+        stock_sync = fetch_stock_change_rows(settings, stock_endpoint, shop_id, shop_no, stock_limit)
+    else:
+        stock_sync = fetch_available_stock_rows(settings, stock_endpoint, start_time, end_time, page_size, stock_limit, max_pages=max_pages)
 
     product_rows = normalize_product_rows(product_sync["rows"])
     stock_rows = normalize_stock_rows(stock_sync["rows"], warehouse_no, warehouse_name)

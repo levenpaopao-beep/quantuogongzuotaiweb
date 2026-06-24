@@ -2642,7 +2642,8 @@ function renderErpSettings() {
       ? ` · 上次同步：${settings.last_manual_sync_at} ${settings.last_manual_sync_message || ""}`
       : "";
     const warehouse = settings.warehouse_name || settings.warehouse_no || "未指定仓库";
-    status.textContent = `${settings.provider || "旺店通"} · ${enabled} · ${auto} · 仓库 ${warehouse}${last}${counts}`;
+    const environment = settings.environment === "prod" ? "正式环境" : "测试环境";
+    status.textContent = `${settings.provider || "旺店通"} · ${environment} · ${enabled} · ${auto} · 仓库 ${warehouse}${last}${counts}`;
   }
 }
 
@@ -2981,6 +2982,7 @@ function validateErpSettings(settings = collectErpSettings(state.rules?.erp_api 
     ].forEach(([key, label]) => {
       if (!settings[key]) missing.push(label);
     });
+    if (!settings.shop_id && !settings.shop_no) missing.push("店铺ID");
     if (!settings.warehouse_no && !settings.warehouse_name) missing.push("仓库编码或仓库名称");
   }
   return missing;
@@ -3011,7 +3013,8 @@ function testErpSettings() {
   }
   const scope = (settings.sync_scope || []).join("、") || "未设置同步范围";
   const warehouse = settings.warehouse_name || settings.warehouse_no || "未指定仓库";
-  const message = `本地校验通过：${settings.provider || "旺店通"}，${settings.auto_sync ? "自动同步开启" : "手动同步为主"}，仓库：${warehouse}，范围：${scope}`;
+  const environment = settings.environment === "prod" ? "正式环境" : "测试环境";
+  const message = `本地校验通过：${settings.provider || "旺店通"}，${environment}，${settings.auto_sync ? "自动同步开启" : "手动同步为主"}，仓库：${warehouse}，范围：${scope}`;
   if (status) status.textContent = message;
   showToast("ERP 本地校验通过");
 }

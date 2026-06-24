@@ -562,19 +562,21 @@
               <h2>ERP 接口设置</h2>
               <div class="erp-settings-grid" id="erpSettingsForm">
                 <label>接口服务商<input data-erp-field="provider" placeholder="旺店通" /></label>
-                <label>接口地址<input data-erp-field="base_url" placeholder="https://api.wangdian.cn/openapi2" /></label>
+                <label>接口环境<select data-erp-field="environment"><option value="test">测试环境</option><option value="prod">正式环境</option></select></label>
+                <label>接口地址<input data-erp-field="base_url" placeholder="https://openapi.ali.huice.cc/openapi" /></label>
                 <label>AppKey<input data-erp-field="app_key" placeholder="应用 AppKey" /></label>
                 <label>AppSecret<input data-erp-field="app_secret" type="password" placeholder="应用密钥" /></label>
                 <label>SID<input data-erp-field="sid" placeholder="店铺/账号 SID" /></label>
                 <label>Token<input data-erp-field="token" type="password" placeholder="授权 Token" /></label>
-                <label>店铺编码<input data-erp-field="shop_no" placeholder="旺店通店铺编码，可留空" /></label>
+                <label>店铺ID<input data-erp-field="shop_id" placeholder="测试店铺 ID，如 1314" /></label>
+                <label>店铺编码<input data-erp-field="shop_no" placeholder="旧配置兼容，可留空" /></label>
                 <label>仓库编码<input data-erp-field="warehouse_no" placeholder="宠物圈仓库编码" /></label>
                 <label>仓库名称<input data-erp-field="warehouse_name" placeholder="宠物圈仓库" /></label>
                 <label>同步天数<input data-erp-field="sync_days" type="number" min="1" max="30" placeholder="7" /></label>
-                <label>每页条数<input data-erp-field="page_size" type="number" min="1" max="100" placeholder="100" /></label>
-                <label>库存最多拉取<input data-erp-field="stock_limit" type="number" min="1" max="2000" placeholder="1000" /></label>
-                <label>商品接口<input data-erp-field="product_endpoint" placeholder="goods_query.php" /></label>
-                <label>库存接口<input data-erp-field="stock_endpoint" placeholder="stock_query.php" /></label>
+                <label>每页条数<input data-erp-field="page_size" type="number" min="1" max="1000" placeholder="100" /></label>
+                <label>库存最多拉取<input data-erp-field="stock_limit" type="number" min="100" max="2000" placeholder="1000" /></label>
+                <label>商品接口<input data-erp-field="product_endpoint" placeholder="vip_api_goods_query.php" /></label>
+                <label>库存接口<input data-erp-field="stock_endpoint" placeholder="api_goods_stock_change_query.php" /></label>
                 <label class="check-line"><input data-erp-field="enabled" type="checkbox" /> 启用 ERP 接口</label>
                 <label class="check-line"><input data-erp-field="auto_sync" type="checkbox" /> 自动同步</label>
                 <label class="check-line"><input data-erp-field="manual_sync_first" type="checkbox" /> 手动同步为主</label>

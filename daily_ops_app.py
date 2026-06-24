@@ -39,6 +39,7 @@ LOW_SCORE_DIR = ROOT / "低分预警输入表"
 DB_PATH = ROOT / "基础数据库" / "project_base_data.sqlite"
 DATA_SOURCE_MANIFEST = ROOT / "基础数据库" / "data_source_manifest.json"
 RULES_FILE = ROOT / "基础数据库" / "report_rules.json"
+ERP_API_LOCAL_FILE = ROOT / "基础数据库" / "erp_api.local.json"
 TASK_DB_PATH = ROOT / "基础数据库" / "operation_tasks.json"
 TASK_SUPPRESSION_FILE = ROOT / "基础数据库" / "operation_task_suppressions.json"
 STORE_OWNER_MAP_FILE = ROOT / "基础数据库" / "store_owner_map.json"
@@ -192,15 +193,21 @@ DEFAULT_RULES = {
         "enabled": False,
         "auto_sync": False,
         "manual_sync_first": True,
-        "base_url": "https://api.wangdian.cn/openapi2",
-        "product_endpoint": "goods_query.php",
+        "environment": "test",
+        "base_url": "https://openapi.ali.huice.cc/openapi",
+        "product_endpoint": "vip_api_goods_query.php",
         "stock_endpoint": "stock_query.php",
+        "shop_id": "",
         "shop_no": "",
         "warehouse_no": "",
         "warehouse_name": "宠物圈仓库",
         "sync_days": 7,
-        "page_size": 100,
-        "stock_limit": 100,
+        "page_size": 500,
+        "stock_limit": 10000,
+        "max_pages": 1000,
+        "request_interval_seconds": 1.1,
+        "rate_limit_retry_seconds": 300,
+        "rate_limit_retries": 2,
         "app_key": "",
         "app_secret": "",
         "sid": "",
@@ -213,8 +220,9 @@ DEFAULT_RULES = {
     },
 }
 
-LEGACY_ERP_PRODUCT_ENDPOINT = "vip_api_goods_query.php"
-LEGACY_ERP_STOCK_ENDPOINT = "api_goods_stock_change_query.php"
+LEGACY_ERP_PRODUCT_ENDPOINT = "goods_query.php"
+LEGACY_ERP_STOCK_ENDPOINT = ""
+ERP_LOCAL_CREDENTIAL_FIELDS = {"app_key", "app_secret", "sid", "token"}
 
 OWNER_STORE_CODE_MAP = {
     "弟弟": "1",
@@ -917,28 +925,65 @@ def migrate_rules(rules):
     if isinstance(erp_api, dict):
         if erp_api.get("product_endpoint") == LEGACY_ERP_PRODUCT_ENDPOINT:
             erp_api["product_endpoint"] = DEFAULT_RULES["erp_api"]["product_endpoint"]
-        if erp_api.get("stock_endpoint") == LEGACY_ERP_STOCK_ENDPOINT:
+        if LEGACY_ERP_STOCK_ENDPOINT and erp_api.get("stock_endpoint") == LEGACY_ERP_STOCK_ENDPOINT:
             erp_api["stock_endpoint"] = DEFAULT_RULES["erp_api"]["stock_endpoint"]
+    return rules
+
+
+def load_erp_local_credentials():
+    if os.environ.get("DAILY_OPS_IGNORE_LOCAL_ERP_CREDENTIALS") == "1":
+        return {}
+    try:
+        data = json.loads(ERP_API_LOCAL_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {key: str(value) for key, value in data.items() if key in ERP_LOCAL_CREDENTIAL_FIELDS and value}
+
+
+def split_erp_local_credentials(rules):
+    erp_api = rules.get("erp_api")
+    if not isinstance(erp_api, dict):
+        return
+    local = load_erp_local_credentials()
+    changed = False
+    for key in ERP_LOCAL_CREDENTIAL_FIELDS:
+        value = erp_api.get(key)
+        if value:
+            local[key] = str(value)
+            erp_api[key] = ""
+            changed = True
+    if changed:
+        ERP_API_LOCAL_FILE.parent.mkdir(exist_ok=True)
+        ERP_API_LOCAL_FILE.write_text(json.dumps(local, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def merge_erp_local_credentials(rules):
+    erp_api = rules.get("erp_api")
+    if isinstance(erp_api, dict):
+        erp_api.update(load_erp_local_credentials())
     return rules
 
 
 def load_rules():
     if not RULES_FILE.exists():
-        return migrate_rules(merge_dict(DEFAULT_RULES, {}))
+        return merge_erp_local_credentials(migrate_rules(merge_dict(DEFAULT_RULES, {})))
     try:
         current = json.loads(RULES_FILE.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         current = {}
-    return migrate_rules(merge_dict(DEFAULT_RULES, current))
+    return merge_erp_local_credentials(migrate_rules(merge_dict(DEFAULT_RULES, current)))
 
 
 def save_rules(payload):
     if not isinstance(payload, dict):
         raise ValueError("规则内容格式不正确")
     rules = merge_dict(DEFAULT_RULES, payload)
+    split_erp_local_credentials(rules)
     RULES_FILE.parent.mkdir(exist_ok=True)
     RULES_FILE.write_text(json.dumps(rules, ensure_ascii=False, indent=2), encoding="utf-8")
-    return rules
+    return load_rules()
 
 
 def sync_erp_base_data():
