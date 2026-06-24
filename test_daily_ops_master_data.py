@@ -30,9 +30,9 @@ class MasterDataImportTest(unittest.TestCase):
         ws.title = "总览"
         ws.append(["跳过"])
         month = wb.create_sheet("2606")
-        month.append(["2026年", "汇总", "一弟", "二弟", "琪琪"])
-        month.append([46174, 300, 100, 120, 80])
-        month.append([46175, 330, 110, 130, 90])
+        month.append(["2026年", "汇总", "一弟", "二弟", "琪琪", "美美"])
+        month.append([46174, 300, 100, 120, 80, 9])
+        month.append([46175, 330, 110, 130, 90, 8])
         wb.save(path)
 
     def test_parse_owner_workbook_extracts_assignments_and_accounts(self):
@@ -77,17 +77,21 @@ class MasterDataImportTest(unittest.TestCase):
                 {"platform": "Temu", "store": "一弟", "owner": "小琴"},
                 {"platform": "Temu", "store": "二弟", "owner": "洁琳"},
                 {"platform": "Shein", "store": "琪琪", "owner": "胡娟"},
+                {"platform": "速卖通", "store": "大美", "owner": "胡娟"},
             ]
 
             rows = master_data.parse_crossborder_sales_workbook(path, assignments)
 
-        self.assertEqual(len(rows), 6)
+        self.assertEqual(len(rows), 8)
         self.assertEqual(rows[0]["date"], "2026-06-01")
         self.assertEqual(rows[0]["platform"], "Temu")
         self.assertEqual(rows[0]["store"], "一弟")
         self.assertEqual(rows[0]["sales"], 100)
         self.assertEqual(rows[2]["platform"], "Shein")
         self.assertEqual(rows[2]["store"], "琪琪")
+        self.assertEqual(rows[3]["platform"], "速卖通")
+        self.assertEqual(rows[3]["store"], "大美")
+        self.assertEqual(rows[3]["owner"], "胡娟")
 
     def test_import_history_sales_does_not_overwrite_manual_records(self):
         with tempfile.TemporaryDirectory() as tmp:
