@@ -141,6 +141,15 @@ function renderSmokeScript() {
         const value = document.querySelector(selector)?.textContent || "";
         if (!value.includes(text)) errors.push(label + "缺少“" + text + "”");
       };
+      localStorage.setItem("dailyOpsOperator", JSON.stringify({ role: "admin", user: "管理员" }));
+      const role = document.querySelector("#operatorRole");
+      const user = document.querySelector("#operatorUser");
+      const switchButton = document.querySelector("#saveOperatorBtn");
+      if (role && user && switchButton) {
+        role.value = "admin";
+        user.value = "管理员";
+        switchButton.click();
+      }
       await waitFor(() =>
         document.querySelectorAll("#todayWorkflowSteps .workflow-step").length >= 4 &&
         document.querySelectorAll("#todayGuideSteps .guide-step").length >= 6 &&
@@ -170,15 +179,41 @@ function renderSmokeScript() {
       await new Promise((resolve) => setTimeout(resolve, 80));
       requireVisible("#importPage.page-active", "数据导入页面");
       requireVisible("#importHealthBar", "导入健康条");
-      const role = document.querySelector("#operatorRole");
-      const user = document.querySelector("#operatorUser");
-      const switchButton = document.querySelector("#saveOperatorBtn");
       if (role && user && switchButton) {
         role.value = "owner";
         user.value = "";
         switchButton.click();
         await new Promise((resolve) => setTimeout(resolve, 80));
         if (!user.classList.contains("field-error")) errors.push("店长空姓名未提示错误");
+        const ownerName = document.querySelector("#operatorOwnerOptions option")?.value || "";
+        if (!ownerName) {
+          errors.push("缺少可用店长候选");
+        } else {
+          role.value = "owner";
+          user.value = ownerName;
+          switchButton.click();
+          await waitFor(() => {
+            try {
+              const operator = JSON.parse(localStorage.getItem("dailyOpsOperator") || "{}");
+              return operator.role === "owner" &&
+                operator.user === ownerName &&
+                document.querySelector("#operatorHint")?.textContent.includes("只看自己") &&
+                document.querySelector("#todayWorkflowTitle")?.textContent.includes("店长每日流程");
+            } catch (_error) {
+              return false;
+            }
+          });
+          requireText("#todayWorkflowTitle", "店长每日流程", "店长工作流");
+          document.querySelector('[data-page="tasks"]')?.click();
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          requireVisible('[data-owner-only="task-submit"]', "店长整包处理按钮");
+          if (visible('[data-admin-only="task-push"]')) errors.push("店长视角仍显示管理员推送按钮");
+          if (visible('[data-admin-only="report-generate"]')) errors.push("店长视角仍显示管理员报表生成按钮");
+        }
+        role.value = "admin";
+        user.value = "管理员";
+        switchButton.click();
+        await new Promise((resolve) => setTimeout(resolve, 80));
       } else {
         errors.push("角色切换控件缺失");
       }
