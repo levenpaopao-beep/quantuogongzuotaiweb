@@ -190,6 +190,11 @@ if (!renderSalesBody.includes('event.key === "Enter"') || !renderSalesBody.inclu
     "每日填报是高频动作，输入销量后回车应直接提交当前店铺。",
   ]);
 }
+if (!renderer.includes("function focusNextSalesEntry(") || !functionBody(renderer, "submitSalesEntry").includes("focusNextSalesEntry(index)")) {
+  fail("销量提交后缺少下一行焦点", [
+    "店长逐行填写销量时，保存成功后应自动聚焦下一条可填输入，减少每天重复点选。",
+  ]);
+}
 if (!html.includes('id="importHealthBar"') || !renderer.includes("function setImportFocus(") || !renderer.includes("importFocusRows")) {
   fail("数据导入页缺少缺口健康条", [
     "管理员和店长需要先看到缺失、待提交、完整店铺等汇总，再进入矩阵明细。",

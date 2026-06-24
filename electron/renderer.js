@@ -1588,10 +1588,20 @@ async function submitSalesEntry(index) {
     await loadSales(false);
     await loadSalesReport(false);
     await loadSalesCompare(false);
+    focusNextSalesEntry(index);
     showToast("销量已保存");
   } catch (error) {
     showToast(error.message || "保存销量失败");
   }
+}
+
+function focusNextSalesEntry(index) {
+  setTimeout(() => {
+    const inputs = [...document.querySelectorAll("[data-sales-index]")];
+    const next = inputs.find((input) => Number(input.dataset.salesIndex) > index) || inputs[0];
+    next?.focus();
+    next?.select?.();
+  }, 80);
 }
 
 async function exportSales() {
