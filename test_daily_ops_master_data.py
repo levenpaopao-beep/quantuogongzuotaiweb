@@ -2,9 +2,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from openpyxl import Workbook
 
+import daily_ops_app
+import daily_ops_desktop_adapter
 import daily_ops_master_data as master_data
 from daily_ops_sales import DailySalesStore
 
@@ -121,6 +124,84 @@ class MasterDataImportTest(unittest.TestCase):
         self.assertEqual(report["summary"]["daily_average"], 110)
         self.assertEqual(report["by_platform"][0]["platform"], "Temu")
         self.assertEqual(report["by_store"][0]["store"], "一弟")
+
+    def test_query_sales_report_allowed_pairs_limits_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sales_path = Path(tmp) / "daily_sales.json"
+            master_data.import_history_sales_records(
+                sales_path,
+                [
+                    {"date": "2026-06-01", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 100},
+                    {"date": "2026-06-01", "platform": "Temu", "store": "二弟", "owner": "洁琳", "sales": 120},
+                    {"date": "2026-06-01", "platform": "Shein", "store": "琪琪", "owner": "胡娟", "sales": 80},
+                ],
+                actor="管理员",
+            )
+
+            report = master_data.query_sales_report(
+                sales_path,
+                date_from="2026-06-01",
+                date_to="2026-06-30",
+                allowed_pairs={("Temu", "一弟"), ("Shein", "琪琪")},
+            )
+
+        self.assertEqual(report["summary"]["total_sales"], 180)
+        self.assertEqual({row["store"] for row in report["rows"]}, {"一弟", "琪琪"})
+        self.assertNotIn("二弟", {row["store"] for row in report["rows"]})
+
+    def test_owner_sales_report_payload_without_store_is_scoped_to_owned_stores(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sales_path = root / "daily_sales.json"
+            owner_map = root / "store_owner_map.json"
+            owner_map.write_text(json.dumps({
+                "assignments": [
+                    {"platform": "Temu", "store": "一弟", "owner": "小琴", "enabled": True, "daily_required": True},
+                    {"platform": "Temu", "store": "二弟", "owner": "洁琳", "enabled": True, "daily_required": True},
+                    {"platform": "Shein", "store": "琪琪", "owner": "小琴", "enabled": True, "daily_required": True},
+                ],
+            }, ensure_ascii=False), encoding="utf-8")
+            master_data.import_history_sales_records(
+                sales_path,
+                [
+                    {"date": "2026-06-01", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 100},
+                    {"date": "2026-06-01", "platform": "Temu", "store": "二弟", "owner": "洁琳", "sales": 120},
+                    {"date": "2026-06-01", "platform": "Shein", "store": "琪琪", "owner": "小琴", "sales": 80},
+                ],
+                actor="管理员",
+            )
+
+            with patch.object(daily_ops_app, "DAILY_SALES_FILE", sales_path), \
+                 patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_map):
+                report = daily_ops_desktop_adapter.sales_report_payload({
+                    "role": "owner",
+                    "user": "小琴",
+                    "date_from": "2026-06-01",
+                    "date_to": "2026-06-30",
+                })
+
+        self.assertEqual(report["summary"]["total_sales"], 180)
+        self.assertEqual({row["store"] for row in report["rows"]}, {"一弟", "琪琪"})
+        self.assertNotIn("二弟", {row["store"] for row in report["rows"]})
+
+    def test_owner_sales_report_payload_rejects_other_owner_store(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            owner_map = Path(tmp) / "store_owner_map.json"
+            owner_map.write_text(json.dumps({
+                "assignments": [
+                    {"platform": "Temu", "store": "一弟", "owner": "小琴", "enabled": True, "daily_required": True},
+                    {"platform": "Temu", "store": "二弟", "owner": "洁琳", "enabled": True, "daily_required": True},
+                ],
+            }, ensure_ascii=False), encoding="utf-8")
+
+            with patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_map):
+                with self.assertRaisesRegex(PermissionError, "店长只能查询自己负责店铺"):
+                    daily_ops_desktop_adapter.sales_report_payload({
+                        "role": "owner",
+                        "user": "小琴",
+                        "platform": "Temu",
+                        "store": "二弟",
+                    })
 
 
 if __name__ == "__main__":

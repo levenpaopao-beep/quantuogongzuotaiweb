@@ -1239,11 +1239,120 @@ label { color: var(--muted); font-size: 12px; }
 .output-list { display: grid; gap: 8px; margin-top: 14px; }
 .output-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; }
 .output-row p { margin-top: 4px; }
-.sales-report-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 12px;
+.range-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+.range-shortcuts .segment {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.range-shortcuts .segment.active {
+  border-color: #7c8cff;
+  background: #f2f5ff;
+  color: var(--text);
+}
+.sales-report-filters {
+  grid-template-columns: 160px 160px 180px minmax(160px, 1fr) 180px;
+}
+.report-summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.report-summary-strip span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #fbfcff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.report-summary-strip strong {
+  color: var(--text);
+  font-size: 17px;
+}
+.report-table-wrap {
+  max-width: 100%;
+  max-height: min(58vh, 620px);
+  overflow-x: auto;
+  overflow-y: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #fff;
+}
+.report-data-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+.report-data-table th,
+.report-data-table td {
+  min-width: 82px;
+  padding: 9px 10px;
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+}
+.report-data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #f6f8ff;
+  color: #5e6b84;
+  font-weight: 900;
+}
+.report-data-table tbody tr:hover td {
+  background: #f8fbff;
+}
+.report-data-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.report-data-table .strong {
+  color: var(--text);
+  font-weight: 900;
+}
+.report-data-table .empty-table-cell {
+  width: 100%;
+  min-width: 520px;
+  padding: 22px;
+  color: var(--muted);
+  text-align: center;
+}
+.report-data-table .sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 92px;
+  background: #fff;
+}
+.report-data-table .sticky-col-2 {
+  left: 92px;
+  min-width: 112px;
+}
+.report-data-table thead .sticky-col {
+  z-index: 4;
+  background: #f6f8ff;
+}
+#salesReportHint {
+  margin-top: 8px;
 }
 
 .rules-grid {
@@ -1454,7 +1563,7 @@ label { color: var(--muted); font-size: 12px; }
   .titlebar, .page-intro { align-items: flex-start; flex-direction: column; height: auto; gap: 10px; padding: 12px 0; }
   .top-actions, .global-operator { width: 100%; }
   .global-operator { grid-template-columns: 1fr; }
-  .metric-row, .task-summary, .report-grid, .rules-grid, .erp-settings-grid, .sales-report-grid { grid-template-columns: 1fr; }
+  .metric-row, .task-summary, .report-grid, .rules-grid, .erp-settings-grid, .sales-report-filters { grid-template-columns: 1fr; }
   .backup-actions { grid-template-columns: 1fr; }
   .workflow-head { flex-direction: column; }
   .workflow-head p { text-align: left; }

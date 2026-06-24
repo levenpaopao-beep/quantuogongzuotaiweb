@@ -555,8 +555,8 @@ def import_crossborder_sales(source_path):
     return {**result, "review_file": str(review_path)}
 
 
-def sales_report(platform="", store="", date_from="", date_to=""):
-    return daily_ops_master_data.query_sales_report(DAILY_SALES_FILE, platform, store, date_from, date_to)
+def sales_report(platform="", store="", date_from="", date_to="", allowed_pairs=None):
+    return daily_ops_master_data.query_sales_report(DAILY_SALES_FILE, platform, store, date_from, date_to, allowed_pairs=allowed_pairs)
 
 
 def export_sales_report(platform="", store="", date_from="", date_to=""):

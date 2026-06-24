@@ -3,6 +3,7 @@ const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(ROOT, "electron", "renderer.html"), "utf8");
+const css = fs.readFileSync(path.join(ROOT, "electron", "renderer.css"), "utf8");
 const renderer = fs.readFileSync(path.join(ROOT, "electron", "renderer.js"), "utf8");
 const preload = fs.readFileSync(path.join(ROOT, "electron", "preload.js"), "utf8");
 const main = fs.readFileSync(path.join(ROOT, "electron", "main.js"), "utf8");
@@ -155,6 +156,15 @@ if (!applyRouteIntentBody.includes("route.salesFocus") || !todayWorkflowBody.inc
 if (!applyRouteIntentBody.includes("route.taskUser") || !applyRouteIntentBody.includes("#taskUser")) {
   fail("每日督办缺少负责人任务筛选跳转", [
     "管理员点某个负责人督办时，任务页需要自动带上负责人，避免进入大列表后重新筛选。",
+  ]);
+}
+if (
+  !html.includes('class="report-table-wrap"') ||
+  !/\.report-table-wrap\s*\{[\s\S]*max-width:\s*100%/.test(css) ||
+  !/\.report-table-wrap\s*\{[\s\S]*overflow-x:\s*auto/.test(css)
+) {
+  fail("销量报表宽表缺少横向滚动边界", [
+    "历史销量查询可能产生很多日期列，必须限制在表格容器内滚动，不能撑宽整个页面。",
   ]);
 }
 const renderSmokeBody = functionBody(main, "renderSmokeScript");

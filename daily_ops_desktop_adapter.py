@@ -351,13 +351,14 @@ def sales_report_payload(payload):
     user = operator_user(payload, "")
     platform = payload.get("platform", "")
     store = payload.get("store", "")
+    allowed_pairs = None
     if role != "admin":
         assignments = app.load_store_owner_assignments()
         owned = [item for item in assignments if app.norm(item.get("owner")) == user]
-        allowed = {(app.norm(item.get("platform")), app.norm(item.get("store"))) for item in owned}
-        if store and (app.norm(platform), app.norm(store)) not in allowed:
+        allowed_pairs = {(app.norm(item.get("platform")), app.norm(item.get("store"))) for item in owned}
+        if store and (app.norm(platform), app.norm(store)) not in allowed_pairs:
             raise PermissionError("店长只能查询自己负责店铺的销量")
-    return app.sales_report(platform, store, payload.get("date_from", ""), payload.get("date_to", ""))
+    return app.sales_report(platform, store, payload.get("date_from", ""), payload.get("date_to", ""), allowed_pairs=allowed_pairs)
 
 
 def export_sales_report_payload(payload):

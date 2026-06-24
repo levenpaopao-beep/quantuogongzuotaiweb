@@ -349,11 +349,21 @@ def date_in_range(value, date_from="", date_to=""):
     return (not date_from or text >= date_from) and (not date_to or text <= date_to)
 
 
-def query_sales_report(sales_path, platform="", store="", date_from="", date_to=""):
+def query_sales_report(sales_path, platform="", store="", date_from="", date_to="", allowed_pairs=None):
     platform = norm(platform)
     store = clean_store_name(store)
+    allowed = None
+    if allowed_pairs is not None:
+        allowed = {
+            (norm(item_platform), clean_store_name(item_store))
+            for item_platform, item_store in allowed_pairs
+            if norm(item_platform) and clean_store_name(item_store)
+        }
     rows = []
     for row in DailySalesStore(sales_path).load()["records"]:
+        row_pair = (norm(row.get("platform")), clean_store_name(row.get("store")))
+        if allowed is not None and row_pair not in allowed:
+            continue
         if platform and norm(row.get("platform")) != platform:
             continue
         if store and clean_store_name(row.get("store")) != store:

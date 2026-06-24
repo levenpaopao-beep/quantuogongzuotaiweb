@@ -1375,41 +1375,156 @@ function salesReportPayload() {
   });
 }
 
+function localDateValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function setSalesReportDates(start, end, activeRange = "") {
+  if ($("#salesReportDateFrom")) $("#salesReportDateFrom").value = localDateValue(start);
+  if ($("#salesReportDateTo")) $("#salesReportDateTo").value = localDateValue(end);
+  document.querySelectorAll("[data-sales-range]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.salesRange === activeRange);
+  });
+}
+
+function applySalesReportRange(range) {
+  const end = new Date();
+  const start = new Date(end);
+  if (range === "7d") start.setDate(end.getDate() - 6);
+  if (range === "30d") start.setDate(end.getDate() - 29);
+  if (range === "90d") start.setDate(end.getDate() - 89);
+  if (range === "half-year") start.setMonth(end.getMonth() - 6);
+  if (range === "1y") start.setFullYear(end.getFullYear() - 1);
+  if (range === "month") start.setDate(1);
+  if (range === "year") {
+    start.setMonth(0);
+    start.setDate(1);
+  }
+  setSalesReportDates(start, end, range);
+  loadSalesReport(true);
+}
+
+function clearSalesReportRangeShortcut() {
+  document.querySelectorAll("[data-sales-range]").forEach((button) => button.classList.remove("active"));
+}
+
+function initializeSalesReportRange() {
+  if ($("#salesReportDateFrom")?.value || $("#salesReportDateTo")?.value) return;
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(end.getDate() - 29);
+  setSalesReportDates(start, end, "30d");
+}
+
 function renderSalesReport() {
   const report = state.salesReport || {};
   const summary = report.summary || {};
   const summaryBox = $("#salesReportSummary");
   if (summaryBox) {
     summaryBox.innerHTML = [
-      ["总销量", summary.total_sales || 0, `${summary.record_count || 0} 条记录`, "ok"],
-      ["覆盖天数", summary.day_count || 0, "按日期去重", ""],
-      ["日均销量", summary.daily_average || 0, "总销量 / 天数", ""],
-      ["筛选店铺", (report.by_store || []).length, "当前结果", ""],
-    ].map(([label, value, hint, tone]) => `<div class="metric-card ${tone}"><span>${label}</span><strong>${value}</strong><small>${hint}</small></div>`).join("");
+      ["总销量", summary.total_sales || 0],
+      ["覆盖天数", summary.day_count || 0],
+      ["日均销量", summary.daily_average || 0],
+      ["记录数", summary.record_count || 0],
+      ["店铺数", salesReportTableRows(report).length],
+    ].map(([label, value]) => `<span><strong>${esc(value)}</strong>${esc(label)}</span>`).join("");
   }
-  const platformRows = $("#salesReportPlatformRows");
-  if (platformRows) {
-    const rows = report.by_platform || [];
-    platformRows.innerHTML = rows.length ? rows.map((row) => `
-      <div class="output-row"><div><strong>${esc(row.platform)}</strong><p>销量 ${row.sales}，日均 ${row.daily_average}，记录 ${row.record_count}</p></div></div>
-    `).join("") : `<div class="action-empty"><strong>暂无平台汇总</strong><span>调整时间或平台后再查询。</span></div>`;
+  renderSalesReportTable(report);
+}
+
+function salesReportBucketKey(date) {
+  const rows = state.salesReport?.rows || [];
+  const dayCount = new Set(rows.map((row) => row.date).filter(Boolean)).size;
+  return dayCount > 45 ? String(date || "").slice(0, 7) : String(date || "");
+}
+
+function salesReportBucketLabel(bucket) {
+  if (!bucket) return "-";
+  if (/^\d{4}-\d{2}$/.test(bucket)) return bucket.replace("-", "/");
+  return bucket.slice(5).replace("-", "/");
+}
+
+function salesReportBuckets(report) {
+  const buckets = new Set();
+  (report.rows || []).forEach((row) => {
+    const bucket = salesReportBucketKey(row.date);
+    if (bucket) buckets.add(bucket);
+  });
+  return [...buckets].sort();
+}
+
+function salesReportTableRows(report) {
+  const buckets = salesReportBuckets(report);
+  const groups = new Map();
+  (report.rows || []).forEach((row) => {
+    const platform = row.platform || "未设置";
+    const store = row.store || "未设置";
+    const owner = row.owner || "";
+    const key = `${platform}::${store}`;
+    if (!groups.has(key)) {
+      groups.set(key, { platform, store, owner, total: 0, recordCount: 0, values: {} });
+    }
+    const item = groups.get(key);
+    const sales = Number(row.sales || 0);
+    const bucket = salesReportBucketKey(row.date);
+    item.total += sales;
+    item.recordCount += 1;
+    item.values[bucket] = (item.values[bucket] || 0) + sales;
+  });
+  return [...groups.values()].map((item) => ({
+    ...item,
+    average: buckets.length ? Number((item.total / buckets.length).toFixed(2)) : 0,
+  })).sort((a, b) => b.total - a.total || a.platform.localeCompare(b.platform, "zh-Hans-CN") || a.store.localeCompare(b.store, "zh-Hans-CN"));
+}
+
+function renderSalesReportTable(report) {
+  const table = $("#salesReportTable");
+  const hint = $("#salesReportHint");
+  if (!table) return;
+  const buckets = salesReportBuckets(report);
+  const rows = salesReportTableRows(report);
+  if (!rows.length) {
+    table.innerHTML = `
+      <tbody>
+        <tr><td class="empty-table-cell">暂无结果。请先导入历史销量，或调整日期、平台、店铺筛选条件。</td></tr>
+      </tbody>
+    `;
+    if (hint) hint.textContent = "暂无结果。请先导入历史销量，或调整日期、平台、店铺筛选条件。";
+    return;
   }
-  const storeRows = $("#salesReportStoreRows");
-  if (storeRows) {
-    const rows = report.by_store || [];
-    storeRows.innerHTML = rows.length ? rows.slice(0, 20).map((row) => `
-      <div class="output-row"><div><strong>${esc(row.store)}</strong><p>销量 ${row.sales}，日均 ${row.daily_average}，记录 ${row.record_count}</p></div></div>
-    `).join("") : `<div class="action-empty"><strong>暂无店铺汇总</strong><span>导入历史销量或填写每日销量后会显示。</span></div>`;
+  const bucketMode = buckets.some((bucket) => /^\d{4}-\d{2}$/.test(bucket)) ? "月" : "日";
+  if (hint) {
+    hint.textContent = `当前显示 ${rows.length} 个店铺，${buckets.length} 个${bucketMode}列；时间范围过长时会自动按月汇总，表格可横向滚动。`;
   }
-  const detailRows = $("#salesReportDetailRows");
-  if (detailRows) {
-    const rows = report.rows || [];
-    detailRows.innerHTML = rows.length ? rows.slice(0, 80).map((row) => `
-      <div class="output-row">
-        <div><strong>${esc(row.date)} · ${esc(row.platform)} · ${esc(row.store)}</strong><p>${esc(row.owner || "-")} · 销量 ${esc(row.sales)} · ${esc(row.status || "")}</p></div>
-      </div>
-    `).join("") : `<div class="action-empty"><strong>暂无明细</strong><span>请先导入跨境运营总表，或让店长填写每日销量。</span></div>`;
-  }
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th class="sticky-col">平台</th>
+        <th class="sticky-col sticky-col-2">店铺</th>
+        <th>负责人</th>
+        <th class="num">总销量</th>
+        <th class="num">${bucketMode}均</th>
+        <th class="num">记录数</th>
+        ${buckets.map((bucket) => `<th class="num">${esc(salesReportBucketLabel(bucket))}</th>`).join("")}
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map((row) => `
+        <tr>
+          <td class="sticky-col">${esc(row.platform)}</td>
+          <td class="sticky-col sticky-col-2"><strong>${esc(row.store)}</strong></td>
+          <td>${esc(row.owner || "-")}</td>
+          <td class="num strong">${esc(row.total)}</td>
+          <td class="num">${esc(row.average)}</td>
+          <td class="num">${esc(row.recordCount)}</td>
+          ${buckets.map((bucket) => `<td class="num">${row.values[bucket] ? esc(row.values[bucket]) : ""}</td>`).join("")}
+        </tr>
+      `).join("")}
+    </tbody>
+  `;
 }
 
 async function loadSalesReport(showToastOnDone = false) {
@@ -2926,6 +3041,13 @@ function bindEvents() {
   });
   document.querySelectorAll(".sales-focus-tabs [data-sales-focus]").forEach((button) => {
     button.addEventListener("click", () => setSalesFocus(button.dataset.salesFocus));
+  });
+  initializeSalesReportRange();
+  document.querySelectorAll("[data-sales-range]").forEach((button) => {
+    button.addEventListener("click", () => applySalesReportRange(button.dataset.salesRange));
+  });
+  ["#salesReportDateFrom", "#salesReportDateTo"].forEach((selector) => {
+    $(selector)?.addEventListener("change", clearSalesReportRangeShortcut);
   });
   $("#loadSalesCompareBtn")?.addEventListener("click", () => loadSalesCompare(true));
   $("#loadSalesReportBtn")?.addEventListener("click", () => loadSalesReport(true));

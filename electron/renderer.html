@@ -207,19 +207,27 @@
               </div>
               <button class="ghost-button" id="exportSalesReportBtn" data-admin-only="sales-report-export">导出查询结果</button>
             </div>
-            <div class="task-filters">
+            <div class="range-shortcuts" id="salesReportRangeShortcuts">
+              <button class="segment" type="button" data-sales-range="7d">最近7天</button>
+              <button class="segment" type="button" data-sales-range="30d">最近30天</button>
+              <button class="segment" type="button" data-sales-range="90d">最近90天</button>
+              <button class="segment" type="button" data-sales-range="half-year">半年</button>
+              <button class="segment" type="button" data-sales-range="1y">一年</button>
+              <button class="segment" type="button" data-sales-range="month">自然月</button>
+              <button class="segment" type="button" data-sales-range="year">自然年</button>
+            </div>
+            <div class="task-filters sales-report-filters">
               <input id="salesReportDateFrom" type="date" />
               <input id="salesReportDateTo" type="date" />
               <select id="salesReportPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option><option>速卖通</option><option>TK</option><option>Ozon</option></select>
               <input id="salesReportStore" placeholder="店铺" />
               <button class="primary-button" id="loadSalesReportBtn">查询销量报表</button>
             </div>
-            <div class="metric-row compact-metrics" id="salesReportSummary"></div>
-            <div class="sales-report-grid">
-              <div class="output-list" id="salesReportPlatformRows"></div>
-              <div class="output-list" id="salesReportStoreRows"></div>
+            <div class="report-summary-strip" id="salesReportSummary"></div>
+            <div class="report-table-wrap">
+              <table class="report-data-table" id="salesReportTable"></table>
             </div>
-            <div class="output-list" id="salesReportDetailRows"></div>
+            <p id="salesReportHint">选择日期、平台、店铺后，结果会集中显示在一张表格里。</p>
           </div>
         </section>
 
