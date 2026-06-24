@@ -2872,7 +2872,7 @@ function reportTaskBadges(reportId) {
 async function refreshAll() {
   try {
     applyOperatorToTasks();
-    state.status = await api.status();
+    state.status = await api.status(operatorPayload());
     state.reports = state.status.reports || await api.reports();
     state.outputs = state.status.outputs || await api.outputs(80);
     state.rules = state.status.rules || await api.loadRules();

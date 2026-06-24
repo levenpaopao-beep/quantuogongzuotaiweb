@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("dailyOps", {
-  status: () => ipcRenderer.invoke("api:status"),
+  status: (payload) => ipcRenderer.invoke("api:status", payload || {}),
   outputs: (limit) => ipcRenderer.invoke("api:outputs", limit),
   reports: () => ipcRenderer.invoke("api:reports"),
   sourceGroups: () => ipcRenderer.invoke("api:source-groups"),

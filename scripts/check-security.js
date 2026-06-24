@@ -80,6 +80,14 @@ adminCommands.forEach(([command, label]) => {
   expect(!result.ok && String(result.error || "").includes("只有管理员"), `店长不应能${label}`, [command]);
 });
 
+const ownerStatus = cliJson("status", { role: "owner", user: "__security_owner__" });
+expect(ownerStatus.ok, "店长状态接口应返回脱敏状态");
+expect(Array.isArray(ownerStatus.data.outputs) && ownerStatus.data.outputs.length === 0, "店长状态不应返回全局输出文件");
+expect(!ownerStatus.data.database?.path, "店长状态不应返回数据库路径");
+expect(Object.keys(ownerStatus.data.tasks || {}).length === 0, "店长状态不应返回全局任务汇总");
+expect(Object.keys(ownerStatus.data.report_tasks || {}).length === 0, "店长状态不应返回全局报表任务汇总");
+expect((ownerStatus.data.source_groups || []).every((group) => !group.latest && !(group.pending_files || []).length), "店长状态不应返回全局数据源文件名");
+
 expect(cli.includes("require_admin") && cli.includes("erp-sync") && cli.includes("restore-backup"), "CLI 管理员命令缺少统一权限入口");
 expect(appPy.includes("allowed_roots") && appPy.includes("allowed_files"), "备份恢复缺少白名单");
 expect(appPy.includes("target = (ROOT / name).resolve()"), "备份恢复缺少目标路径 resolve");

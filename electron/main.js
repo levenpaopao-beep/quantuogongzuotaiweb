@@ -472,7 +472,7 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-ipcMain.handle("api:status", () => runPython("status"));
+ipcMain.handle("api:status", (_event, payload) => runPython("status", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:outputs", (_event, limit) => runPython("outputs", [limit || 80]));
 ipcMain.handle("api:reports", () => runPython("reports"));
 ipcMain.handle("api:source-groups", () => runPython("source-groups"));

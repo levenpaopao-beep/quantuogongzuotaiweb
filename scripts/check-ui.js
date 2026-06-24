@@ -232,6 +232,12 @@ if (!renderReportCardsBody.includes('currentOperator().role === "owner"') || !re
     "店长可以查看已有经营输出，但单张报表生成按钮必须只给管理员。",
   ]);
 }
+const refreshAllBody = functionBody(renderer, "refreshAll");
+if (!refreshAllBody.includes("api.status(operatorPayload())")) {
+  fail("桌面状态接口未带当前角色", [
+    "店长视角刷新时不能读取全量输出、全量数据源和数据库路径，status 必须带当前操作人做脱敏。",
+  ]);
+}
 if (/radial-gradient\(/.test(fs.readFileSync(path.join(ROOT, "electron", "renderer.css"), "utf8"))) {
   fail("界面背景仍有装饰光斑", [
     "工作台是高频运营工具，背景应保持清爽，不使用离散渐变光斑作为装饰。",

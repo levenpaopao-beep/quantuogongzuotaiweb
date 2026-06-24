@@ -1160,6 +1160,36 @@ def public_status(payload):
     return safe
 
 
+def desktop_status_for_operator(payload, role="admin"):
+    if norm(role) == "admin":
+        return payload
+    safe = public_status(payload)
+    safe["reports"] = payload.get("reports", {})
+    safe["upload_targets"] = payload.get("upload_targets", {})
+    safe["backup_reminder"] = {"backup_exists": True, "message": ""}
+    safe["source_groups"] = []
+    for group in payload.get("source_groups", []):
+        safe["source_groups"].append({
+            "key": group.get("key", ""),
+            "name": group.get("name", ""),
+            "description": group.get("description", ""),
+            "count": 0,
+            "latest": None,
+            "status": "待上传" if not group.get("pending_count") else "待结束上传",
+            "changed": False,
+            "upload_target": group.get("upload_target") or group.get("key", ""),
+            "batch_files": [],
+            "total_rows": "",
+            "pending_count": group.get("pending_count", 0),
+            "pending_files": [],
+            "pending_batch_id": "",
+            "pending_started_at": "",
+            "batch_id": "",
+            "uploaded_at": "",
+        })
+    return safe
+
+
 def handle_status_api(headers):
     try:
         payload = data_status()

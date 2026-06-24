@@ -57,7 +57,7 @@ def command(argv):
     name = argv[0]
     args = argv[1:]
     if name == "status":
-        return ok(adapter.status())
+        return ok(adapter.status(read_payload()))
     if name == "reports":
         return ok(adapter.reports())
     if name == "source-groups":

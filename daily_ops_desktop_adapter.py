@@ -12,8 +12,9 @@ from daily_ops_sales_compare import aggregate_source_sales, compare_sales
 SALES_DB_PATH = app.DAILY_SALES_FILE
 
 
-def status():
-    return app.data_status()
+def status(payload=None):
+    payload = payload or {}
+    return app.desktop_status_for_operator(app.data_status(), operator_role(payload))
 
 
 def reports():
