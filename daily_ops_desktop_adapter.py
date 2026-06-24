@@ -35,6 +35,10 @@ def outputs(limit=80, payload=None):
     return app.recent_outputs(limit)
 
 
+def owner_can_upload_category(category):
+    return app.owner_can_upload_category(category)
+
+
 def import_source_files(category, source_paths):
     if category not in app.UPLOAD_TARGETS:
         raise ValueError("未知上传分类")

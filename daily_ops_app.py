@@ -113,6 +113,11 @@ WEEKLY_SOURCE_GROUPS = {
     },
 }
 
+
+def owner_can_upload_category(category):
+    return category in WEEKLY_SOURCE_GROUPS
+
+
 REPORTS = {
     "temu_price": {
         "name": "Temu申报价异常",
@@ -2379,13 +2384,15 @@ def handle_admin_api(action, headers):
         return json_bytes({"ok": False, "error": str(exc)}, status=500)
 
 
-def handle_upload_operator_api(action, headers):
+def handle_upload_operator_api(action, headers, category=""):
     try:
         operator = operator_from_token(token_from_headers(headers))
         if operator.get("role") not in {"admin", "owner"}:
             return json_bytes({"ok": False, "error": f"{action}需要管理员或店长"}, status=403)
         if operator.get("role") == "owner" and not norm(operator.get("user")):
             return json_bytes({"ok": False, "error": f"{action}需要先填写当前店长"}, status=403)
+        if operator.get("role") == "owner" and category and not owner_can_upload_category(category):
+            return json_bytes({"ok": False, "error": "店长不能上传该数据源"}, status=403)
         return json_bytes({"ok": True, "operator": operator})
     except PermissionError as exc:
         return json_bytes({"ok": False, "error": str(exc)}, status=401)
@@ -3840,15 +3847,15 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 self.send_payload(*handle_store_owners_api("POST_SAVE", self.headers, self.read_json()))
             elif parsed.path == "/api/upload/finish-batch":
                 cancel_scheduled_shutdown()
-                if not self.require_upload_operator_request("结束上传"):
-                    return
                 payload = self.read_json()
+                if not self.require_upload_operator_request("结束上传", payload.get("category", "")):
+                    return
                 self.send_json({"ok": True, "source_state": finish_upload_batch(payload.get("category", ""))})
             elif parsed.path == "/api/upload/clear-batch":
                 cancel_scheduled_shutdown()
-                if not self.require_upload_operator_request("清空待提交文件"):
-                    return
                 payload = self.read_json()
+                if not self.require_upload_operator_request("清空待提交文件", payload.get("category", "")):
+                    return
                 self.send_json({"ok": True, **clear_upload_batch(payload.get("category", ""))})
             elif parsed.path == "/api/search/export":
                 cancel_scheduled_shutdown()
@@ -3916,8 +3923,8 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
         self.send_payload(status, content_type, body)
         return False
 
-    def require_upload_operator_request(self, action):
-        status, content_type, body = handle_upload_operator_api(action, self.headers)
+    def require_upload_operator_request(self, action, category=""):
+        status, content_type, body = handle_upload_operator_api(action, self.headers, category)
         if status == 200:
             return True
         self.send_payload(status, content_type, body)
@@ -3928,6 +3935,8 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
         category = form.getfirst("category", "")
         if category not in UPLOAD_TARGETS:
             raise ValueError("未知上传分类")
+        if not self.require_upload_operator_request("上传数据源", category):
+            return
         file_item = form["file"] if "file" in form else None
         if file_item is None or not file_item.filename:
             raise ValueError("未收到上传文件")

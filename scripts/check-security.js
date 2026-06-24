@@ -103,6 +103,15 @@ const ownerSourceGroups = cliJson("source-groups", { role: "owner", user: "__sec
 expect(ownerSourceGroups.ok, "店长源数据状态应返回脱敏列表");
 expect((ownerSourceGroups.data || []).every((group) => !group.latest && !(group.pending_files || []).length), "店长直查源数据状态不应返回文件名");
 
+const ownerMasterUpload = cliJson("import-source", { role: "owner", user: "__security_owner__" }, ["owner", path.join(os.tmpdir(), "__petcircle_owner_master_probe__.xlsx")], true);
+expect(!ownerMasterUpload.ok && String(ownerMasterUpload.error || "").includes("店长不能上传该数据源"), "店长不应能上传负责人表");
+const ownerWeeklyUploadProbe = cliJson("import-source", { role: "owner", user: "__security_owner__" }, ["temu_platform", path.join(os.tmpdir(), "__petcircle_weekly_upload_probe__.xlsx")], true);
+expect(!ownerWeeklyUploadProbe.ok && String(ownerWeeklyUploadProbe.error || "").includes("文件不存在"), "店长应能进入周度数据源上传流程");
+const ownerMasterFinish = cliJson("finish-upload", { role: "owner", user: "__security_owner__" }, ["owner"], true);
+expect(!ownerMasterFinish.ok && String(ownerMasterFinish.error || "").includes("店长不能上传该数据源"), "店长不应能结束负责人表上传批次");
+const ownerMasterClear = cliJson("clear-upload", { role: "owner", user: "__security_owner__" }, ["owner"], true);
+expect(!ownerMasterClear.ok && String(ownerMasterClear.error || "").includes("店长不能上传该数据源"), "店长不应能清空负责人表上传批次");
+
 expect(cli.includes("require_admin") && cli.includes("erp-sync") && cli.includes("restore-backup"), "CLI 管理员命令缺少统一权限入口");
 expect(cli.includes('require_admin(read_payload(), "读取规则")'), "读取规则缺少管理员校验");
 expect(cli.includes('require_admin(read_payload(), "打开全局输出文件")'), "打开全局输出文件缺少管理员校验");
