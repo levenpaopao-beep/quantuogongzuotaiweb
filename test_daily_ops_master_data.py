@@ -210,6 +210,67 @@ class MasterDataImportTest(unittest.TestCase):
                         "store": "二弟",
                     })
 
+    def test_business_report_uses_current_owner_assignment_and_comparisons(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sales_path = Path(tmp) / "daily_sales.json"
+            assignments = [
+                {"platform": "Ozon", "store": "大鹅", "owner": "小琴", "enabled": True, "daily_required": True},
+                {"platform": "速卖通", "store": "大美", "owner": "胡娟", "enabled": True, "daily_required": True},
+            ]
+            master_data.import_history_sales_records(
+                sales_path,
+                [
+                    {"date": "2026-06-01", "platform": "Ozon", "store": "大鹅", "owner": "旧负责人", "sales": 100},
+                    {"date": "2025-06-01", "platform": "Ozon", "store": "大鹅", "owner": "旧负责人", "sales": 60},
+                    {"date": "2026-06-01", "platform": "速卖通", "store": "大美", "owner": "胡娟", "sales": 50},
+                ],
+                actor="管理员",
+            )
+
+            report = master_data.business_report(
+                sales_path,
+                assignments=assignments,
+                date_from="2026-06-01",
+                date_to="2026-06-01",
+                grain="day",
+            )
+
+        owner_rows = {row["name"]: row for row in report["dimensions"]["owner"]}
+        platform_rows = {row["name"]: row for row in report["dimensions"]["platform"]}
+        self.assertEqual(owner_rows["小琴"]["sales"], 100)
+        self.assertNotIn("旧负责人", owner_rows)
+        self.assertEqual(platform_rows["Ozon"]["compare_sales"], 60)
+        self.assertEqual(platform_rows["Ozon"]["yoy_delta"], 40)
+        self.assertEqual(report["summary"]["range"]["sales"], 150)
+
+    def test_business_report_owner_scope_only_shows_owned_stores(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sales_path = Path(tmp) / "daily_sales.json"
+            assignments = [
+                {"platform": "Temu", "store": "一弟", "owner": "小琴", "enabled": True, "daily_required": True},
+                {"platform": "Temu", "store": "二弟", "owner": "洁琳", "enabled": True, "daily_required": True},
+            ]
+            master_data.import_history_sales_records(
+                sales_path,
+                [
+                    {"date": "2026-06-01", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 100},
+                    {"date": "2026-06-01", "platform": "Temu", "store": "二弟", "owner": "洁琳", "sales": 200},
+                ],
+                actor="管理员",
+            )
+
+            report = master_data.business_report(
+                sales_path,
+                assignments=assignments,
+                role="owner",
+                user="小琴",
+                date_from="2026-06-01",
+                date_to="2026-06-01",
+            )
+
+        self.assertEqual(report["summary"]["range"]["sales"], 100)
+        self.assertEqual({row["store"] for row in report["dimensions"]["store"]}, {"一弟"})
+
 
 if __name__ == "__main__":
     unittest.main()

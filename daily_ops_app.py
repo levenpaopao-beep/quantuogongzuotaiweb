@@ -581,6 +581,21 @@ def export_sales_report(platform="", store="", date_from="", date_to=""):
     return daily_ops_master_data.export_sales_report(report, OUTPUT_DIR)
 
 
+def business_report(payload=None):
+    payload = payload or {}
+    return daily_ops_master_data.business_report(
+        DAILY_SALES_FILE,
+        assignments=load_store_owner_assignments(),
+        role=payload.get("role", "admin"),
+        user=payload.get("user", ""),
+        date_from=payload.get("date_from", ""),
+        date_to=payload.get("date_to", ""),
+        platform=payload.get("platform", ""),
+        store=payload.get("store", ""),
+        grain=payload.get("grain", "month"),
+    )
+
+
 def monthly_backup_reminder():
     return daily_ops_master_data.monthly_backup_status(backup_output_dir())
 

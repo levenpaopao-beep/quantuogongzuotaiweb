@@ -237,7 +237,8 @@ function renderSmokeScript() {
       await openPage("reports", "#reportsPage.page-active", "经营报表页面");
       requireVisible("#reportReadinessBar", "报表生成前体检");
       requireText("#reportsPage", "生成报表", "报表卡片区");
-      requireVisible("#reportSalesMetrics", "平台经营看板");
+      requireVisible("#businessKpis", "经营报表关键指标");
+      requireVisible("#businessStoreTable", "经营报表店铺表格");
       await openPage("masterdata", "#masterDataPage.page-active", "基础资料页面");
       requireVisible("#saveStoreOwnersBtn", "保存店铺配置按钮");
       requireVisible("#platformChipList", "平台标签");
@@ -516,6 +517,7 @@ ipcMain.handle("api:import-owner-master", (_event, payload) => runPython("import
 ipcMain.handle("api:import-sales-history", (_event, payload) => runPython("import-sales-history", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:sales-report", (_event, payload) => runPython("sales-report", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:export-sales-report", (_event, payload) => runPython("export-sales-report", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:business-report", (_event, payload) => runPython("business-report", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:backup-reminder", (_event, payload) => runPython("backup-reminder", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:import-matrix", (_event, payload) => runPython("import-matrix", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:erp-sync", (_event, payload) => runPython("erp-sync", [], JSON.stringify(payload || {})));

@@ -378,6 +378,29 @@ def export_sales_report_payload(payload):
     return app.export_sales_report(payload.get("platform", ""), payload.get("store", ""), payload.get("date_from", ""), payload.get("date_to", ""))
 
 
+def business_report_payload(payload):
+    payload = payload or {}
+    role = operator_role(payload)
+    user = operator_user(payload, "")
+    platform = payload.get("platform", "")
+    store = payload.get("store", "")
+    if role != "admin":
+        assignments = app.load_store_owner_assignments()
+        owned = [item for item in assignments if app.norm(item.get("owner")) == user]
+        allowed_pairs = {(app.norm(item.get("platform")), app.norm(item.get("store"))) for item in owned}
+        if store and (app.norm(platform), app.norm(store)) not in allowed_pairs:
+            raise PermissionError("店长只能查询自己负责店铺的经营报表")
+    return app.business_report({
+        "role": "admin" if role == "admin" else "owner",
+        "user": "" if role == "admin" else user,
+        "date_from": payload.get("date_from", ""),
+        "date_to": payload.get("date_to", ""),
+        "platform": platform,
+        "store": store,
+        "grain": payload.get("grain", "month"),
+    })
+
+
 def backup_reminder_payload(payload):
     if operator_role(payload or {}) != "admin":
         return {"backup_exists": True, "message": ""}

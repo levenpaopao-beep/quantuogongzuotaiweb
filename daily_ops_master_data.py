@@ -3,8 +3,9 @@ import json
 import os
 import re
 import secrets
+import calendar
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -350,6 +351,290 @@ def import_history_sales_records(sales_path, rows, actor="管理员"):
 def date_in_range(value, date_from="", date_to=""):
     text = norm(value)
     return (not date_from or text >= date_from) and (not date_to or text <= date_to)
+
+
+def parse_day(value, fallback=None):
+    text = norm(value)
+    if not text:
+        return fallback
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").date()
+    except ValueError:
+        return fallback
+
+
+def add_months(day, months):
+    month_index = day.month - 1 + months
+    year = day.year + month_index // 12
+    month = month_index % 12 + 1
+    last_day = calendar.monthrange(year, month)[1]
+    return date(year, month, min(day.day, last_day))
+
+
+def period_tuple(start, end):
+    return (start.isoformat(), end.isoformat())
+
+
+def same_span_previous_year(start, end):
+    return period_tuple(add_months(start, -12), add_months(end, -12))
+
+
+def previous_span(start, end):
+    days = (end - start).days + 1
+    prev_end = start - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=days - 1)
+    return period_tuple(prev_start, prev_end)
+
+
+def same_month_previous_period(end):
+    start = end.replace(day=1)
+    previous_start = add_months(start, -1)
+    previous_end = add_months(end, -1)
+    return period_tuple(start, end), period_tuple(previous_start, previous_end)
+
+
+def year_to_date_period(end):
+    start = end.replace(month=1, day=1)
+    previous_start = add_months(start, -12)
+    previous_end = add_months(end, -12)
+    return period_tuple(start, end), period_tuple(previous_start, previous_end)
+
+
+def build_assignment_index(assignments):
+    index = {}
+    for item in assignments or []:
+        platform = norm(item.get("platform"))
+        store = clean_store_name(item.get("store"))
+        if not platform or not store:
+            continue
+        index[(platform, store)] = {
+            "platform": platform,
+            "store": store,
+            "owner": norm(item.get("owner")),
+            "enabled": item.get("enabled", True) is not False,
+            "daily_required": item.get("daily_required", True) is not False,
+        }
+    return index
+
+
+def scoped_sales_rows(sales_path, assignments=None, role="admin", user="", platform="", store="", allowed_pairs=None):
+    platform = platform_name(platform, "") if platform else ""
+    store = clean_store_name(store)
+    user = norm(user)
+    assignment_index = build_assignment_index(assignments)
+    allowed = None
+    if allowed_pairs is not None:
+        allowed = {
+            (norm(item_platform), clean_store_name(item_store))
+            for item_platform, item_store in allowed_pairs
+            if norm(item_platform) and clean_store_name(item_store)
+        }
+    elif norm(role) != "admin":
+        allowed = {
+            key for key, item in assignment_index.items()
+            if item.get("owner") == user and item.get("enabled") and item.get("daily_required")
+        }
+    rows = []
+    for row in DailySalesStore(sales_path).load()["records"]:
+        row_platform = platform_name(row.get("platform"), "")
+        row_store = clean_store_name(row.get("store"))
+        pair = (row_platform, row_store)
+        if allowed is not None and pair not in allowed:
+            continue
+        if platform and row_platform != platform:
+            continue
+        if store and row_store != store:
+            continue
+        item = dict(row)
+        item["platform"] = row_platform
+        item["store"] = row_store
+        current_assignment = assignment_index.get(pair)
+        if current_assignment and current_assignment.get("owner"):
+            item["owner"] = current_assignment["owner"]
+        else:
+            item["owner"] = norm(item.get("owner")) or "未分配"
+        rows.append(item)
+    return rows
+
+
+def sales_between(rows, date_from, date_to):
+    return [row for row in rows if date_in_range(row.get("date"), date_from, date_to)]
+
+
+def sum_sales(rows):
+    return sum(int(row.get("sales") or 0) for row in rows)
+
+
+def pct_change(current, base):
+    if not base:
+        return None
+    return round((current - base) / base * 100, 2)
+
+
+def comparison_summary(rows, current_period, compare_period):
+    current_rows = sales_between(rows, *current_period)
+    compare_rows = sales_between(rows, *compare_period)
+    current_sales = sum_sales(current_rows)
+    compare_sales = sum_sales(compare_rows)
+    return {
+        "sales": current_sales,
+        "compare_sales": compare_sales,
+        "delta": current_sales - compare_sales,
+        "rate": pct_change(current_sales, compare_sales),
+        "record_count": len(current_rows),
+    }
+
+
+def business_group_key(row, dimension):
+    platform = norm(row.get("platform")) or "未设置"
+    store = clean_store_name(row.get("store")) or "未设置"
+    owner = norm(row.get("owner")) or "未分配"
+    if dimension == "platform":
+        return platform, {"dimension": "platform", "name": platform, "platform": platform, "owner": "", "store": ""}
+    if dimension == "owner":
+        return owner, {"dimension": "owner", "name": owner, "platform": "", "owner": owner, "store": ""}
+    return f"{platform}::{store}", {"dimension": "store", "name": store, "platform": platform, "owner": owner, "store": store}
+
+
+def latest_date(rows, date_to=""):
+    dates = [
+        norm(row.get("date")) for row in rows
+        if norm(row.get("date")) and (not date_to or norm(row.get("date")) <= date_to)
+    ]
+    return max(dates) if dates else ""
+
+
+def group_business_rows(rows, dimension, current_period, compare_period, previous_period, end_day, stale_days=3, small_base=100):
+    groups = {}
+    for row in rows:
+        key, base = business_group_key(row, dimension)
+        groups.setdefault(key, {**base, "rows": []})["rows"].append(row)
+    total_sales = sum_sales(sales_between(rows, *current_period))
+    result = []
+    for item in groups.values():
+        group_rows = item.pop("rows")
+        current_rows = sales_between(group_rows, *current_period)
+        compare_rows = sales_between(group_rows, *compare_period)
+        previous_rows = sales_between(group_rows, *previous_period)
+        sales = sum_sales(current_rows)
+        compare_sales_value = sum_sales(compare_rows)
+        previous_sales = sum_sales(previous_rows)
+        latest = latest_date(group_rows, end_day.isoformat())
+        stale = False
+        if latest:
+            stale = (end_day - parse_day(latest, end_day)).days > stale_days
+        item.update({
+            "sales": sales,
+            "compare_sales": compare_sales_value,
+            "yoy_delta": sales - compare_sales_value,
+            "yoy_rate": pct_change(sales, compare_sales_value),
+            "previous_sales": previous_sales,
+            "mom_delta": sales - previous_sales,
+            "mom_rate": pct_change(sales, previous_sales),
+            "share": round(sales / total_sales * 100, 2) if total_sales else 0,
+            "record_count": len(current_rows),
+            "latest_date": latest,
+            "status": "超过3天未更新" if stale else "正常",
+            "stale": stale,
+            "base_too_small": compare_sales_value < small_base,
+        })
+        result.append(item)
+    return sorted(result, key=lambda row: (-row["sales"], row["name"]))
+
+
+def bucket_key(day_text, grain):
+    if grain == "year":
+        return day_text[:4]
+    if grain == "day":
+        return day_text
+    return day_text[:7]
+
+
+def trend_rows(rows, dimension, current_period, grain="month"):
+    current_rows = sales_between(rows, *current_period)
+    buckets = sorted({bucket_key(norm(row.get("date")), grain) for row in current_rows if norm(row.get("date"))})
+    groups = {}
+    for row in current_rows:
+        key, base = business_group_key(row, dimension)
+        groups.setdefault(key, {**base, "total": 0, "values": defaultdict(int)})
+        sales = int(row.get("sales") or 0)
+        bucket = bucket_key(norm(row.get("date")), grain)
+        groups[key]["total"] += sales
+        groups[key]["values"][bucket] += sales
+    table = []
+    for item in groups.values():
+        values = {bucket: item["values"].get(bucket, 0) for bucket in buckets}
+        item["values"] = values
+        table.append(item)
+    return {"buckets": buckets, "rows": sorted(table, key=lambda row: (-row["total"], row["name"]))}
+
+
+def business_report(sales_path, assignments=None, role="admin", user="", date_from="", date_to="", platform="", store="", grain="month", stale_days=3, diff_percent=20, diff_units=20, small_base=100):
+    rows = scoped_sales_rows(sales_path, assignments, role, user, platform, store)
+    available_days = [parse_day(row.get("date")) for row in rows if parse_day(row.get("date"))]
+    end_day = parse_day(date_to) or (max(available_days) if available_days else date.today())
+    default_start = end_day.replace(day=1)
+    start_day = parse_day(date_from) or default_start
+    if start_day > end_day:
+        start_day, end_day = end_day, start_day
+    current_period = period_tuple(start_day, end_day)
+    compare_period = same_span_previous_year(start_day, end_day)
+    previous_period = previous_span(start_day, end_day)
+    today_period = period_tuple(end_day, end_day)
+    yesterday = end_day - timedelta(days=1)
+    yesterday_period = period_tuple(yesterday, yesterday)
+    month_period, previous_month_period = same_month_previous_period(end_day)
+    year_period, previous_year_period = year_to_date_period(end_day)
+    visible_rows = sales_between(rows, *current_period)
+    anomalies = []
+    for dimension, label in [("platform", "平台"), ("owner", "负责人"), ("store", "店铺")]:
+        for row in group_business_rows(rows, dimension, current_period, compare_period, previous_period, end_day, stale_days, small_base):
+            if row.get("stale"):
+                anomalies.append({
+                    "type": "数据未更新",
+                    "dimension": label,
+                    "name": row.get("name"),
+                    "latest_date": row.get("latest_date"),
+                    "message": f"{label}「{row.get('name')}」超过 {stale_days} 天没有销量更新",
+                })
+    return {
+        "filters": {
+            "date_from": current_period[0],
+            "date_to": current_period[1],
+            "platform": platform_name(platform, "") if platform else "",
+            "store": clean_store_name(store),
+            "grain": grain,
+            "role": norm(role) or "admin",
+            "user": norm(user),
+        },
+        "settings": {
+            "stale_days": stale_days,
+            "diff_percent": diff_percent,
+            "diff_units": diff_units,
+            "small_base": small_base,
+        },
+        "summary": {
+            "today": comparison_summary(rows, today_period, yesterday_period),
+            "month": comparison_summary(rows, month_period, previous_month_period),
+            "year": comparison_summary(rows, year_period, previous_year_period),
+            "range": comparison_summary(rows, current_period, compare_period),
+            "record_count": len(visible_rows),
+            "store_count": len({(row.get("platform"), row.get("store")) for row in visible_rows}),
+            "latest_date": latest_date(rows, end_day.isoformat()),
+            "anomaly_count": len(anomalies),
+        },
+        "dimensions": {
+            "platform": group_business_rows(rows, "platform", current_period, compare_period, previous_period, end_day, stale_days, small_base),
+            "owner": group_business_rows(rows, "owner", current_period, compare_period, previous_period, end_day, stale_days, small_base),
+            "store": group_business_rows(rows, "store", current_period, compare_period, previous_period, end_day, stale_days, small_base),
+        },
+        "trends": {
+            "platform": trend_rows(rows, "platform", current_period, grain),
+            "owner": trend_rows(rows, "owner", current_period, grain),
+            "store": trend_rows(rows, "store", current_period, grain),
+        },
+        "anomalies": anomalies[:100],
+    }
 
 
 def query_sales_report(sales_path, platform="", store="", date_from="", date_to="", allowed_pairs=None):

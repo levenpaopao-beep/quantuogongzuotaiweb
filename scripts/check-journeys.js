@@ -120,6 +120,28 @@ if (ownerName) {
       "店长销量报表查询必须限定在本人负责店铺，即使手动输入店铺名也不能越权。",
     ]);
   }
+  const ownerBusinessReport = runCli("business-report", owner);
+  expectObject("店长经营报表", ownerBusinessReport);
+  expectObject("店长经营报表 summary", ownerBusinessReport.summary);
+  expectObject("店长经营报表 dimensions", ownerBusinessReport.dimensions);
+  const ownerBusinessRows = [
+    ...(ownerBusinessReport.dimensions.store || []),
+    ...(ownerBusinessReport.dimensions.owner || []),
+  ];
+  if (ownerBusinessRows.some((row) => row.owner && row.owner !== ownerName)) {
+    fail("店长经营报表越权", [`${ownerName} 的经营报表里出现其他负责人数据`]);
+  }
+  const blockedOwnerBusinessReport = runCliRaw(
+    "business-report",
+    { ...owner, platform: "Temu", store: "__other_owner_store_probe__" },
+    [],
+    { allowFailure: true },
+  );
+  if (blockedOwnerBusinessReport.ok) {
+    fail("店长经营报表指定其他店铺未被拒绝", [
+      "店长经营报表必须限定在本人负责店铺，即使手动输入店铺名也不能越权。",
+    ]);
+  }
 
   const ownerTasks = runCli("tasks", { ...owner, filters: { role: "owner", user: ownerName, open_only: "1" } });
   expectObject("店长任务", ownerTasks);

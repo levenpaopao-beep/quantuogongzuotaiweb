@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld("dailyOps", {
   importSalesHistory: (payload) => ipcRenderer.invoke("api:import-sales-history", payload || {}),
   salesReport: (payload) => ipcRenderer.invoke("api:sales-report", payload || {}),
   exportSalesReport: (payload) => ipcRenderer.invoke("api:export-sales-report", payload || {}),
+  businessReport: (payload) => ipcRenderer.invoke("api:business-report", payload || {}),
   backupReminder: (payload) => ipcRenderer.invoke("api:backup-reminder", payload || {}),
   importMatrix: (payload) => ipcRenderer.invoke("api:import-matrix", payload || {}),
   erpSync: (payload) => ipcRenderer.invoke("api:erp-sync", payload || {}),

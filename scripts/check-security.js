@@ -111,6 +111,8 @@ const ownerMasterFinish = cliJson("finish-upload", { role: "owner", user: "__sec
 expect(!ownerMasterFinish.ok && String(ownerMasterFinish.error || "").includes("店长不能上传该数据源"), "店长不应能结束负责人表上传批次");
 const ownerMasterClear = cliJson("clear-upload", { role: "owner", user: "__security_owner__" }, ["owner"], true);
 expect(!ownerMasterClear.ok && String(ownerMasterClear.error || "").includes("店长不能上传该数据源"), "店长不应能清空负责人表上传批次");
+const ownerBlockedBusinessReport = cliJson("business-report", { role: "owner", user: "__security_owner__", platform: "Temu", store: "__other_owner_store_probe__" }, [], true);
+expect(!ownerBlockedBusinessReport.ok && String(ownerBlockedBusinessReport.error || "").includes("店长只能查询自己负责店铺"), "店长不应能查询其他店铺经营报表");
 
 expect(cli.includes("require_admin") && cli.includes("erp-sync") && cli.includes("restore-backup"), "CLI 管理员命令缺少统一权限入口");
 expect(cli.includes('require_admin(read_payload(), "读取规则")'), "读取规则缺少管理员校验");

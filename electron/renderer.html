@@ -365,13 +365,90 @@
         <section class="page" id="reportsPage">
           <div class="page-intro">
             <div>
-              <span class="pill">月结导出</span>
+              <span class="pill">高密度经营表</span>
               <h2>经营报表</h2>
-              <p>管理员按平台优先看总览；店长按自己店铺看趋势。Excel 总表是结果导出，不再手工维护公式。</p>
+              <p>管理员看全局平台、业务员、店铺表现；店长只看自己负责店铺的销量趋势和数据状态。</p>
             </div>
+            <button class="ghost-button" id="refreshBusinessReportBtn">刷新经营报表</button>
           </div>
-          <div class="report-layout">
-            <div class="report-readiness" id="reportReadinessBar">
+          <div class="business-report-shell">
+            <div class="business-filter-panel">
+              <div class="range-shortcuts" id="businessRangeShortcuts">
+                <button class="segment" type="button" data-business-range="7d">最近7天</button>
+                <button class="segment active" type="button" data-business-range="30d">最近30天</button>
+                <button class="segment" type="button" data-business-range="90d">最近90天</button>
+                <button class="segment" type="button" data-business-range="half-year">半年</button>
+                <button class="segment" type="button" data-business-range="1y">一年</button>
+                <button class="segment" type="button" data-business-range="month">自然月</button>
+                <button class="segment" type="button" data-business-range="year">自然年</button>
+              </div>
+              <div class="business-filters">
+                <input id="businessDateFrom" type="date" />
+                <input id="businessDateTo" type="date" />
+                <select id="businessGrain">
+                  <option value="day">按日</option>
+                  <option value="month" selected>按月</option>
+                  <option value="year">按年</option>
+                </select>
+                <select id="businessPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option><option>速卖通</option><option>TK</option><option>Ozon</option></select>
+                <input id="businessStore" placeholder="店铺" />
+                <button class="primary-button" id="loadBusinessReportBtn">查询</button>
+              </div>
+            </div>
+
+            <div class="business-alert-strip" id="businessAlertStrip">
+              <strong>需要处理</strong>
+              <span id="businessAlertText">正在读取数据状态。</span>
+              <button class="ghost-button" id="toggleBusinessAlertsBtn">查看明细</button>
+            </div>
+            <div class="business-alert-list hidden" id="businessAlertList"></div>
+
+            <div class="business-kpi-grid" id="businessKpis">
+              <div class="business-kpi"><span>今日销量</span><strong>0</strong><small>较昨日 0</small></div>
+              <div class="business-kpi"><span>本月累计</span><strong>0</strong><small>较上月同期 0</small></div>
+              <div class="business-kpi"><span>本年累计</span><strong>0</strong><small>较去年同期 0</small></div>
+              <div class="business-kpi"><span>当前范围</span><strong>0</strong><small>较去年同期 0</small></div>
+            </div>
+
+            <div class="business-tabs" id="businessTabs">
+              <button class="segment active" type="button" data-business-tab="overview">经营概览</button>
+              <button class="segment" type="button" data-business-tab="platform" data-admin-only="business-platform-tab">平台分析</button>
+              <button class="segment" type="button" data-business-tab="owner" data-admin-only="business-owner-tab">业务员分析</button>
+              <button class="segment" type="button" data-business-tab="store">店铺分析</button>
+            </div>
+
+            <div class="business-table-grid" id="businessOverviewTables">
+              <section class="business-table-card" data-admin-only="business-platform-table">
+                <div class="panel-head">
+                  <div><h2>平台排行</h2><p>看哪个平台贡献最大、同比增长最好。</p></div>
+                </div>
+                <div class="report-table-wrap"><table class="report-data-table business-table" id="businessPlatformTable"></table></div>
+              </section>
+              <section class="business-table-card" data-admin-only="business-owner-table">
+                <div class="panel-head">
+                  <div><h2>业务员排行</h2><p>按当前店铺负责人归属计算。</p></div>
+                </div>
+                <div class="report-table-wrap"><table class="report-data-table business-table" id="businessOwnerTable"></table></div>
+              </section>
+              <section class="business-table-card">
+                <div class="panel-head">
+                  <div><h2 id="businessStoreTableTitle">店铺排行</h2><p id="businessStoreTableHint">店长视角只展示自己负责店铺。</p></div>
+                </div>
+                <div class="report-table-wrap"><table class="report-data-table business-table" id="businessStoreTable"></table></div>
+              </section>
+            </div>
+
+            <section class="business-table-card" id="businessTrendPanel">
+              <div class="panel-head">
+                <div>
+                  <h2 id="businessTrendTitle">趋势明细</h2>
+                  <p id="businessTrendHint">按选择的日、月、年粒度展开销量。</p>
+                </div>
+              </div>
+              <div class="report-table-wrap"><table class="report-data-table business-table" id="businessTrendTable"></table></div>
+            </section>
+
+            <div class="report-readiness" id="reportReadinessBar" data-admin-only="report-readiness">
               <div class="report-readiness-copy">
                 <strong id="reportReadinessTitle">报表生成前体检</strong>
                 <span id="reportReadinessHint">生成前先确认销量、导入和任务队列，避免月结结果口径不完整。</span>
@@ -379,33 +456,14 @@
               <div class="report-readiness-metrics" id="reportReadinessMetrics"></div>
               <div class="report-readiness-actions" id="reportReadinessActions"></div>
             </div>
-            <div class="simple-panel">
-              <h2>平台经营看板</h2>
-              <div class="metric-row" id="reportSalesMetrics">
-                <div class="metric-card"><span>今日总销量</span><strong>待填报</strong><small>手填主口径</small></div>
-                <div class="metric-card"><span>未填店铺</span><strong>待填报</strong><small>每日销量口径</small></div>
-                <div class="metric-card"><span>异常波动</span><strong>待填报</strong><small>50% 阈值提醒</small></div>
-              </div>
-              <div class="platform-sales-list" id="platformSalesList"></div>
-              <div class="sales-compare-panel">
-                <div class="panel-head">
-                  <div>
-                    <h2>销量差异提醒</h2>
-                    <p id="salesCompareSummary">按 5% 且 20 件阈值，交叉对比手填销量和导入销量日均。</p>
-                  </div>
-                  <button class="ghost-button" id="loadSalesCompareBtn">重新比对</button>
-                </div>
-                <div id="salesCompareRows" class="output-list"></div>
-              </div>
-            </div>
-            <div class="simple-panel">
+            <section class="simple-panel" data-admin-only="legacy-report-generate">
               <h2>生成报表</h2>
               <div id="reportCards" class="report-grid"></div>
-            </div>
-            <div class="simple-panel">
+            </section>
+            <section class="simple-panel" data-admin-only="legacy-output-list">
               <h2>输出记录</h2>
               <div id="outputRows" class="output-list"></div>
-            </div>
+            </section>
           </div>
         </section>
 

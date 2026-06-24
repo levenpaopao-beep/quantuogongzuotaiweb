@@ -18,6 +18,8 @@ const state = {
   salesFocus: "missing",
   salesCompare: null,
   salesReport: null,
+  businessReport: null,
+  businessTab: "overview",
   importMatrix: null,
   importFocus: "blocked",
   taskSuppressions: [],
@@ -152,6 +154,7 @@ function saveOperator() {
   applyOperatorToTasks();
   loadSales(false);
   loadImportMatrix(false);
+  loadBusinessReport(false);
   loadTaskSuppressions();
   loadTasks();
 }
@@ -1556,6 +1559,236 @@ async function exportSalesReport() {
   }
 }
 
+function businessReportPayload() {
+  return operatorPayload({
+    date_from: $("#businessDateFrom")?.value || "",
+    date_to: $("#businessDateTo")?.value || "",
+    platform: $("#businessPlatform")?.value || "",
+    store: $("#businessStore")?.value.trim() || "",
+    grain: $("#businessGrain")?.value || "month",
+  });
+}
+
+function setBusinessDates(start, end, activeRange = "") {
+  if ($("#businessDateFrom")) $("#businessDateFrom").value = localDateValue(start);
+  if ($("#businessDateTo")) $("#businessDateTo").value = localDateValue(end);
+  document.querySelectorAll("[data-business-range]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.businessRange === activeRange);
+  });
+}
+
+function applyBusinessRange(range) {
+  const end = new Date();
+  const start = new Date(end);
+  if (range === "7d") start.setDate(end.getDate() - 6);
+  if (range === "30d") start.setDate(end.getDate() - 29);
+  if (range === "90d") start.setDate(end.getDate() - 89);
+  if (range === "half-year") start.setMonth(end.getMonth() - 6);
+  if (range === "1y") start.setFullYear(end.getFullYear() - 1);
+  if (range === "month") start.setDate(1);
+  if (range === "year") {
+    start.setMonth(0);
+    start.setDate(1);
+  }
+  setBusinessDates(start, end, range);
+  loadBusinessReport(true);
+}
+
+function clearBusinessRangeShortcut() {
+  document.querySelectorAll("[data-business-range]").forEach((button) => button.classList.remove("active"));
+}
+
+function initializeBusinessRange() {
+  if ($("#businessDateFrom")?.value || $("#businessDateTo")?.value) return;
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(end.getDate() - 29);
+  setBusinessDates(start, end, "30d");
+}
+
+function signedNumber(value) {
+  const number = Number(value || 0);
+  if (number > 0) return `+${number}`;
+  return String(number);
+}
+
+function signedRate(value) {
+  if (value === null || value === undefined) return "-";
+  const number = Number(value || 0);
+  return `${number > 0 ? "+" : ""}${number}%`;
+}
+
+function deltaClass(value) {
+  const number = Number(value || 0);
+  if (number > 0) return "up";
+  if (number < 0) return "down";
+  return "";
+}
+
+function kpiHtml(label, item, compareLabel) {
+  const delta = Number(item?.delta || 0);
+  const rate = item?.rate;
+  return `
+    <div class="business-kpi ${deltaClass(delta)}">
+      <span>${esc(label)}</span>
+      <strong>${esc(item?.sales || 0)}</strong>
+      <small>${esc(compareLabel)} ${esc(signedNumber(delta))} ${rate === null || rate === undefined ? "" : `(${esc(signedRate(rate))})`}</small>
+    </div>
+  `;
+}
+
+function renderBusinessKpis(report) {
+  const summary = report.summary || {};
+  const box = $("#businessKpis");
+  if (!box) return;
+  box.innerHTML = [
+    kpiHtml("今日销量", summary.today || {}, "较昨日"),
+    kpiHtml("本月累计", summary.month || {}, "较上月同期"),
+    kpiHtml("本年累计", summary.year || {}, "较去年同期"),
+    kpiHtml("当前范围", summary.range || {}, "较去年同期"),
+  ].join("");
+}
+
+function renderBusinessAlerts(report) {
+  const anomalies = report.anomalies || [];
+  const text = $("#businessAlertText");
+  const list = $("#businessAlertList");
+  const strip = $("#businessAlertStrip");
+  if (!text || !list || !strip) return;
+  strip.classList.toggle("danger", anomalies.length > 0);
+  text.textContent = anomalies.length
+    ? `${anomalies.length} 条需要处理，主要是超过 ${report.settings?.stale_days || 3} 天未更新的数据。`
+    : "暂无超过阈值的数据异常。";
+  list.innerHTML = anomalies.length
+    ? anomalies.map((item) => `
+      <div class="business-alert-row">
+        <strong>${esc(item.type)}</strong>
+        <span>${esc(item.dimension)} · ${esc(item.name)} · ${esc(item.message)}</span>
+        <em>${esc(item.latest_date || "-")}</em>
+      </div>
+    `).join("")
+    : `<div class="business-alert-row muted-row"><strong>正常</strong><span>当前筛选范围内没有需要处理的异常。</span><em>-</em></div>`;
+}
+
+function businessDimensionRows(dimension) {
+  return state.businessReport?.dimensions?.[dimension] || [];
+}
+
+function renderBusinessRankingTable(selector, rows, emptyText) {
+  const table = $(selector);
+  if (!table) return;
+  if (!rows.length) {
+    table.innerHTML = `<tbody><tr><td class="empty-table-cell">${esc(emptyText)}</td></tr></tbody>`;
+    return;
+  }
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>名称</th>
+        <th>平台</th>
+        <th>负责人</th>
+        <th class="num">当前销量</th>
+        <th class="num">去年同期</th>
+        <th class="num">同比件数</th>
+        <th class="num">同比率</th>
+        <th class="num">占比</th>
+        <th>状态</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map((row) => `
+        <tr>
+          <td><strong>${esc(row.name || "-")}</strong></td>
+          <td>${esc(row.platform || "-")}</td>
+          <td>${esc(row.owner || "-")}</td>
+          <td class="num strong">${esc(row.sales || 0)}</td>
+          <td class="num">${esc(row.compare_sales || 0)}</td>
+          <td class="num ${deltaClass(row.yoy_delta)}">${esc(signedNumber(row.yoy_delta || 0))}</td>
+          <td class="num ${deltaClass(row.yoy_delta)}">${esc(row.base_too_small ? "基数小" : signedRate(row.yoy_rate))}</td>
+          <td class="num">${esc(row.share || 0)}%</td>
+          <td><span class="status-pill ${row.stale ? "danger" : "ok"}">${esc(row.status || "正常")}</span></td>
+        </tr>
+      `).join("")}
+    </tbody>
+  `;
+}
+
+function renderBusinessTrendTable(dimension) {
+  const table = $("#businessTrendTable");
+  const trend = state.businessReport?.trends?.[dimension] || {};
+  const buckets = trend.buckets || [];
+  const rows = trend.rows || [];
+  if (!table) return;
+  if (!rows.length) {
+    table.innerHTML = `<tbody><tr><td class="empty-table-cell">暂无趋势数据。</td></tr></tbody>`;
+    return;
+  }
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th class="sticky-col">名称</th>
+        <th>平台</th>
+        <th>负责人</th>
+        <th class="num">合计</th>
+        ${buckets.map((bucket) => `<th class="num">${esc(bucket)}</th>`).join("")}
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map((row) => `
+        <tr>
+          <td class="sticky-col"><strong>${esc(row.name || "-")}</strong></td>
+          <td>${esc(row.platform || "-")}</td>
+          <td>${esc(row.owner || "-")}</td>
+          <td class="num strong">${esc(row.total || 0)}</td>
+          ${buckets.map((bucket) => `<td class="num">${row.values?.[bucket] ? esc(row.values[bucket]) : ""}</td>`).join("")}
+        </tr>
+      `).join("")}
+    </tbody>
+  `;
+}
+
+function setBusinessTab(tab) {
+  state.businessTab = tab || "overview";
+  document.querySelectorAll("[data-business-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.businessTab === state.businessTab);
+  });
+  const overview = $("#businessOverviewTables");
+  if (overview) overview.classList.toggle("hidden", state.businessTab !== "overview");
+  const trendPanel = $("#businessTrendPanel");
+  if (trendPanel) trendPanel.classList.toggle("hidden", state.businessTab === "overview");
+  const dimension = state.businessTab === "overview" ? "platform" : state.businessTab;
+  const titleMap = { platform: "平台趋势明细", owner: "业务员趋势明细", store: "店铺趋势明细" };
+  if ($("#businessTrendTitle")) $("#businessTrendTitle").textContent = titleMap[dimension] || "趋势明细";
+  renderBusinessTrendTable(dimension);
+}
+
+function renderBusinessReport() {
+  const report = state.businessReport || {};
+  const ownerMode = (currentOperator().role || "admin") === "owner";
+  renderBusinessKpis(report);
+  renderBusinessAlerts(report);
+  renderBusinessRankingTable("#businessPlatformTable", businessDimensionRows("platform"), "暂无平台数据。");
+  renderBusinessRankingTable("#businessOwnerTable", businessDimensionRows("owner"), "暂无业务员数据。");
+  renderBusinessRankingTable("#businessStoreTable", businessDimensionRows("store"), "暂无店铺数据。");
+  if ($("#businessStoreTableTitle")) $("#businessStoreTableTitle").textContent = ownerMode ? "我的店铺排行" : "店铺排行";
+  if ($("#businessStoreTableHint")) $("#businessStoreTableHint").textContent = ownerMode ? "只展示当前店长负责的店铺。" : "管理员可查看全部店铺。";
+  if (ownerMode && ["platform", "owner"].includes(state.businessTab)) {
+    state.businessTab = "store";
+  }
+  setBusinessTab(state.businessTab);
+}
+
+async function loadBusinessReport(showToastOnDone = false) {
+  if (!api.businessReport) return;
+  try {
+    state.businessReport = await api.businessReport(businessReportPayload());
+    renderBusinessReport();
+    if (showToastOnDone) showToast("经营报表已刷新");
+  } catch (error) {
+    showToast(userFacingError(error));
+  }
+}
+
 async function loadImportMatrix(showToastOnDone = false) {
   if (!api.importMatrix) return;
   try {
@@ -1595,6 +1828,7 @@ async function submitSalesEntry(index) {
     }
     await loadSales(false);
     await loadSalesReport(false);
+    await loadBusinessReport(false);
     await loadSalesCompare(false);
     focusNextSalesEntry(index);
     showToast("销量已保存");
@@ -3131,11 +3365,29 @@ function bindEvents() {
     button.addEventListener("click", () => setSalesFocus(button.dataset.salesFocus));
   });
   initializeSalesReportRange();
+  initializeBusinessRange();
   document.querySelectorAll("[data-sales-range]").forEach((button) => {
     button.addEventListener("click", () => applySalesReportRange(button.dataset.salesRange));
   });
+  document.querySelectorAll("[data-business-range]").forEach((button) => {
+    button.addEventListener("click", () => applyBusinessRange(button.dataset.businessRange));
+  });
   ["#salesReportDateFrom", "#salesReportDateTo"].forEach((selector) => {
     $(selector)?.addEventListener("change", clearSalesReportRangeShortcut);
+  });
+  ["#businessDateFrom", "#businessDateTo"].forEach((selector) => {
+    $(selector)?.addEventListener("change", clearBusinessRangeShortcut);
+  });
+  ["#businessGrain", "#businessPlatform", "#businessStore"].forEach((selector) => {
+    $(selector)?.addEventListener("change", () => loadBusinessReport(true));
+  });
+  document.querySelectorAll("[data-business-tab]").forEach((button) => {
+    button.addEventListener("click", () => setBusinessTab(button.dataset.businessTab));
+  });
+  $("#loadBusinessReportBtn")?.addEventListener("click", () => loadBusinessReport(true));
+  $("#refreshBusinessReportBtn")?.addEventListener("click", () => loadBusinessReport(true));
+  $("#toggleBusinessAlertsBtn")?.addEventListener("click", () => {
+    $("#businessAlertList")?.classList.toggle("hidden");
   });
   $("#loadSalesCompareBtn")?.addEventListener("click", () => loadSalesCompare(true));
   $("#loadSalesReportBtn")?.addEventListener("click", () => loadSalesReport(true));

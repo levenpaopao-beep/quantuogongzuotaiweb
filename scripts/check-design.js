@@ -68,6 +68,18 @@ expect(/\.daily-followup-row\s*\{[\s\S]*grid-template-columns:\s*minmax/.test(cs
 expect(/@media\s*\(max-width:\s*1260px\)\s*\{[\s\S]*\.daily-followup-row\s*\{\s*grid-template-columns:\s*1fr/.test(css), "每日督办缺少中小屏单列布局", [
   "督办指标较多，小屏必须改成单列，避免文字挤压。",
 ]);
+expect(html.includes('id="businessKpis"') && html.includes('id="businessAlertStrip"') && html.includes('id="businessTrendTable"'), "经营报表缺少经营视图分区", [
+  "经营报表应先看 KPI、异常提醒和趋势，不应只保留生成 Excel 的旧入口。",
+]);
+expect(renderer.includes("renderBusinessKpis") && renderer.includes("renderBusinessRankingTable") && renderer.includes("renderBusinessTrendTable"), "经营报表缺少可视化渲染逻辑", [
+  "平台、业务员、店铺排行和趋势明细需要在界面内直接可读。",
+]);
+expect(/\.business-kpi-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/.test(css), "经营报表 KPI 缺少桌面四列布局", [
+  "今日、本月、本年、当前范围四个指标应稳定并排，方便快速扫描。",
+]);
+expect(/@media\s*\(max-width:\s*1260px\)\s*\{[\s\S]*\.business-kpi-grid\s*\{\s*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/.test(css), "经营报表 KPI 缺少中屏双列布局", [
+  "中屏下 KPI 需要换成双列，避免数字和说明挤压。",
+]);
 
 const imageTags = [...html.matchAll(/<img\b[^>]*>/g)].map((match) => match[0]);
 const unsafeImages = imageTags.filter((tag) => !tag.includes("data-fallback-label"));

@@ -175,6 +175,8 @@ def command(argv):
         return ok(adapter.sales_report_payload(read_payload()))
     if name == "export-sales-report":
         return ok(adapter.export_sales_report_payload(read_payload()))
+    if name == "business-report":
+        return ok(adapter.business_report_payload(read_payload()))
     if name == "backup-reminder":
         return ok(adapter.backup_reminder_payload(read_payload()))
     if name == "import-matrix":

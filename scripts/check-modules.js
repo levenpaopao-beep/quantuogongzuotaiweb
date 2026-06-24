@@ -73,6 +73,7 @@ const importMatrix = runCli("import-matrix", admin);
 const rules = runCli("load-rules", admin);
 const salesCompare = runCli("sales-compare", admin);
 const erpSync = runCli("erp-sync", admin);
+const businessReport = runCli("business-report", admin);
 
 const modules = [
   {
@@ -122,6 +123,9 @@ const modules = [
     name: "经营报表",
     checks: [
       ["有报表页面入口", hasPage("reportsPage", "reports")],
+      ["有经营报表筛选、KPI和排行表", html.includes("businessReportShell") || (html.includes("business-kpi-grid") && html.includes("businessPlatformTable") && html.includes("businessTrendTable"))],
+      ["有经营报表接口", hasApi("businessReport", "api:business-report")],
+      ["CLI 返回经营报表结构", businessReport.summary && businessReport.dimensions && businessReport.trends],
       ["有报表卡片和输出记录", html.includes("reportCards") && html.includes("outputRows")],
       ["有报表生成前体检", html.includes("reportReadinessBar") && renderer.includes("renderReportReadiness") && renderer.includes("generateWeeklyReports")],
       ["有生成报表接口", hasApi("generateReport", "api:generate-report") && hasApi("generateWeekly", "api:generate-weekly")],

@@ -254,6 +254,31 @@ if (!renderReportCardsBody.includes('currentOperator().role === "owner"') || !re
     "店长可以查看已有经营输出，但单张报表生成按钮必须只给管理员。",
   ]);
 }
+const businessReportBody = functionBody(renderer, "renderBusinessReport");
+const loadBusinessReportBody = functionBody(renderer, "loadBusinessReport");
+if (
+  !html.includes('id="businessKpis"') ||
+  !html.includes('id="businessPlatformTable"') ||
+  !html.includes('id="businessOwnerTable"') ||
+  !html.includes('id="businessStoreTable"') ||
+  !html.includes('id="businessTrendTable"') ||
+  !preload.includes('businessReport:') ||
+  !main.includes('api:business-report')
+) {
+  fail("经营报表缺少可用视图或接口", [
+    "经营报表需要展示 KPI、平台/业务员/店铺排行和趋势明细，并通过桌面接口读取。",
+  ]);
+}
+if (!loadBusinessReportBody.includes("api.businessReport(") || !renderer.includes("initializeBusinessRange()") || !renderer.includes("#refreshBusinessReportBtn")) {
+  fail("经营报表未接入加载和刷新", [
+    "报表页打开后要能按默认时间范围加载，刷新按钮和筛选条件也要能重新查询。",
+  ]);
+}
+if (!businessReportBody.includes('currentOperator().role || "admin"') || !businessReportBody.includes('state.businessTab = "store"')) {
+  fail("经营报表缺少店长视角收敛", [
+    "店长视角不能进入全局平台/业务员分析，应自动收敛到店铺维度。",
+  ]);
+}
 const refreshAllBody = functionBody(renderer, "refreshAll");
 if (!refreshAllBody.includes("api.status(operatorPayload())")) {
   fail("桌面状态接口未带当前角色", [
