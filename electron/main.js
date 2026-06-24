@@ -241,6 +241,8 @@ function renderSmokeScript() {
       await openPage("rules", "#rulesPage.page-active", "系统设置页面");
       requireVisible("#erpSettingsForm", "ERP 接口设置");
       requireVisible("#doctorResult", "系统自检结果区");
+      requireVisible('[data-admin-only="backup-reminder"]', "管理员月度备份提醒");
+      requireVisible("#backupStatus", "管理员备份状态");
       if (role && user && switchButton) {
         role.value = "owner";
         user.value = "";
@@ -389,6 +391,7 @@ function renderSmokeScript() {
           if (visible('[data-report-action="generate-weekly"]')) errors.push("店长视角仍显示周报生成按钮");
           await openPage("rules", "#rulesPage.page-active", "店长系统设置页面");
           if (visible('[data-admin-only="system-check"]')) errors.push("店长视角仍显示系统自检管理员区");
+          if (visible('[data-admin-only="backup-reminder"]')) errors.push("店长隐藏月度备份提醒失败");
         }
         role.value = "admin";
         user.value = "管理员";

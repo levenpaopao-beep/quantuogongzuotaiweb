@@ -550,7 +550,7 @@ function renderReportReadiness() {
       <button class="tool-button" data-empty-page="sales" data-sales-focus="missing" type="button">查销量</button>
       <button class="tool-button" data-empty-page="imports" data-focus="import-matrix" data-import-focus="blocked" type="button">查导入</button>
       <button class="tool-button" data-empty-page="tasks" data-task-open-only="true" type="button">查任务</button>
-      ${ownerMode ? "" : '<button class="tool-button primary-mini" data-report-action="generate-weekly" type="button">生成就绪报表</button>'}
+      ${ownerMode ? "" : '<button class="tool-button primary-mini" data-admin-only="report-generate" data-report-action="generate-weekly" type="button">生成就绪报表</button>'}
     `;
     bindEmptyActions(actions);
     actions.querySelector('[data-report-action="generate-weekly"]')?.addEventListener("click", generateWeeklyReports);
