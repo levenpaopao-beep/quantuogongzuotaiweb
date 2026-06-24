@@ -1366,6 +1366,14 @@ async function loadSalesCompare(showToastOnDone = false) {
   }
 }
 
+async function refreshSalesForSelectedDate(showToastOnDone = true) {
+  state.salesFocus = "missing";
+  await loadSales(false);
+  await loadSalesCompare(false);
+  await loadSalesReport(false);
+  if (showToastOnDone) showToast("销量日期已刷新");
+}
+
 function salesReportPayload() {
   return operatorPayload({
     date_from: $("#salesReportDateFrom")?.value || "",
@@ -3040,11 +3048,8 @@ function bindEvents() {
   $("#refreshBtn")?.addEventListener("click", refreshAll);
   $("#todayGuideRefreshBtn")?.addEventListener("click", refreshAll);
   $("#dailyFollowupRefreshBtn")?.addEventListener("click", refreshAll);
-  $("#loadSalesBtn")?.addEventListener("click", async () => {
-    await loadSales(false);
-    await loadSalesCompare(false);
-    showToast("销量已刷新");
-  });
+  $("#salesDate")?.addEventListener("change", () => refreshSalesForSelectedDate(true));
+  $("#loadSalesBtn")?.addEventListener("click", () => refreshSalesForSelectedDate(true));
   $("#loadSalesHeaderBtn")?.addEventListener("click", async () => {
     state.salesFocus = "missing";
     await loadSales(false);

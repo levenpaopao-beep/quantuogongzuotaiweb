@@ -195,6 +195,12 @@ if (!renderer.includes("function focusNextSalesEntry(") || !functionBody(rendere
     "店长逐行填写销量时，保存成功后应自动聚焦下一条可填输入，减少每天重复点选。",
   ]);
 }
+const bindEventsBody = functionBody(renderer, "bindEvents");
+if (!renderer.includes("function refreshSalesForSelectedDate(") || !bindEventsBody.includes('$("#salesDate")?.addEventListener("change"')) {
+  fail("销量日期切换缺少自动刷新", [
+    "店长补填不同日期销量时，改日期后应自动刷新清单、差异和报表，不应必须再点读取日期。",
+  ]);
+}
 if (!html.includes('id="importHealthBar"') || !renderer.includes("function setImportFocus(") || !renderer.includes("importFocusRows")) {
   fail("数据导入页缺少缺口健康条", [
     "管理员和店长需要先看到缺失、待提交、完整店铺等汇总，再进入矩阵明细。",
