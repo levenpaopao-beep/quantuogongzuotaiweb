@@ -21,6 +21,7 @@ class MasterDataImportTest(unittest.TestCase):
         ws.append(["一弟", "15805182150", "Apetcircle", "小琴", "", "", "小琴", "", "", "", "temu"])
         ws.append(["二弟", "13003246055", "Fur Fit", "洁琳", "", "", "陆宝宝", "", "", "", "temu"])
         ws.append(["三弟", "13585986099", "Beautiful", "小琴", "", "", "小琴", "", "", "", "temu"])
+        ws.append(["大额", "", "Ozon Goose", "小琴", "", "", "", "", "", "", "ozon"])
         wb.save(path)
 
     def build_sales_workbook(self, path):
@@ -41,11 +42,13 @@ class MasterDataImportTest(unittest.TestCase):
 
             parsed = master_data.parse_owner_workbook(path)
 
-        self.assertEqual(len(parsed["assignments"]), 3)
+        self.assertEqual(len(parsed["assignments"]), 4)
         self.assertEqual(parsed["assignments"][0]["platform"], "Temu")
         self.assertEqual(parsed["assignments"][0]["store"], "一弟")
         self.assertEqual(parsed["assignments"][0]["store_name"], "Apetcircle")
         self.assertEqual(parsed["assignments"][0]["owner"], "小琴")
+        self.assertEqual(parsed["assignments"][3]["platform"], "Ozon")
+        self.assertEqual(parsed["assignments"][3]["store"], "大鹅")
         self.assertEqual([account["owner"] for account in parsed["accounts"]], ["小琴", "洁琳"])
 
     def test_save_operator_accounts_hashes_password_and_returns_initial_password_once(self):

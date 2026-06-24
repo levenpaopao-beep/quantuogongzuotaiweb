@@ -17,6 +17,7 @@ from daily_ops_sales import DailySalesStore, sales_record_id
 SHEIN_STORE_NAMES = {"琪琪", "童话", "加加", "宝宝", "牛牛", "大美", "二美", "美美", "元元"}
 CHINESE_NUMERAL_STORES = {"一", "二", "三", "四", "五", "六", "七", "八", "九", "十"}
 LONG_NUMERAL_STORES = {"十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十"}
+STORE_NAME_ALIASES = {"大额": "大鹅"}
 
 
 def now_text():
@@ -54,6 +55,8 @@ def clean_store_name(value):
     text = re.sub(r"[（(].*?[）)]", "", norm(value)).strip()
     if not text:
         return ""
+    if text in STORE_NAME_ALIASES:
+        return STORE_NAME_ALIASES[text]
     if text == "大弟":
         return "一弟"
     if text in CHINESE_NUMERAL_STORES:
