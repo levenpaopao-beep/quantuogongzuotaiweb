@@ -8,6 +8,7 @@ const main = fs.readFileSync(path.join(ROOT, "electron", "main.js"), "utf8");
 const html = fs.readFileSync(path.join(ROOT, "electron", "renderer.html"), "utf8");
 const windowsPackage = fs.readFileSync(path.join(ROOT, "build_windows_install_package_v2.py"), "utf8");
 const portablePackage = fs.readFileSync(path.join(ROOT, "build_portable_package.py"), "utf8");
+const migrationPackage = fs.readFileSync(path.join(ROOT, "build_project_migration_package.py"), "utf8");
 const readyCheck = fs.readFileSync(path.join(ROOT, "scripts", "check-ready.js"), "utf8");
 
 function fail(message, details = []) {
@@ -59,6 +60,10 @@ if (pkg.productName !== "PETCIRCLE跨境工作台") {
   fail("package.json 产品名不一致", [`当前 productName：${pkg.productName}`]);
 }
 
+if (pkg.name !== "petcircle-cross-border-workbench") {
+  fail("package.json 内部包名不一致", [`当前 name：${pkg.name}`]);
+}
+
 [
   ["README 标题", readme, "# PETCIRCLE跨境工作台"],
   ["Electron 窗口名", main, 'APP_NAME = "PETCIRCLE跨境工作台"'],
@@ -68,6 +73,7 @@ if (pkg.productName !== "PETCIRCLE跨境工作台") {
   ["Windows 安装包 ID", windowsPackage, 'APP_ID = "PETCIRCLECrossBorderWorkbench"'],
   ["绿色版包名", portablePackage, 'APP_NAME = "PETCIRCLE跨境工作台"'],
   ["绿色版英文包名", portablePackage, "PETCIRCLECrossBorderWorkbench_Portable"],
+  ["迁移包绿色版排除名", migrationPackage, "PETCIRCLECrossBorderWorkbench_Portable_260603"],
 ].forEach(([label, source, expected]) => {
   if (!source.includes(expected)) fail("系统名称交付一致性检查失败", [`${label} 缺少：${expected}`]);
 });
@@ -76,8 +82,9 @@ if (pkg.productName !== "PETCIRCLE跨境工作台") {
   "正在安装日常运营工作台",
   "日常运营工作台 v2.0",
   "DailyOpsWorkbench_v2.0_Setup",
+  "DailyOpsWorkbench_Portable_260603",
 ].forEach((legacy) => {
-  if (`${windowsPackage}\n${portablePackage}`.includes(legacy)) {
+  if (`${windowsPackage}\n${portablePackage}\n${migrationPackage}`.includes(legacy)) {
     fail("安装交付脚本仍包含旧系统名", [legacy]);
   }
 });

@@ -18,11 +18,11 @@ EXCLUDED_DIR_NAMES = {
 }
 
 EXCLUDED_OUTPUT_DIRS = {
-    "DailyOpsWorkbench_Portable_260603",
+    "PETCIRCLECrossBorderWorkbench_Portable_260603",
 }
 
 EXCLUDED_FILE_NAMES = {
-    "DailyOpsWorkbench_Portable_260603.zip",
+    "PETCIRCLECrossBorderWorkbench_Portable_260603.zip",
 }
 
 EXCLUDED_SUFFIXES = {
@@ -54,7 +54,7 @@ README = """# 日常运营工作项目迁移包
 - `node_modules`
 - Python / JS 缓存文件
 - Git / Codex 内部状态目录
-- 已生成的绿色安装包 `DailyOpsWorkbench_Portable_260603.zip`
+- 已生成的绿色安装包 `PETCIRCLECrossBorderWorkbench_Portable_260603.zip`
 
 这些内容不是继续设计项目所必需，且会显著增大体积。
 
