@@ -2432,6 +2432,42 @@ def handle_backup_api(action, headers, payload=None):
         return json_bytes({"ok": False, "error": str(exc)}, status=500)
 
 
+def handle_business_report_api(headers, payload=None):
+    try:
+        operator = operator_from_token(token_from_headers(headers))
+        if operator.get("role") not in {"admin", "owner"}:
+            return json_bytes({"ok": False, "error": "经营报表需要先登录管理员或店长身份"}, status=403)
+        payload = payload or {}
+        role = operator.get("role", "admin")
+        user = operator.get("user", "")
+        if role == "owner":
+            platform = payload.get("platform", "")
+            store = payload.get("store", "")
+            if store:
+                assignments = load_store_owner_assignments()
+                owned_pairs = {
+                    (norm(item.get("platform")), daily_ops_master_data.clean_store_name(item.get("store")))
+                    for item in assignments
+                    if norm(item.get("owner")) == norm(user)
+                }
+                if (norm(platform), daily_ops_master_data.clean_store_name(store)) not in owned_pairs:
+                    return json_bytes({"ok": False, "error": "店长只能查询自己负责店铺的经营报表"}, status=403)
+        data = business_report({
+            "role": role,
+            "user": "" if role == "admin" else user,
+            "date_from": payload.get("date_from", ""),
+            "date_to": payload.get("date_to", ""),
+            "platform": payload.get("platform", ""),
+            "store": payload.get("store", ""),
+            "grain": payload.get("grain", "month"),
+        })
+        return json_bytes({"ok": True, "report": data})
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
 HTML_PAGE = r"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -2526,6 +2562,38 @@ HTML_PAGE = r"""<!doctype html>
     .overview-card { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; }
     .overview-card span { display:block; color:var(--muted); font-size:12px; }
     .overview-card strong { display:block; font-size:24px; margin-top:5px; }
+    .upgrade-backdrop { position:fixed; inset:0; z-index:20; display:grid; place-items:center; background:rgba(15,23,42,.38); padding:20px; }
+    .upgrade-dialog { width:min(620px,100%); border-radius:12px; background:#fff; border:1px solid var(--line); box-shadow:0 24px 70px rgba(15,23,42,.25); padding:22px; }
+    .upgrade-dialog h2 { font-size:22px; margin:0 0 8px; }
+    .upgrade-list { display:grid; gap:8px; margin:14px 0; color:#334155; }
+    .upgrade-list div { border:1px solid #e5ebf3; border-radius:8px; padding:9px 10px; background:#fbfcfe; }
+    .business-report-web { display:grid; gap:12px; }
+    .business-filter-web { display:grid; grid-template-columns:repeat(7,minmax(110px,1fr)); gap:8px; align-items:center; }
+    .business-filter-web input, .business-filter-web select { width:100%; }
+    .business-shortcuts { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+    .business-shortcuts button { border:1px solid var(--line); border-radius:6px; background:#fff; color:#17324d; padding:7px 10px; cursor:pointer; font-weight:600; }
+    .business-shortcuts button.active { background:#e8eef6; border-color:#b9c8da; }
+    .business-alert-web { border:1px solid #ffd8a8; background:#fff8ed; border-radius:8px; padding:10px 12px; display:flex; justify-content:space-between; gap:12px; align-items:center; }
+    .business-alert-web.ok { border-color:#c7e1cf; background:#f1faf4; }
+    .business-kpis-web { display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:8px; }
+    .business-kpi-web { border:1px solid var(--line); border-radius:8px; background:#fff; padding:12px; }
+    .business-kpi-web span { display:block; color:var(--muted); font-size:12px; }
+    .business-kpi-web strong { display:block; margin-top:5px; font-size:24px; }
+    .business-kpi-web small { display:block; margin-top:5px; color:var(--muted); }
+    .business-kpi-web.up strong, .business-kpi-web.up small { color:var(--green); }
+    .business-kpi-web.down strong, .business-kpi-web.down small { color:var(--red); }
+    .business-tabs-web { display:flex; gap:8px; flex-wrap:wrap; }
+    .business-tabs-web button { border:1px solid var(--line); border-radius:6px; background:#fff; padding:8px 12px; cursor:pointer; font-weight:700; }
+    .business-tabs-web button.active { background:#24324d; color:#fff; border-color:#24324d; }
+    .business-table-grid-web { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+    .business-table-wrap-web { overflow:auto; max-height:520px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+    .business-table-web { min-width:760px; }
+    .business-table-web th { position:sticky; top:0; z-index:1; }
+    .business-table-web td.num, .business-table-web th.num { text-align:right; font-variant-numeric:tabular-nums; }
+    .business-table-web .up { color:var(--green); font-weight:700; }
+    .business-table-web .down { color:var(--red); font-weight:700; }
+    .business-trend-panel-web { display:none; }
+    .business-trend-panel-web.active { display:block; }
     .overview-layout { display:grid; grid-template-columns:minmax(0,2fr) minmax(280px,1fr); gap:12px; align-items:start; }
     .overview-table-wrap { overflow:auto; max-height:560px; border:1px solid var(--line); border-radius:8px; background:#fff; }
     .overview-table { min-width:980px; table-layout:fixed; }
@@ -2584,16 +2652,32 @@ HTML_PAGE = r"""<!doctype html>
     .backup-tools { margin-top:14px; display:grid; gap:10px; }
     .backup-tools .row input { min-width:360px; flex:1; }
     @media (max-width:1180px) { .cards, .source-grid { grid-template-columns:repeat(2,minmax(240px,1fr)); } }
-    @media (max-width:1180px) { .overview-layout { grid-template-columns:1fr; } .overview-grid { grid-template-columns:repeat(3,minmax(120px,1fr)); } }
-    @media (max-width:760px) { .app { grid-template-columns:1fr; } aside { position:static; } .cards, .source-grid, .task-summary, .task-filters, .owner-entry, .overview-grid { grid-template-columns:1fr; } main { padding:16px; } header, .weekly-hero { align-items:flex-start; flex-direction:column; gap:12px; } .report-card { height:380px; } .weekly-source-card { height:350px; } }
+    @media (max-width:1180px) { .overview-layout { grid-template-columns:1fr; } .overview-grid { grid-template-columns:repeat(3,minmax(120px,1fr)); } .business-filter-web, .business-table-grid-web { grid-template-columns:1fr; } .business-kpis-web { grid-template-columns:repeat(2,minmax(150px,1fr)); } }
+    @media (max-width:760px) { .app { grid-template-columns:1fr; } aside { position:static; } .cards, .source-grid, .task-summary, .task-filters, .owner-entry, .overview-grid, .business-kpis-web { grid-template-columns:1fr; } main { padding:16px; } header, .weekly-hero, .business-alert-web { align-items:flex-start; flex-direction:column; gap:12px; } .report-card { height:380px; } .weekly-source-card { height:350px; } }
   </style>
 </head>
 <body class="task-dashboard-collapsed">
+<div id="upgradeDialog" class="upgrade-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="upgradeTitle">
+  <div class="upgrade-dialog">
+    <h2 id="upgradeTitle">Web 版已升级为多角色经营工作台</h2>
+    <div class="muted">旧的个人工作台入口已不再作为主流程使用。现在管理员看全局经营报表，店长只看自己负责店铺。</div>
+    <div class="upgrade-list">
+      <div><strong>经营报表</strong>：支持今日、本月、本年、当前范围、同比和异常提醒。</div>
+      <div><strong>多角色</strong>：管理员看平台、业务员、店铺；店长只看自己店铺。</div>
+      <div><strong>数据异常</strong>：超过 3 天未更新会进入“需要处理”。</div>
+    </div>
+    <div class="row" style="justify-content:flex-end;">
+      <button class="secondary" onclick="dismissUpgradeDialog(true)">不再提示</button>
+      <button class="primary" onclick="dismissUpgradeDialog(false); switchTab('reports');">进入经营报表</button>
+    </div>
+  </div>
+</div>
 <div class="app">
   <aside>
     <div class="brand">PETCIRCLE跨境工作台 v2.0</div>
     <nav>
       <button class="active" data-tab="overview" data-admin-only="1">数据总览</button>
+      <button data-tab="reports">经营报表</button>
       <button data-tab="tasks">任务包中心</button>
       <button data-tab="weekly" data-admin-only="1">每周工作流</button>
       <button data-tab="rules" data-admin-only="1">规则设置</button>
@@ -2655,6 +2739,60 @@ HTML_PAGE = r"""<!doctype html>
             <div id="overviewSourceRows" class="result-list"></div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section id="reports" class="section">
+      <div class="panel business-report-web" id="businessReportShell">
+        <div>
+          <h2>经营报表</h2>
+          <div class="muted">管理员看全局平台、业务员、店铺；店长只看自己负责店铺。报表数据来自基础销量台账。</div>
+        </div>
+        <div class="business-shortcuts" id="businessShortcuts">
+          <button data-range="7d" onclick="applyBusinessRangeWeb('7d')">最近7天</button>
+          <button data-range="30d" onclick="applyBusinessRangeWeb('30d')">最近30天</button>
+          <button data-range="90d" onclick="applyBusinessRangeWeb('90d')">最近90天</button>
+          <button data-range="half-year" onclick="applyBusinessRangeWeb('half-year')">半年</button>
+          <button data-range="1y" onclick="applyBusinessRangeWeb('1y')">一年</button>
+          <button data-range="month" onclick="applyBusinessRangeWeb('month')">自然月</button>
+          <button data-range="year" onclick="applyBusinessRangeWeb('year')">自然年</button>
+        </div>
+        <div class="business-filter-web">
+          <input id="businessDateFrom" type="date">
+          <input id="businessDateTo" type="date">
+          <select id="businessGrain"><option value="day">按日</option><option value="month" selected>按月</option><option value="year">按年</option></select>
+          <select id="businessPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option><option>速卖通</option><option>TK</option><option>Ozon</option></select>
+          <input id="businessStore" placeholder="店铺">
+          <button class="primary" onclick="loadBusinessReportWeb(true)">查询</button>
+          <button class="secondary" onclick="loadBusinessReportWeb(true)">刷新</button>
+        </div>
+        <div id="businessAlertWeb" class="business-alert-web ok"><strong>需要处理</strong><span>请先查询经营报表。</span></div>
+        <div class="business-kpis-web" id="businessKpis"></div>
+        <div class="business-tabs-web" id="businessTabs">
+          <button class="active" data-business-tab="overview" onclick="setBusinessTabWeb('overview')">经营概览</button>
+          <button data-business-tab="platform" data-admin-only="1" onclick="setBusinessTabWeb('platform')">平台分析</button>
+          <button data-business-tab="owner" data-admin-only="1" onclick="setBusinessTabWeb('owner')">业务员分析</button>
+          <button data-business-tab="store" onclick="setBusinessTabWeb('store')">店铺分析</button>
+        </div>
+        <div id="businessOverviewTables" class="business-table-grid-web">
+          <div>
+            <h2 data-admin-only="1">平台排行</h2>
+            <div class="business-table-wrap-web" data-admin-only="1"><table class="business-table-web" id="businessPlatformTable"></table></div>
+          </div>
+          <div>
+            <h2 data-admin-only="1">业务员排行</h2>
+            <div class="business-table-wrap-web" data-admin-only="1"><table class="business-table-web" id="businessOwnerTable"></table></div>
+          </div>
+          <div>
+            <h2 id="businessStoreTitle">店铺排行</h2>
+            <div class="business-table-wrap-web"><table class="business-table-web" id="businessStoreTable"></table></div>
+          </div>
+        </div>
+        <div id="businessTrendPanel" class="business-trend-panel-web">
+          <h2 id="businessTrendTitle">趋势明细</h2>
+          <div class="business-table-wrap-web"><table class="business-table-web" id="businessTrendTable"></table></div>
+        </div>
+        <div class="status" id="businessReportStatus"></div>
       </div>
     </section>
 
@@ -2810,7 +2948,9 @@ let expandedTaskPackageId = "";
 let ownerOptions = [];
 let operatorToken = localStorage.getItem('operatorToken') || '';
 let operatorSession = JSON.parse(localStorage.getItem('operatorSession') || 'null');
-const titles = {overview:'数据总览', tasks:'任务包中心', weekly:'每周工作流', rules:'规则设置', search:'基础数据查询', files:'输出文件'};
+let businessReport = null;
+let businessTab = 'overview';
+const titles = {overview:'数据总览', reports:'经营报表', tasks:'任务包中心', weekly:'每周工作流', rules:'规则设置', search:'基础数据查询', files:'输出文件'};
 document.querySelectorAll('nav button').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
@@ -2853,6 +2993,16 @@ function renderOperator(){
   applyRoleVisibility();
   updateOwnerEntryLink();
 }
+function showUpgradeDialog(){
+  if(localStorage.getItem('dailyOpsWebUpgradeDismissed') === '1') return;
+  const dialog = document.getElementById('upgradeDialog');
+  if(dialog) dialog.classList.remove('hidden');
+}
+function dismissUpgradeDialog(remember){
+  if(remember) localStorage.setItem('dailyOpsWebUpgradeDismissed', '1');
+  const dialog = document.getElementById('upgradeDialog');
+  if(dialog) dialog.classList.add('hidden');
+}
 function defaultOpenTasksForOwner(){
   const openOnly = document.getElementById('taskOpenOnly');
   const ownerOpenOnly = document.getElementById('taskOwnerOpenOnly');
@@ -2869,11 +3019,12 @@ function clearOperatorSession(){
   renderOperator();
 }
 function switchTab(tab){
-  if(!operatorSession && tab === 'overview') tab = 'tasks';
-  if(operatorSession?.role === 'owner' && tab !== 'tasks') tab = 'tasks';
+  if(!operatorSession && ['overview', 'reports'].includes(tab)) tab = 'tasks';
+  if(operatorSession?.role === 'owner' && !['tasks', 'reports'].includes(tab)) tab = 'reports';
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === tab));
   document.getElementById('pageTitle').textContent = titles[tab] || titles.tasks;
+  if(tab === 'reports') loadBusinessReportWeb(false);
 }
 function applyRoleVisibility(){
   const ownerMode = operatorSession?.role === 'owner';
@@ -2883,7 +3034,7 @@ function applyRoleVisibility(){
   if(title) title.textContent = ownerMode ? '我的任务包' : '管理员任务包中心';
   if(ownerMode) document.body.classList.add('task-dashboard-collapsed');
   updateTaskDashboardToggle();
-  if(ownerMode) switchTab('tasks');
+  if(ownerMode) switchTab('reports');
 }
 function updateTaskDashboardToggle(){
   const btn = document.getElementById('taskDashboardToggle');
@@ -2924,6 +3075,172 @@ function renderOverview(){
   if(sourceRows){
     const groups = appStatus?.source_groups || [];
     sourceRows.innerHTML = groups.length ? groups.map(item => `<div class="result-item"><strong>${esc(item.name || '')}</strong><div class="muted">${esc(item.status || '')} · 文件 ${item.count || 0} · 记录 ${item.total_rows || '-'}</div></div>`).join('') : '<div class="muted">暂无数据源状态。</div>';
+  }
+}
+function localDateText(date){
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+function initializeBusinessDatesWeb(){
+  const endInput = document.getElementById('businessDateTo');
+  const startInput = document.getElementById('businessDateFrom');
+  if(!endInput || !startInput || startInput.value || endInput.value) return;
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(end.getDate() - 29);
+  startInput.value = localDateText(start);
+  endInput.value = localDateText(end);
+  setBusinessRangeActiveWeb('30d');
+}
+function setBusinessRangeActiveWeb(range){
+  document.querySelectorAll('#businessShortcuts [data-range]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.range === range);
+  });
+}
+function applyBusinessRangeWeb(range){
+  const end = new Date();
+  const start = new Date(end);
+  if(range === '7d') start.setDate(end.getDate() - 6);
+  if(range === '30d') start.setDate(end.getDate() - 29);
+  if(range === '90d') start.setDate(end.getDate() - 89);
+  if(range === 'half-year') start.setMonth(end.getMonth() - 6);
+  if(range === '1y') start.setFullYear(end.getFullYear() - 1);
+  if(range === 'month') start.setDate(1);
+  if(range === 'year'){ start.setMonth(0); start.setDate(1); }
+  document.getElementById('businessDateFrom').value = localDateText(start);
+  document.getElementById('businessDateTo').value = localDateText(end);
+  setBusinessRangeActiveWeb(range);
+  loadBusinessReportWeb(true);
+}
+function signedNumber(value){
+  const n = Number(value || 0);
+  return n > 0 ? `+${n}` : String(n);
+}
+function signedRate(value){
+  if(value === null || value === undefined) return '-';
+  const n = Number(value || 0);
+  return `${n > 0 ? '+' : ''}${n}%`;
+}
+function deltaClass(value){
+  const n = Number(value || 0);
+  if(n > 0) return 'up';
+  if(n < 0) return 'down';
+  return '';
+}
+function kpiWeb(label, item, compareLabel){
+  const delta = Number(item?.delta || 0);
+  const rate = item?.rate;
+  return `<div class="business-kpi-web ${deltaClass(delta)}"><span>${esc(label)}</span><strong>${esc(item?.sales || 0)}</strong><small>${esc(compareLabel)} ${esc(signedNumber(delta))}${rate === null || rate === undefined ? '' : ` (${esc(signedRate(rate))})`}</small></div>`;
+}
+function renderBusinessKpisWeb(report){
+  const box = document.getElementById('businessKpis');
+  if(!box) return;
+  const s = report?.summary || {};
+  box.innerHTML = [
+    kpiWeb('今日销量', s.today || {}, '较昨日'),
+    kpiWeb('本月累计', s.month || {}, '较上月同期'),
+    kpiWeb('本年累计', s.year || {}, '较去年同期'),
+    kpiWeb('当前范围', s.range || {}, '较去年同期'),
+  ].join('');
+}
+function renderBusinessAlertWeb(report){
+  const box = document.getElementById('businessAlertWeb');
+  if(!box) return;
+  const anomalies = report?.anomalies || [];
+  box.classList.toggle('ok', !anomalies.length);
+  box.innerHTML = anomalies.length
+    ? `<strong>需要处理</strong><span>${anomalies.length} 条异常：${esc(anomalies.slice(0, 3).map(item => item.message).join('；'))}</span>`
+    : '<strong>需要处理</strong><span>暂无超过阈值的数据异常。</span>';
+}
+function businessRows(dimension){
+  return businessReport?.dimensions?.[dimension] || [];
+}
+function renderBusinessTableWeb(id, rows, emptyText){
+  const table = document.getElementById(id);
+  if(!table) return;
+  if(!rows.length){
+    table.innerHTML = `<tbody><tr><td>${esc(emptyText)}</td></tr></tbody>`;
+    return;
+  }
+  table.innerHTML = `<thead><tr><th>名称</th><th>平台</th><th>负责人</th><th class="num">当前销量</th><th class="num">去年同期</th><th class="num">同比件数</th><th class="num">同比率</th><th class="num">占比</th><th>状态</th></tr></thead><tbody>${rows.map(row => `<tr>
+    <td><strong>${esc(row.name || '-')}</strong></td>
+    <td>${esc(row.platform || '-')}</td>
+    <td>${esc(row.owner || '-')}</td>
+    <td class="num"><strong>${esc(row.sales || 0)}</strong></td>
+    <td class="num">${esc(row.compare_sales || 0)}</td>
+    <td class="num ${deltaClass(row.yoy_delta)}">${esc(signedNumber(row.yoy_delta || 0))}</td>
+    <td class="num ${deltaClass(row.yoy_delta)}">${esc(row.base_too_small ? '基数小' : signedRate(row.yoy_rate))}</td>
+    <td class="num">${esc(row.share || 0)}%</td>
+    <td>${esc(row.status || '正常')}</td>
+  </tr>`).join('')}</tbody>`;
+}
+function renderBusinessTrendWeb(dimension){
+  const table = document.getElementById('businessTrendTable');
+  const trend = businessReport?.trends?.[dimension] || {};
+  const buckets = trend.buckets || [];
+  const rows = trend.rows || [];
+  if(!table) return;
+  if(!rows.length){
+    table.innerHTML = '<tbody><tr><td>暂无趋势数据。</td></tr></tbody>';
+    return;
+  }
+  table.innerHTML = `<thead><tr><th>名称</th><th>平台</th><th>负责人</th><th class="num">合计</th>${buckets.map(bucket => `<th class="num">${esc(bucket)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>
+    <td><strong>${esc(row.name || '-')}</strong></td>
+    <td>${esc(row.platform || '-')}</td>
+    <td>${esc(row.owner || '-')}</td>
+    <td class="num"><strong>${esc(row.total || 0)}</strong></td>
+    ${buckets.map(bucket => `<td class="num">${row.values?.[bucket] ? esc(row.values[bucket]) : ''}</td>`).join('')}
+  </tr>`).join('')}</tbody>`;
+}
+function setBusinessTabWeb(tab){
+  businessTab = tab || 'overview';
+  if(operatorSession?.role === 'owner' && ['platform', 'owner'].includes(businessTab)) businessTab = 'store';
+  document.querySelectorAll('#businessTabs [data-business-tab]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.businessTab === businessTab);
+  });
+  const overview = document.getElementById('businessOverviewTables');
+  const trend = document.getElementById('businessTrendPanel');
+  if(overview) overview.classList.toggle('hidden', businessTab !== 'overview');
+  if(trend) trend.classList.toggle('active', businessTab !== 'overview');
+  const dimension = businessTab === 'overview' ? 'platform' : businessTab;
+  const titleMap = {platform:'平台趋势明细', owner:'业务员趋势明细', store:'店铺趋势明细'};
+  const title = document.getElementById('businessTrendTitle');
+  if(title) title.textContent = titleMap[dimension] || '趋势明细';
+  renderBusinessTrendWeb(dimension);
+}
+function renderBusinessReportWeb(){
+  const ownerMode = operatorSession?.role === 'owner';
+  renderBusinessKpisWeb(businessReport);
+  renderBusinessAlertWeb(businessReport);
+  renderBusinessTableWeb('businessPlatformTable', businessRows('platform'), '暂无平台数据。');
+  renderBusinessTableWeb('businessOwnerTable', businessRows('owner'), '暂无业务员数据。');
+  renderBusinessTableWeb('businessStoreTable', businessRows('store'), '暂无店铺数据。');
+  const storeTitle = document.getElementById('businessStoreTitle');
+  if(storeTitle) storeTitle.textContent = ownerMode ? '我的店铺排行' : '店铺排行';
+  if(ownerMode && ['platform', 'owner'].includes(businessTab)) businessTab = 'store';
+  setBusinessTabWeb(businessTab);
+}
+async function loadBusinessReportWeb(showMessage=false){
+  if(!operatorSession) return;
+  initializeBusinessDatesWeb();
+  const st = document.getElementById('businessReportStatus');
+  const params = new URLSearchParams({
+    date_from: document.getElementById('businessDateFrom')?.value || '',
+    date_to: document.getElementById('businessDateTo')?.value || '',
+    grain: document.getElementById('businessGrain')?.value || 'month',
+    platform: document.getElementById('businessPlatform')?.value || '',
+    store: document.getElementById('businessStore')?.value || '',
+  });
+  if(st) st.textContent = '正在读取经营报表...';
+  try {
+    const res = await api('/api/business-report?' + params.toString());
+    businessReport = res.report;
+    renderBusinessReportWeb();
+    if(st) st.innerHTML = `<span class="ok">经营报表已更新：</span>${esc(businessReport.filters.date_from)} 至 ${esc(businessReport.filters.date_to)}`;
+  } catch(e) {
+    if(st) st.innerHTML = `<span class="bad">${esc(e.message)}</span>`;
   }
 }
 function ownerEntryUrl(owner){
@@ -3055,6 +3372,7 @@ async function refreshStatus(){
     appStatus = await api('/api/status');
     document.getElementById('statusLine').textContent = `当前版本 ${appStatus.version || 'v2.0'}，Temu数据源 ${appStatus.temu_files} 个，Shein数据源 ${appStatus.shein_files} 个，ERP数据源 ${appStatus.erp_files} 个，基础库 ${appStatus.database.tables} 表 / ${appStatus.database.rows} 行`;
     renderReports(); renderOutputs(); renderWeeklySources(); renderRules(); renderOverview(); renderOperator(); loadTasks(false);
+    loadBusinessReportWeb(false);
     loadOwnerOptions();
     loadStoreOwners();
     updateReportOutputCapacity();
@@ -3756,6 +4074,8 @@ function renderOutputs(){
 }
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 applyEntryParams();
+initializeBusinessDatesWeb();
+showUpgradeDialog();
 refreshStatus();
 </script>
 </body>
@@ -3813,6 +4133,15 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 self.send_payload(*handle_owners_api(self.headers))
             elif parsed.path == "/api/store-owners":
                 self.send_payload(*handle_store_owners_api("GET", self.headers))
+            elif parsed.path == "/api/business-report":
+                params = parse_qs(parsed.query)
+                self.send_payload(*handle_business_report_api(self.headers, {
+                    "date_from": params.get("date_from", [""])[0],
+                    "date_to": params.get("date_to", [""])[0],
+                    "platform": params.get("platform", [""])[0],
+                    "store": params.get("store", [""])[0],
+                    "grain": params.get("grain", ["month"])[0],
+                }))
             elif parsed.path == "/download":
                 self.handle_download(parsed)
             else:

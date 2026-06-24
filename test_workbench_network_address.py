@@ -59,6 +59,21 @@ class WorkbenchNetworkAddressTest(unittest.TestCase):
         self.assertIn('id="weeklySources"', html)
         self.assertIn("weekly-source-card", html)
 
+    def test_web_workbench_exposes_business_report_upgrade(self):
+        html = daily_ops_app.HTML_PAGE
+        source = (ROOT / "daily_ops_app.py").read_text(encoding="utf-8")
+        self.assertIn('data-tab="reports"', html)
+        self.assertIn('id="businessReportShell"', html)
+        self.assertIn('id="businessKpis"', html)
+        self.assertIn('id="businessPlatformTable"', html)
+        self.assertIn('id="businessOwnerTable"', html)
+        self.assertIn('id="businessStoreTable"', html)
+        self.assertIn('id="businessTrendTable"', html)
+        self.assertIn('id="upgradeDialog"', html)
+        self.assertIn("Web 版已升级为多角色经营工作台", html)
+        self.assertIn('/api/business-report', html)
+        self.assertIn('parsed.path == "/api/business-report"', source)
+
     def test_uploaded_xls_is_converted_to_xlsx_before_recording(self):
         with TemporaryDirectory() as tmp:
             folder = Path(tmp)
