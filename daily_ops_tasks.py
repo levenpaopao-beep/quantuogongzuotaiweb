@@ -429,6 +429,8 @@ class OperationTaskStore:
             rows = [row for row in rows if int(row.get("rejection_count") or 0) > 0]
         if norm(open_only) in {"1", "true", "是", "未完成", "待办"}:
             rows = [row for row in rows if norm(row.get("status")) != STATUS_DONE]
+            if role != "admin":
+                rows = [row for row in rows if norm(row.get("status")) != STATUS_APPROVED]
         return sorted(rows, key=task_sort_key)
 
     def summary(self, rows=None, now=None):

@@ -257,7 +257,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(summary["unassigned"], 1)
             self.assertEqual(summary["by_owner"], {"小琴": 1})
 
-    def test_open_only_filter_hides_completed_tasks_but_keeps_active_followups(self):
+    def test_open_only_filter_hides_completed_tasks_and_owner_approved_followups(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
@@ -273,10 +273,13 @@ class OperationTaskStoreTest(unittest.TestCase):
             active_task = store.submit_owner_action(rows[1]["id"], actor="小琴", action="继续观察", remark="后台继续观察")
             store.review_task(active_task["id"], admin="管理员", decision="通过", remark="同意")
 
-            open_rows = store.list_tasks(role="owner", user="小琴", open_only="1")
-            self.assertEqual([row["status"] for row in open_rows], [daily_ops_tasks.STATUS_APPROVED])
-            self.assertEqual(open_rows[0]["merchant_code"], "B")
-            self.assertEqual(store.summary(open_rows)["total"], 1)
+            owner_open_rows = store.list_tasks(role="owner", user="小琴", open_only="1")
+            admin_open_rows = store.list_tasks(role="admin", open_only="1")
+
+            self.assertEqual(owner_open_rows, [])
+            self.assertEqual([row["status"] for row in admin_open_rows], [daily_ops_tasks.STATUS_APPROVED])
+            self.assertEqual(admin_open_rows[0]["merchant_code"], "B")
+            self.assertEqual(store.summary(admin_open_rows)["total"], 1)
 
     def test_concurrent_owner_submissions_do_not_overwrite_each_other(self):
         with TemporaryDirectory() as tmp:
