@@ -49,6 +49,25 @@ class ErpSyncTest(unittest.TestCase):
             self.assertEqual(ws.cell(2, 1).value, "SKU-XL")
             wb.close()
 
+    def test_stock_rows_keep_warehouse_and_unified_merchant_code(self):
+        rows = daily_ops_erp.normalize_stock_rows([{
+            "shop_no": "PETCIRCLE",
+            "shop_name": "宠物圈",
+            "warehouse_no": "CW001",
+            "warehouse_name": "宠物圈仓库",
+            "spec_no": "SKU-XL",
+            "goods_name": "猫抓板",
+            "spec_name": "XL",
+            "stock_num": 12,
+        }])
+
+        self.assertEqual(rows[0]["仓库编号"], "CW001")
+        self.assertEqual(rows[0]["仓库"], "宠物圈仓库")
+        self.assertEqual(rows[0]["商家编码（新）"], "SKU-XL")
+        self.assertEqual(rows[0]["商家编码"], "SKU-XL")
+        self.assertEqual(rows[0]["规格名称"], "XL")
+        self.assertEqual(rows[0]["可销库存"], "12")
+
     def test_manual_sync_reads_multiple_pages_and_caps_stock_rows(self):
         settings = {
             "base_url": "https://api.wangdian.cn/openapi2",
@@ -88,12 +107,22 @@ class ErpSyncTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.object(daily_ops_erp, "post_api", side_effect=fake_post):
             result = daily_ops_erp.manual_sync(settings, Path(tmp))
 
-        self.assertEqual(result["status"], "synced")
-        self.assertEqual(result["product_count"], 3)
-        self.assertEqual(result["stock_count"], 3)
-        self.assertEqual(result["product_pages"], 2)
-        self.assertEqual(result["stock_pages"], 2)
-        self.assertIn("已达到拉取上限 3 条", result["warnings"])
+            self.assertEqual(result["status"], "synced")
+            self.assertEqual(result["product_count"], 3)
+            self.assertEqual(result["stock_count"], 3)
+            self.assertEqual(result["product_pages"], 2)
+            self.assertEqual(result["stock_pages"], 2)
+            self.assertIn("已达到拉取上限 3 条", result["warnings"])
+
+            stock_path = Path(result["stock_file"])
+            wb = load_workbook(stock_path)
+            ws = wb.active
+            headers = [cell.value for cell in ws[1]]
+            self.assertIn("仓库", headers)
+            self.assertIn("商家编码（新）", headers)
+            self.assertIn("规格名称", headers)
+            self.assertEqual(ws.cell(2, headers.index("商家编码（新）") + 1).value, "S-1")
+            wb.close()
 
 
 if __name__ == "__main__":

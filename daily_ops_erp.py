@@ -222,12 +222,16 @@ def normalize_stock_rows(items):
     for item in items:
         if not isinstance(item, dict):
             continue
+        merchant_code = _text(item.get("spec_no") or item.get("match_code") or item.get("outer_id"))
         rows.append({
             "店铺编号": _text(item.get("shop_no")),
             "店铺": _text(item.get("shop_name")),
+            "仓库编号": _text(item.get("warehouse_no") or item.get("warehouse_id")),
+            "仓库": _text(item.get("warehouse_name") or item.get("warehouse")),
             "平台货品编码": _text(item.get("api_goods_no") or item.get("goods_no")),
             "平台规格编码": _text(item.get("api_spec_no") or item.get("spec_no")),
-            "商家编码": _text(item.get("spec_no") or item.get("match_code") or item.get("outer_id")),
+            "商家编码（新）": merchant_code,
+            "商家编码": merchant_code,
             "货品名称": _text(item.get("goods_name") or item.get("api_goods_name")),
             "规格名称": _text(item.get("spec_name") or item.get("api_spec_name")),
             "可销库存": _text(item.get("stock_num") or item.get("available_stock") or item.get("stock")),
@@ -276,7 +280,7 @@ def manual_sync(settings, erp_dir, now=None):
     )
     stock_file = _write_rows(
         erp_dir / f"erp库存同步_{stamp}.xlsx",
-        ["店铺编号", "店铺", "平台货品编码", "平台规格编码", "商家编码", "货品名称", "规格名称", "可销库存", "修改时间", "来源接口"],
+        ["店铺编号", "店铺", "仓库编号", "仓库", "平台货品编码", "平台规格编码", "商家编码（新）", "商家编码", "货品名称", "规格名称", "可销库存", "修改时间", "来源接口"],
         stock_rows,
     )
     return {
