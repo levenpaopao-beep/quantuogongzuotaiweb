@@ -199,6 +199,8 @@ class DailySalesStore:
         assignment = next((item for item in assignments or [] if norm(item.get("platform")) == platform and norm(item.get("store")) == store), None)
         if not assignment:
             raise ValueError("该平台店铺未配置负责人，请先在基础资料维护")
+        if assignment.get("enabled") is False or assignment.get("daily_required") is False:
+            raise ValueError("该平台店铺已停用或不需要每日销量填报")
         owner = norm(assignment.get("owner"))
         if norm(role) != "admin" and owner != actor:
             raise PermissionError("店长只能填写自己负责店铺的销量")

@@ -66,6 +66,18 @@ class DailySalesStoreTest(unittest.TestCase):
         self.assertEqual(payload["summary"]["required"], 1)
         self.assertEqual(payload["entries"][0]["store"], "七弟")
 
+    def test_disabled_or_not_required_stores_reject_sales_submit(self):
+        assignments = [
+            {"platform": "Shein", "store": "琪琪", "owner": "小琴", "enabled": False, "daily_required": True},
+            {"platform": "Ozon", "store": "店铺 A", "owner": "小琴", "enabled": True, "daily_required": False},
+        ]
+
+        with self.assertRaisesRegex(ValueError, "已停用或不需要每日销量填报"):
+            self.store.submit(assignments, role="admin", user="管理员", day="2026-06-23", platform="Shein", store="琪琪", sales="12")
+        with self.assertRaisesRegex(ValueError, "已停用或不需要每日销量填报"):
+            self.store.submit(assignments, role="owner", user="小琴", day="2026-06-23", platform="Ozon", store="店铺 A", sales="12")
+        self.assertEqual(self.store.load()["records"], [])
+
     def test_abnormal_hint_uses_recent_sales(self):
         self.store.submit(self.assignments, role="admin", user="管理员", day="2026-06-22", platform="Temu", store="七弟", sales="100")
         row = self.store.submit(self.assignments, role="admin", user="管理员", day="2026-06-23", platform="Temu", store="七弟", sales="10")
