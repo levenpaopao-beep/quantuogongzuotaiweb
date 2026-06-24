@@ -8,6 +8,7 @@ const main = fs.readFileSync(path.join(ROOT, "electron", "main.js"), "utf8");
 const html = fs.readFileSync(path.join(ROOT, "electron", "renderer.html"), "utf8");
 const windowsPackage = fs.readFileSync(path.join(ROOT, "build_windows_install_package_v2.py"), "utf8");
 const portablePackage = fs.readFileSync(path.join(ROOT, "build_portable_package.py"), "utf8");
+const readyCheck = fs.readFileSync(path.join(ROOT, "scripts", "check-ready.js"), "utf8");
 
 function fail(message, details = []) {
   console.error(`\n文档检查未通过：${message}`);
@@ -45,6 +46,12 @@ function fail(message, details = []) {
 if (readme.includes("店长不能上传数据源")) {
   fail("README 店长导入口径已过期", [
     "最新业务逻辑是店长可以上传自己负责店铺的数据源，管理员负责全局缺失矩阵和报表生成。",
+  ]);
+}
+
+if (!readyCheck.includes("check-docs.js") || !readyCheck.includes("文档口径")) {
+  fail("交付检查未显式覆盖文档口径", [
+    "check:ready 必须直接运行 check-docs.js，避免 README、系统名和角色口径回退时总交付检查漏报。",
   ]);
 }
 
