@@ -188,6 +188,8 @@ if (
   !renderSmokeBody.includes("店长销量回车提交") ||
   !renderSmokeBody.includes("管理员基础资料导入入口") ||
   !renderSmokeBody.includes("店长隐藏基础资料导入入口") ||
+  !renderSmokeBody.includes("店长视角仍显示平台分析入口") ||
+  !renderSmokeBody.includes("店长经营报表关键指标") ||
   !renderSmokeBody.includes("管理员月度备份提醒") ||
   !renderSmokeBody.includes("店长隐藏月度备份提醒")
 ) {

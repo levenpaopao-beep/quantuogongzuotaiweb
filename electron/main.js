@@ -397,6 +397,12 @@ function renderSmokeScript() {
           requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长导入需处理筛选");
           if (visible('[data-admin-only="report-generate"]')) errors.push("店长视角仍显示管理员报表生成按钮");
           await openPage("reports", "#reportsPage.page-active", "店长经营报表页面");
+          requireVisible("#businessKpis", "店长经营报表关键指标");
+          requireVisible("#businessStoreTable", "店长经营报表店铺表格");
+          if (visible('[data-admin-only="business-platform-tab"]')) errors.push("店长视角仍显示平台分析入口");
+          if (visible('[data-admin-only="business-owner-tab"]')) errors.push("店长视角仍显示业务员分析入口");
+          if (visible('[data-admin-only="business-platform-table"]')) errors.push("店长视角仍显示平台排行表");
+          if (visible('[data-admin-only="business-owner-table"]')) errors.push("店长视角仍显示业务员排行表");
           if (visible('[data-report-action="generate-weekly"]')) errors.push("店长视角仍显示周报生成按钮");
           await openPage("rules", "#rulesPage.page-active", "店长系统设置页面");
           if (visible('[data-admin-only="system-check"]')) errors.push("店长视角仍显示系统自检管理员区");
