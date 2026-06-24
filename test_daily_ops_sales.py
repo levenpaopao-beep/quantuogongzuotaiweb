@@ -82,6 +82,26 @@ class DailySalesStoreTest(unittest.TestCase):
         self.assertEqual(workbook["每日销量明细"]["A2"].value, "2026-06-23")
         self.assertEqual(workbook["每日销量明细"]["E2"].value, 12)
 
+    def test_owner_export_daily_workbook_only_contains_own_store(self):
+        assignments = [
+            {"platform": "Temu", "store": "七弟", "owner": "小琴"},
+            {"platform": "Shein", "store": "琪琪", "owner": "胡娟"},
+        ]
+        self.store.submit(assignments, role="admin", user="管理员", day="2026-06-23", platform="Temu", store="七弟", sales="12")
+        self.store.submit(assignments, role="admin", user="管理员", day="2026-06-23", platform="Shein", store="琪琪", sales="88")
+
+        result = self.store.export_daily_workbook(assignments, Path(self.tmpdir.name), role="owner", user="小琴", day="2026-06-23")
+
+        workbook = load_workbook(result["path"], data_only=True)
+        detail = workbook["每日销量明细"]
+        summary = workbook["平台汇总"]
+        self.assertIn("小琴", result["file"])
+        self.assertEqual(detail.max_row, 2)
+        self.assertEqual(detail["C2"].value, "七弟")
+        self.assertEqual(detail["D2"].value, "小琴")
+        self.assertEqual(summary.max_row, 2)
+        self.assertEqual(summary["A2"].value, "Temu")
+
 
 if __name__ == "__main__":
     unittest.main()
