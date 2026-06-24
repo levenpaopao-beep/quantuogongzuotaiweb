@@ -2,6 +2,7 @@ import json
 import os
 import threading
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -51,12 +52,14 @@ def sales_number(value):
     if text == "":
         raise ValueError("请填写销售件数")
     try:
-        number = int(float(text))
-    except ValueError as exc:
+        number = Decimal(text)
+    except InvalidOperation as exc:
         raise ValueError("销售件数必须是数字") from exc
     if number < 0:
         raise ValueError("销售件数不能为负数")
-    return number
+    if number != number.to_integral_value():
+        raise ValueError("销售件数必须是整数")
+    return int(number)
 
 
 def owner_visible_assignments(assignments, role="admin", user=""):

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from daily_ops_sales import DailySalesStore
+from daily_ops_sales import DailySalesStore, sales_number
 
 
 class DailySalesStoreTest(unittest.TestCase):
@@ -16,6 +16,12 @@ class DailySalesStoreTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmpdir.cleanup()
+
+    def test_sales_number_rejects_fractional_values(self):
+        self.assertEqual(sales_number("12"), 12)
+        self.assertEqual(sales_number("12.0"), 12)
+        with self.assertRaisesRegex(ValueError, "必须是整数"):
+            sales_number("12.8")
 
     def test_submit_and_update_sales(self):
         first = self.store.submit(self.assignments, role="owner", user="小琴", day="2026-06-23", platform="Temu", store="七弟", sales="12")
