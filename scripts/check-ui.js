@@ -104,6 +104,16 @@ if (!todayGuideBody.includes("configuredStoreCount") || !todayGuideBody.includes
     "管理员首页需要在负责人配置为空时仍使用每日销量应填店铺数，避免显示“待维护”和 22 个应填店铺互相冲突。",
   ]);
 }
+if (
+  !todayGuideBody.includes('data-empty-page="${step.page}"') ||
+  !todayGuideBody.includes('data-sales-focus="missing"') ||
+  !todayGuideBody.includes('data-import-focus="blocked"') ||
+  !todayGuideBody.includes('data-task-status="待店长处理"')
+) {
+  fail("开始使用清单缺少带上下文的跳转", [
+    "清单按钮不能只跳页面；填写销量要直达未填，检查导入要直达需处理缺口，店长处理任务要直达本人待处理。",
+  ]);
+}
 
 if (!html.includes('id="todayWorkflowSteps"') || !html.includes('id="todayWorkflowTitle"')) {
   fail("今日工作台缺少日常流程导航", [

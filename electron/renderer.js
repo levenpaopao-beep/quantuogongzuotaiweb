@@ -1554,6 +1554,7 @@ function renderTodayGuide() {
       status: operator.role === "owner" && !operator.user ? "需填写姓名" : "已设置",
       page: "today",
       action: "顶部切换",
+      attrs: "",
     },
     {
       title: ownerMode ? "确认负责店铺" : "维护店铺资料",
@@ -1562,6 +1563,7 @@ function renderTodayGuide() {
       status: ownerMode ? `${ownerStoreCount} 个负责店铺` : (storeCount ? `${storeCount} 个店铺` : "待维护"),
       page: "masterdata",
       action: ownerMode ? "查看资料" : "去维护",
+      attrs: "",
     },
     {
       title: "填写每日销量",
@@ -1571,6 +1573,7 @@ function renderTodayGuide() {
       status: `${salesSummary.submitted || 0}/${salesSummary.required || 0}`,
       page: "sales",
       action: "去填写",
+      attrs: 'data-sales-focus="missing"',
     },
     {
       title: ownerMode ? "补齐导入数据" : "检查数据导入",
@@ -1580,6 +1583,7 @@ function renderTodayGuide() {
       status: missingSources ? `${missingSources} 类待处理` : "已就绪",
       page: "imports",
       action: "去检查",
+      attrs: 'data-focus="import-matrix" data-import-focus="blocked"',
     },
     {
       title: "处理商品任务",
@@ -1589,6 +1593,9 @@ function renderTodayGuide() {
       status: openTasks ? `${openTasks} 条待办` : "无待办",
       page: "tasks",
       action: "去处理",
+      attrs: ownerMode
+        ? 'data-task-status="待店长处理" data-task-open-only="true"'
+        : 'data-task-open-only="true"',
     },
     {
       title: ownerMode ? "查看经营结果" : "导出经营结果",
@@ -1598,18 +1605,17 @@ function renderTodayGuide() {
       status: Number(salesSummary.submitted || 0) > 0 ? "可导出" : "待填报",
       page: "reports",
       action: ownerMode ? "去查看" : "去报表",
+      attrs: "",
     },
   ];
   wrap.innerHTML = steps.map((step) => `
     <div class="guide-step ${guideTone(step.done, step.warn)}">
       <div class="guide-status">${step.status}</div>
       <div><strong>${step.title}</strong><span>${step.body}</span></div>
-      <button class="ghost-button" data-guide-page="${step.page}">${step.action}</button>
+      <button class="ghost-button" data-empty-page="${step.page}" ${step.attrs || ""}>${step.action}</button>
     </div>
   `).join("");
-  wrap.querySelectorAll("[data-guide-page]").forEach((button) => {
-    button.addEventListener("click", () => showPage(button.dataset.guidePage));
-  });
+  bindEmptyActions(wrap);
 }
 
 async function submitTask(id) {
