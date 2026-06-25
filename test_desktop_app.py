@@ -306,6 +306,25 @@ class DesktopAppTest(unittest.TestCase):
         for text in ["任务", "待店长", "待确认"]:
             self.assertIn(text, source)
 
+    def test_bargain_low_price_trace_tab_has_real_admin_workflow(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        self.assertIn('data-bargain-tab="lowprice"', html)
+        self.assertIn("renderBargainLowPriceTrace", source)
+        self.assertIn("runBargainLowPriceTrace", source)
+        self.assertIn("ignoreBargainLowPrice", source)
+        self.assertIn("api.bargainLowPriceTrace", source)
+        self.assertIn("api.bargainIgnoreLowPrice", source)
+        for text in ["低价回追", "重新检查", "忽略", "历史审批价", "风险原因"]:
+            self.assertIn(text, source)
+
+    def test_bargain_draft_table_has_horizontal_scroll_boundary(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        css = (ROOT / "electron" / "renderer.css").read_text(encoding="utf-8")
+        self.assertIn("bargain-table-wrap", html)
+        self.assertRegex(css, r"\.bargain-table-wrap\s*\{[\s\S]*overflow-x:\s*auto")
+        self.assertRegex(css, r"\.bargain-table\s*\{[\s\S]*min-width:\s*1120px")
+
     def test_desktop_shell_matches_workbench_reference(self):
         source = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
         for page in ["today", "sales", "tasks", "imports", "reports", "masterdata", "rules"]:

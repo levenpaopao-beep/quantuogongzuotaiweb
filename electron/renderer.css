@@ -1719,6 +1719,15 @@ label { color: var(--muted); font-size: 12px; }
   text-align: center;
 }
 
+.bargain-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.bargain-table {
+  min-width: 1120px;
+}
+
 .bargain-table th,
 .bargain-table td {
   min-width: 88px;

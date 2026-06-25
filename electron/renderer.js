@@ -30,6 +30,7 @@ const state = {
   bargainDraft: [],
   bargainHistory: [],
   bargainClearance: null,
+  bargainLowPriceRisks: [],
   bargainTab: "history",
 };
 
@@ -3250,6 +3251,10 @@ function renderBargainDraft() {
 function renderBargainHistory() {
   const wrap = $("#bargainHistoryRows");
   if (!wrap) return;
+  if (state.bargainTab === "lowprice") {
+    renderBargainLowPriceTrace();
+    return;
+  }
   if (state.bargainTab === "clearance") {
     const rows = state.bargainClearance?.rows || [];
     if (!rows.length) {
@@ -3283,6 +3288,85 @@ function renderBargainHistory() {
   wrap.querySelectorAll("[data-bargain-review]").forEach((button) => {
     button.addEventListener("click", () => reviewBargainLine(button.dataset.batch, button.dataset.line, button.dataset.bargainReview));
   });
+}
+
+function parseBargainLowPriceRows() {
+  const text = $("#bargainLowPriceInput")?.value || "";
+  return text.split(/\n+/).map((line) => {
+    const parts = line.split(/[,，\t]/).map((item) => item.trim());
+    return {
+      平台: parts[0] || "",
+      店铺: parts[1] || "",
+      商家编码: parts[2] || "",
+      申报价: parts[3] || "",
+    };
+  }).filter((row) => row["平台"] && row["店铺"] && row["商家编码"] && row["申报价"]);
+}
+
+function renderBargainLowPriceTrace() {
+  const wrap = $("#bargainHistoryRows");
+  if (!wrap) return;
+  const rows = state.bargainLowPriceRisks || [];
+  const list = rows.length ? rows.map((row) => `
+    <div class="output-row bargain-history-row">
+      <div>
+        <strong>${esc(row["平台"] || "")} / ${esc(row["店铺"] || "")} · ${esc(row["商家编码"] || "")}</strong>
+        <p>当前申报价：${esc(row["当前申报价"] || "")}　历史审批价：${esc(row["历史审批价"] || "未匹配")}</p>
+        <p>风险原因：${esc(row["风险原因"] || "")}</p>
+      </div>
+      <div class="task-actions">
+        <button class="tool-button danger-mini" data-low-price-ignore="${esc(row.id || "")}">忽略</button>
+      </div>
+    </div>
+  `).join("") : `<div class="action-empty">
+    <div><strong>暂无低价风险</strong><span>粘贴平台当前在线价格后点击重新检查。系统会判断是否存在已通过审批记录或价格继续下探。</span></div>
+  </div>`;
+  wrap.innerHTML = `
+    <div class="output-row bargain-history-row low-price-trace-tools">
+      <div>
+        <strong>低价回追</strong>
+        <p>每行粘贴：平台，店铺，商家编码，当前申报价。示例：Temu，二弟，330318682-XS，19.9</p>
+        <textarea id="bargainLowPriceInput" class="low-price-input" placeholder="平台，店铺，商家编码，当前申报价"></textarea>
+      </div>
+      <div class="task-actions">
+        <button class="tool-button primary-mini" id="runLowPriceTraceBtn">重新检查</button>
+      </div>
+    </div>
+    ${list}
+  `;
+  $("#runLowPriceTraceBtn")?.addEventListener("click", runBargainLowPriceTrace);
+  wrap.querySelectorAll("[data-low-price-ignore]").forEach((button) => {
+    button.addEventListener("click", () => ignoreBargainLowPrice(button.dataset.lowPriceIgnore));
+  });
+}
+
+async function runBargainLowPriceTrace() {
+  const platformRows = parseBargainLowPriceRows();
+  if (!platformRows.length) {
+    showToast("请按格式粘贴平台低价数据");
+    return;
+  }
+  try {
+    const result = await api.bargainLowPriceTrace(operatorPayload({ platform_rows: platformRows }));
+    state.bargainLowPriceRisks = result.rows || [];
+    renderBargainLowPriceTrace();
+    showToast(`低价回追完成：${state.bargainLowPriceRisks.length} 条风险`);
+  } catch (error) {
+    showToast(error.message || "低价回追失败");
+  }
+}
+
+async function ignoreBargainLowPrice(riskId) {
+  if (!riskId) return;
+  const remark = prompt("忽略说明", "上线前历史低价") || "";
+  try {
+    await api.bargainIgnoreLowPrice(operatorPayload({ risk_ids: [riskId], remark }));
+    state.bargainLowPriceRisks = state.bargainLowPriceRisks.filter((row) => row.id !== riskId);
+    renderBargainLowPriceTrace();
+    showToast("低价风险已忽略");
+  } catch (error) {
+    showToast(error.message || "忽略低价风险失败");
+  }
 }
 
 async function loadBargainHistory(showToastOnDone = false) {
