@@ -256,6 +256,32 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn('data-erp-field="page_size" type="number" min="1" max="1000"', html)
         self.assertIn('data-erp-field="stock_limit" type="number" min="100" max="10000"', html)
 
+    def test_master_data_uses_separate_secondary_modules(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        js = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        css = (ROOT / "electron" / "renderer.css").read_text(encoding="utf-8")
+        for module in ["master-import", "operator-accounts", "store-info", "product-info", "task-suppressions"]:
+            self.assertIn(f'data-master-module="{module}"', html)
+            self.assertIn(f'data-master-panel="{module}"', html)
+        self.assertIn("masterModuleDialog", html)
+        self.assertIn("openMasterModule", js)
+        self.assertIn("closeMasterModule", js)
+        self.assertIn("master-module-card", css)
+        self.assertIn("商品信息查询", html)
+        self.assertNotIn("基础数据查询", html)
+        self.assertNotIn("searchBtn", html + js)
+
+    def test_master_data_replaces_large_checks_with_store_toggles_and_manual_accounts(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        js = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        css = (ROOT / "electron" / "renderer.css").read_text(encoding="utf-8")
+        self.assertIn("store-toggle", js)
+        self.assertIn(".store-toggle input:checked + span", css)
+        self.assertIn("newOperatorOwner", html)
+        self.assertIn("createOperatorAccountBtn", html)
+        self.assertIn("createOperatorAccount", js)
+        self.assertIn("erpProductInfo", (ROOT / "electron" / "preload.js").read_text(encoding="utf-8"))
+
     def test_weekly_workflow_uses_table_workbench_layout(self):
         source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
         self.assertIn("renderSources", source)

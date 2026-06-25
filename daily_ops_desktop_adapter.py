@@ -341,9 +341,26 @@ def operator_accounts_payload(payload):
     return app.operator_accounts()
 
 
+def create_operator_account_payload(payload):
+    payload = payload or {}
+    require_admin_payload(payload, "新增店长账号")
+    return app.create_operator_account(
+        payload.get("owner", ""),
+        payload.get("username", ""),
+        payload.get("password", ""),
+        payload.get("enabled", True),
+    )
+
+
 def reset_operator_account_payload(payload):
     require_admin_payload(payload or {}, "重置店长密码")
     return app.reset_operator_account_password(payload.get("username", ""), payload.get("password", ""))
+
+
+def erp_product_info_payload(payload):
+    payload = payload or {}
+    require_admin_payload(payload, "查询ERP商品信息")
+    return app.query_erp_product_info(payload.get("query", ""), payload.get("limit", 100))
 
 
 def import_owner_master_payload(payload):

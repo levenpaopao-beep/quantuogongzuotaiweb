@@ -530,11 +530,43 @@
             <div>
               <span class="pill">责任链唯一</span>
               <h2>基础资料</h2>
-              <p>平台、店铺、负责人、屏蔽清单在这里维护；店铺只绑定一个负责人。</p>
+              <p>基础资料拆成独立模块维护；店铺只绑定一个负责人，ERP 商品信息只读查询。</p>
             </div>
           </div>
-          <div class="module-grid">
-            <section class="simple-panel" data-admin-only="master-import">
+          <div class="master-module-grid">
+            <button class="master-module-card" data-action="open-master-module" data-master-module="master-import" data-admin-only="master-import">
+              <strong>基础资料导入</strong>
+              <span>导入负责人表、历史销量表，生成整理结果。</span>
+            </button>
+            <button class="master-module-card" data-action="open-master-module" data-master-module="operator-accounts" data-admin-only="operator-accounts">
+              <strong>员工管理</strong>
+              <span>查看、手动新增店长账号，重置登录密码。</span>
+            </button>
+            <button class="master-module-card" data-action="open-master-module" data-master-module="store-info" data-admin-only="store-info">
+              <strong>店铺信息管理</strong>
+              <span>维护平台、店铺、负责人和每日填报开关。</span>
+            </button>
+            <button class="master-module-card" data-action="open-master-module" data-master-module="product-info" data-admin-only="product-info">
+              <strong>商品信息查询</strong>
+              <span>查询 ERP 拉取的商品基础信息和价格字段。</span>
+            </button>
+            <button class="master-module-card" data-action="open-master-module" data-master-module="task-suppressions" data-admin-only="task-suppressions">
+              <strong>任务屏蔽清单</strong>
+              <span>查看已屏蔽的重复商品任务和处理原因。</span>
+            </button>
+          </div>
+          <div id="masterModuleDialog" class="dialog-backdrop hidden" aria-hidden="true">
+            <section class="task-dialog master-module-dialog" role="dialog" aria-modal="true" aria-labelledby="masterModuleTitle">
+              <div class="dialog-head">
+                <div>
+                  <span class="pill" id="masterModulePill">基础资料</span>
+                  <h2 id="masterModuleTitle">基础资料</h2>
+                  <p id="masterModuleDesc"></p>
+                </div>
+                <button class="tool-button" type="button" data-master-dialog-close>关闭</button>
+              </div>
+              <div id="masterModuleBody" class="master-module-body">
+                <section class="master-module-panel" data-master-panel="master-import" data-admin-only="master-import">
               <h2>基础资料导入</h2>
               <p>导入负责人表会更新店铺负责人并生成店长账号；导入跨境运营总表会写入历史销量台账。</p>
               <div class="backup-actions">
@@ -549,20 +581,24 @@
               </div>
               <p id="masterImportStatus">导入后会在下载目录生成“基础信息导入整理表.xlsx”。</p>
             </section>
-            <section class="simple-panel" data-admin-only="operator-accounts">
-              <h2>店长账号</h2>
-              <p>账号由负责人生成；密码只在生成或重置时显示一次，管理员可随时重置。</p>
+                <section class="master-module-panel" data-master-panel="operator-accounts" data-admin-only="operator-accounts">
+              <h2>员工管理</h2>
+              <p>负责人导入会自动生成店长账号；管理员也可以在这里手动新增。</p>
+              <div class="operator-create-row">
+                <input id="newOperatorOwner" placeholder="店长姓名" />
+                <input id="newOperatorUsername" placeholder="登录账号，留空默认同姓名" />
+                <input id="newOperatorPassword" placeholder="初始密码，留空自动生成" />
+                <button class="primary-button" id="createOperatorAccountBtn">新增账号</button>
+              </div>
               <div id="operatorAccountRows" class="output-list"></div>
             </section>
-            <section class="simple-panel">
+                <section class="master-module-panel" data-master-panel="store-info" data-admin-only="store-info">
               <h2>平台与店铺</h2>
               <div class="flow-list">
                 <div><strong>内置平台</strong><span>Temu / Shein / 速卖通 / TK / Ozon</span></div>
                 <div><strong>店铺归属</strong><span>一个店铺只属于一个平台。</span></div>
                 <div><strong>每日填销量</strong><span>店铺可单独开启或停用填报。</span></div>
               </div>
-            </section>
-            <section class="simple-panel owner-map-panel">
               <h2>店铺负责人配置</h2>
               <p>负责人变更后，历史保留原负责人，新任务按新负责人走；关闭每日填报后，该店铺不进入每日销量待填清单。</p>
               <div class="platform-chip-row">
@@ -589,16 +625,20 @@
               </details>
               <p id="storeOwnerStatus">等待读取负责人配置</p>
             </section>
-          </div>
-          <div class="simple-panel">
-            <h2>基础数据查询</h2>
-            <div class="search-bar"><input id="searchInput" placeholder="输入 SKU、SKC、店铺或负责人" /><button id="searchBtn">查询</button></div>
-            <div id="searchRows" class="output-list"></div>
-          </div>
-          <div class="simple-panel" data-admin-only="task-suppressions">
+                <section class="master-module-panel" data-master-panel="product-info" data-admin-only="product-info">
+            <h2>商品信息查询</h2>
+            <p>查询系统已从 ERP 拉取的商品基础信息，不会修改 ERP 数据。</p>
+            <div class="search-bar"><input id="productSearchInput" placeholder="输入商家编码、货品名称、规格或 SKU" /><button id="productSearchBtn">查询商品</button></div>
+            <p id="productSearchStatus">输入关键词后查询 ERP 商品基础信息。</p>
+            <div id="productSearchRows" class="output-list"></div>
+          </section>
+                <section class="master-module-panel" data-master-panel="task-suppressions" data-admin-only="task-suppressions">
             <h2>任务屏蔽清单</h2>
             <p>用于处理每周反复出现但管理员判断暂不需要再提示的 SKC/SPU/商家编码。</p>
             <div id="taskSuppressionRows" class="output-list"></div>
+          </section>
+              </div>
+            </section>
           </div>
         </section>
 

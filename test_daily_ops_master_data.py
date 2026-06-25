@@ -69,6 +69,35 @@ class MasterDataImportTest(unittest.TestCase):
         self.assertEqual(payload["accounts"][0]["username"], "小琴")
         self.assertTrue(payload["accounts"][0]["password_hash"])
 
+    def test_create_operator_account_adds_manual_store_owner_login(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "operator_accounts.json"
+            with patch.object(daily_ops_app, "OPERATOR_ACCOUNTS_FILE", path):
+                result = daily_ops_app.create_operator_account("胡娟", "", "Hu123456")
+                accounts = daily_ops_app.operator_accounts()["accounts"]
+
+        self.assertEqual(result["username"], "胡娟")
+        self.assertEqual(result["initial_password"], "Hu123456")
+        self.assertEqual(accounts[0]["owner"], "胡娟")
+        self.assertNotIn("password_hash", accounts[0])
+
+    def test_query_erp_product_info_reads_latest_erp_product_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            erp_dir = Path(tmp)
+            path = erp_dir / "erp产品基础信息表_接口同步_最新.xlsx"
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["商家编码（新）", "货品名称", "规格名称", "成本价", "批发价"])
+            ws.append(["SKU-001", "宠物雨衣", "蓝色L", 10, 18])
+            wb.save(path)
+
+            with patch.object(daily_ops_app, "ERP_DIR", erp_dir):
+                result = daily_ops_app.query_erp_product_info("SKU-001", 20)
+
+        self.assertEqual(result["source_files"], [path.name])
+        self.assertEqual(result["items"][0]["summary"]["商家编码（新）"], "SKU-001")
+        self.assertEqual(result["items"][0]["summary"]["货品名称"], "宠物雨衣")
+
     def test_parse_crossborder_sales_workbook_normalizes_month_sheets(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "跨境运营总表new.xlsx"

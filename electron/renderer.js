@@ -27,6 +27,7 @@ const state = {
   customPlatforms: [],
   ownerOptions: [],
   operatorAccounts: [],
+  productInfo: [],
   bargainDraft: [],
   bargainHistory: [],
   bargainClearance: null,
@@ -35,6 +36,33 @@ const state = {
 };
 
 const BUILT_IN_PLATFORMS = ["Temu", "Shein", "速卖通", "TK", "Ozon"];
+const MASTER_MODULES = {
+  "master-import": {
+    pill: "导入",
+    title: "基础资料导入",
+    desc: "导入负责人表和历史销量表，生成账号与整理结果。",
+  },
+  "operator-accounts": {
+    pill: "员工",
+    title: "员工管理",
+    desc: "查看店长账号，手动新增账号，重置登录密码。",
+  },
+  "store-info": {
+    pill: "店铺",
+    title: "店铺信息管理",
+    desc: "维护平台、店铺、负责人和每日销量填报开关。",
+  },
+  "product-info": {
+    pill: "ERP",
+    title: "商品信息查询",
+    desc: "只读查询 ERP 已同步的商品基础信息。",
+  },
+  "task-suppressions": {
+    pill: "任务",
+    title: "任务屏蔽清单",
+    desc: "查看已屏蔽的重复商品任务和屏蔽原因。",
+  },
+};
 
 function $(selector) {
   return document.querySelector(selector);
@@ -272,6 +300,28 @@ function closeTaskDialog() {
   dialog.classList.add("hidden");
   dialog.setAttribute("aria-hidden", "true");
   $("#taskDialogForm")?.classList.remove("hidden");
+}
+
+function openMasterModule(moduleId) {
+  const config = MASTER_MODULES[moduleId];
+  const dialog = $("#masterModuleDialog");
+  if (!config || !dialog) return;
+  $("#masterModulePill").textContent = config.pill;
+  $("#masterModuleTitle").textContent = config.title;
+  $("#masterModuleDesc").textContent = config.desc;
+  document.querySelectorAll("[data-master-panel]").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.masterPanel !== moduleId);
+  });
+  dialog.classList.remove("hidden");
+  dialog.setAttribute("aria-hidden", "false");
+  dialog.querySelector(`[data-master-panel="${moduleId}"] input, [data-master-panel="${moduleId}"] button, [data-master-panel="${moduleId}"] select`)?.focus();
+}
+
+function closeMasterModule() {
+  const dialog = $("#masterModuleDialog");
+  if (!dialog) return;
+  dialog.classList.add("hidden");
+  dialog.setAttribute("aria-hidden", "true");
 }
 
 async function submitTaskDialog(event) {
@@ -2679,8 +2729,14 @@ function renderStoreOwners(assignments = state.storeOwners) {
   if (rows) {
     rows.innerHTML = items.map((item, index) => `
       <div class="store-owner-row" data-store-row="${index}">
-        <label><input type="checkbox" data-field="enabled" ${item.enabled === false ? "" : "checked"} /></label>
-        <label><input type="checkbox" data-field="daily_required" ${item.daily_required === false ? "" : "checked"} /></label>
+        <label class="store-toggle" title="启用店铺">
+          <input type="checkbox" data-field="enabled" ${item.enabled === false ? "" : "checked"} />
+          <span>${item.enabled === false ? "停用" : "启用"}</span>
+        </label>
+        <label class="store-toggle" title="每日销量填报">
+          <input type="checkbox" data-field="daily_required" ${item.daily_required === false ? "" : "checked"} />
+          <span>${item.daily_required === false ? "不填" : "填报"}</span>
+        </label>
         <select data-field="platform">
           ${platformOptions.map((platform) => `<option value="${esc(platform)}" ${platform === item.platform ? "selected" : ""}>${esc(platform)}</option>`).join("")}
         </select>
@@ -2693,6 +2749,16 @@ function renderStoreOwners(assignments = state.storeOwners) {
       button.addEventListener("click", () => {
         state.storeOwners.splice(Number(button.dataset.index), 1);
         renderStoreOwners();
+      });
+    });
+    rows.querySelectorAll(".store-toggle input").forEach((input) => {
+      input.addEventListener("change", () => {
+        const label = input.closest(".store-toggle");
+        const text = label?.querySelector("span");
+        if (!text) return;
+        text.textContent = input.dataset.field === "daily_required"
+          ? (input.checked ? "填报" : "不填")
+          : (input.checked ? "启用" : "停用");
       });
     });
   }
@@ -2885,6 +2951,28 @@ function renderOperatorAccounts(error = "") {
   });
 }
 
+async function createOperatorAccount() {
+  const owner = $("#newOperatorOwner")?.value.trim() || "";
+  const username = $("#newOperatorUsername")?.value.trim() || owner;
+  const password = $("#newOperatorPassword")?.value.trim() || "";
+  if (!owner) {
+    showToast("请先填写店长姓名");
+    $("#newOperatorOwner")?.focus();
+    return;
+  }
+  try {
+    const result = await api.createOperatorAccount(operatorPayload({ owner, username, password }));
+    state.operatorAccounts = result.accounts || [];
+    renderOperatorAccounts();
+    $("#newOperatorOwner").value = "";
+    $("#newOperatorUsername").value = "";
+    $("#newOperatorPassword").value = "";
+    showToast(`账号已新增：${result.username}，初始密码：${result.initial_password}`);
+  } catch (error) {
+    showToast(userFacingError(error));
+  }
+}
+
 async function resetOperatorPassword(username) {
   try {
     const result = await api.resetOperatorPassword(operatorPayload({ username }));
@@ -2893,6 +2981,57 @@ async function resetOperatorPassword(username) {
     if (status) status.textContent = `${username} 的新密码：${result.initial_password}`;
     await loadOperatorAccounts(false);
   } catch (error) {
+    showToast(userFacingError(error));
+  }
+}
+
+function renderProductInfoRows(result = {}) {
+  const rows = $("#productSearchRows");
+  const status = $("#productSearchStatus");
+  if (!rows) return;
+  const items = result.items || [];
+  const sourceFiles = result.source_files || [];
+  if (status) {
+    const sourceText = sourceFiles.length ? `来源：${sourceFiles.slice(0, 3).join("、")}` : "未读取到 ERP 商品基础信息文件";
+    status.textContent = `查询到 ${items.length} 条商品信息。${sourceText}`;
+  }
+  if (!items.length) {
+    rows.innerHTML = actionEmpty({
+      title: "没有匹配商品",
+      body: "请换商家编码、货品名称或规格关键词再查；如果没有来源文件，请先在系统设置里同步 ERP。",
+      primary: "去系统设置",
+      page: "rules",
+    });
+    bindEmptyActions(rows);
+    return;
+  }
+  rows.innerHTML = items.map((item) => {
+    const summary = Object.entries(item.summary || {}).map(([key, value]) => `${esc(key)}：${esc(value)}`).join("　");
+    return `
+      <div class="output-row">
+        <div>
+          <strong>${esc(item.file_name || "ERP 商品信息")} · ${esc(item.sheet_name || "-")} · 第 ${esc(item.source_row || "-")} 行</strong>
+          <p>${summary || esc(item.content || "")}</p>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function queryProductInfo() {
+  const query = $("#productSearchInput")?.value.trim() || "";
+  if (!query) {
+    showToast("请先输入商品关键词");
+    return;
+  }
+  const status = $("#productSearchStatus");
+  try {
+    if (status) status.textContent = "正在查询 ERP 商品信息...";
+    const result = await api.erpProductInfo(operatorPayload({ query, limit: 80 }));
+    state.productInfo = result.items || [];
+    renderProductInfoRows(result);
+  } catch (error) {
+    if (status) status.textContent = userFacingError(error);
     showToast(userFacingError(error));
   }
 }
@@ -3739,6 +3878,18 @@ function bindEvents() {
   $("#selectSalesHistoryBtn")?.addEventListener("click", () => chooseWorkbookPath("#salesHistoryPath", "跨境运营总表"));
   $("#importOwnerMasterBtn")?.addEventListener("click", importOwnerMaster);
   $("#importSalesHistoryBtn")?.addEventListener("click", importSalesHistory);
+  $("#createOperatorAccountBtn")?.addEventListener("click", createOperatorAccount);
+  $("#productSearchBtn")?.addEventListener("click", queryProductInfo);
+  $("#productSearchInput")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") queryProductInfo();
+  });
+  document.querySelectorAll("[data-master-module]").forEach((button) => {
+    button.addEventListener("click", () => openMasterModule(button.dataset.masterModule));
+  });
+  document.querySelectorAll("[data-master-dialog-close]").forEach((button) => button.addEventListener("click", closeMasterModule));
+  $("#masterModuleDialog")?.addEventListener("click", (event) => {
+    if (event.target?.id === "masterModuleDialog") closeMasterModule();
+  });
   $("#taskDialogForm")?.addEventListener("submit", submitTaskDialog);
   document.querySelectorAll("[data-dialog-close]").forEach((button) => button.addEventListener("click", closeTaskDialog));
   $("#taskDialog")?.addEventListener("click", (event) => {
@@ -3746,12 +3897,7 @@ function bindEvents() {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !$("#taskDialog")?.classList.contains("hidden")) closeTaskDialog();
-  });
-  $("#searchBtn")?.addEventListener("click", async () => {
-    const query = $("#searchInput").value.trim();
-    if (!query) return;
-    const rows = await api.search(query, 80, operatorPayload());
-    $("#searchRows").innerHTML = rows.map((row) => `<div class="output-row"><div><strong>${Object.values(row).slice(0, 3).join(" · ")}</strong><p>${Object.entries(row).slice(0, 8).map(([k, v]) => `${k}: ${v}`).join("　")}</p></div></div>`).join("");
+    if (event.key === "Escape" && !$("#masterModuleDialog")?.classList.contains("hidden")) closeMasterModule();
   });
 }
 

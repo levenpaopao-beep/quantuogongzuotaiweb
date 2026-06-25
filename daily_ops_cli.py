@@ -165,8 +165,16 @@ def command(argv):
         return ok(adapter.sales_compare_payload(read_payload()))
     if name == "operator-accounts":
         return ok(adapter.operator_accounts_payload(read_payload()))
+    if name == "create-operator-account":
+        payload = read_payload()
+        require_admin(payload, "新增店长账号")
+        return ok(adapter.create_operator_account_payload(payload))
     if name == "reset-operator-password":
         return ok(adapter.reset_operator_account_payload(read_payload()))
+    if name == "erp-product-info":
+        payload = read_payload()
+        require_admin(payload, "查询ERP商品信息")
+        return ok(adapter.erp_product_info_payload(payload))
     if name == "import-owner-master":
         return ok(adapter.import_owner_master_payload(read_payload()))
     if name == "import-sales-history":

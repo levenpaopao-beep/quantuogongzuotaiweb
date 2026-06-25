@@ -2075,6 +2075,8 @@ class OperationTaskStoreTest(unittest.TestCase):
             (["search", "SKU-A", "80"], daily_ops_desktop_adapter.search, [{"content": "SKU-A"}]),
             (["export-search", "SKU-A", "80"], daily_ops_desktop_adapter.export_search, {"file": "search.xlsx"}),
             (["save-store-owners"], daily_ops_desktop_adapter.save_store_owners, {"assignments": []}),
+            (["create-operator-account"], daily_ops_desktop_adapter.create_operator_account_payload, {"accounts": []}),
+            (["erp-product-info"], daily_ops_desktop_adapter.erp_product_info_payload, {"items": []}),
             (["create-backup"], daily_ops_desktop_adapter.create_backup, {"file": "backup.zip"}),
             (["restore-backup"], daily_ops_desktop_adapter.restore_backup, {"count": 1}),
         ]

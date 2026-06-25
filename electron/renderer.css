@@ -594,6 +594,51 @@ p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
   gap: 14px;
   margin-bottom: 14px;
 }
+.master-module-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.master-module-card {
+  min-height: 116px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  text-align: left;
+  border: 1px solid rgba(255,255,255,.92);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 12px 30px rgba(73, 86, 135, .08);
+  color: var(--text);
+  padding: 18px;
+}
+.master-module-card:hover {
+  transform: translateY(-1px);
+  border-color: #cbd8ff;
+  box-shadow: 0 16px 34px rgba(73, 86, 135, .13);
+}
+.master-module-card strong { font-size: 17px; }
+.master-module-card span {
+  color: var(--muted);
+  line-height: 1.55;
+}
+.master-module-dialog { width: min(980px, 100%); }
+.master-module-body {
+  margin-top: 14px;
+  display: grid;
+  gap: 14px;
+}
+.master-module-panel {
+  display: grid;
+  gap: 12px;
+}
+.master-module-panel h2 { margin: 0; font-size: 18px; }
+.master-module-panel p { color: var(--muted); line-height: 1.55; }
+.operator-create-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(150px, 1fr) minmax(150px, 1fr) auto;
+  gap: 10px;
+}
 .report-layout { display: grid; gap: 14px; }
 .business-report-shell {
   display: grid;
@@ -1895,6 +1940,39 @@ label { color: var(--muted); font-size: 12px; }
   display: grid;
   place-items: center;
 }
+.store-owner-row label.store-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+}
+.store-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.store-toggle span {
+  min-width: 50px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid #d7deef;
+  background: #eef2f8;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.store-toggle input:checked + span {
+  border-color: rgba(22, 125, 255, .35);
+  background: #e9f3ff;
+  color: #1367d8;
+}
+.store-toggle input:focus-visible + span {
+  outline: 3px solid rgba(22, 125, 255, .18);
+  outline-offset: 2px;
+}
 .store-owner-head span {
   display: flex;
   align-items: center;
@@ -1921,7 +1999,7 @@ label { color: var(--muted); font-size: 12px; }
   color: var(--muted);
 }
 .compat-editor summary { cursor: pointer; font-weight: 800; }
-.owner-map-panel textarea {
+.master-module-panel textarea {
   width: 100%;
   min-height: 132px;
   margin: 10px 0;
@@ -1957,6 +2035,8 @@ label { color: var(--muted); font-size: 12px; }
   .today-grid,
   .workbench-grid,
   .module-grid,
+  .master-module-grid,
+  .operator-create-row,
   .business-table-grid { grid-template-columns: 1fr; }
   .span-2 { grid-column: span 1; }
   .span-3 { grid-column: span 1; }
@@ -1978,6 +2058,7 @@ label { color: var(--muted); font-size: 12px; }
   .global-operator { grid-template-columns: 1fr; }
   .metric-row, .task-summary, .report-grid, .rules-grid, .erp-settings-grid, .sales-report-filters, .business-kpi-grid, .business-filters { grid-template-columns: 1fr; }
   .backup-actions { grid-template-columns: 1fr; }
+  .master-module-card { min-height: 96px; }
   .workflow-head { flex-direction: column; }
   .workflow-head p { text-align: left; }
   .rhythm-head { flex-direction: column; }

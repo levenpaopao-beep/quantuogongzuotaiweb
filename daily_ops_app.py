@@ -558,6 +558,27 @@ def operator_accounts():
     return {"accounts": accounts}
 
 
+def create_operator_account(owner, username="", password="", enabled=True):
+    owner = daily_ops_master_data.norm(owner)
+    username = daily_ops_master_data.norm(username) or owner
+    if not owner:
+        raise ValueError("请填写店长姓名")
+    if not username:
+        raise ValueError("请填写登录账号")
+    payload = daily_ops_master_data.load_operator_accounts(OPERATOR_ACCOUNTS_FILE)
+    existing = payload.get("accounts", [])
+    if any(daily_ops_master_data.norm(row.get("username")) == username for row in existing):
+        raise ValueError("账号已存在")
+    account = {"owner": owner, "username": username, "role": "owner", "enabled": enabled is not False}
+    password_factory = (lambda _account: password) if password else None
+    result = daily_ops_master_data.save_operator_accounts(OPERATOR_ACCOUNTS_FILE, existing + [account], password_factory)
+    return {
+        "accounts": operator_accounts()["accounts"],
+        "username": username,
+        "initial_password": result.get("initial_passwords", {}).get(username, ""),
+    }
+
+
 def reset_operator_account_password(username, password=""):
     result = daily_ops_master_data.reset_operator_password(OPERATOR_ACCOUNTS_FILE, username, password or None)
     return result
@@ -1930,6 +1951,57 @@ def search_database(query, limit=100):
                 (f"%{query}%", limit),
             ).fetchall()
     return [dict(row) for row in rows]
+
+
+def query_erp_product_info(query, limit=100):
+    query = (query or "").strip()
+    if not query:
+        return {"items": [], "source_files": [path.name for path in erp_base_files()]}
+    limit = max(1, min(int(limit or 100), 300))
+    terms = [item.strip().lower() for item in re.split(r"\s+", query) if item.strip()]
+    files = erp_base_files()
+    matches = []
+    preferred_headers = [
+        "商家编码（新）", "商家编码", "货品编号", "货品名称", "规格名称",
+        "成本价", "批发价", "零售价", "分类", "品牌", "供应商",
+    ]
+    for path in files:
+        try:
+            wb = load_workbook(path, read_only=True, data_only=True)
+        except Exception:
+            continue
+        try:
+            for ws in wb.worksheets:
+                rows = ws.iter_rows(values_only=True)
+                try:
+                    headers = [daily_ops_master_data.norm(value) or f"列{idx + 1}" for idx, value in enumerate(next(rows))]
+                except StopIteration:
+                    continue
+                for row_index, row in enumerate(rows, start=2):
+                    values = [daily_ops_master_data.norm(value) for value in row]
+                    haystack = " ".join(values).lower()
+                    if not all(term in haystack for term in terms):
+                        continue
+                    record = {
+                        headers[idx]: values[idx]
+                        for idx in range(min(len(headers), len(values)))
+                        if values[idx]
+                    }
+                    summary = {key: record.get(key, "") for key in preferred_headers if record.get(key)}
+                    if not summary:
+                        summary = dict(list(record.items())[:8])
+                    matches.append({
+                        "file_name": path.name,
+                        "sheet_name": ws.title,
+                        "source_row": row_index,
+                        "summary": summary,
+                        "content": "　".join(f"{key}: {value}" for key, value in list(record.items())[:12]),
+                    })
+                    if len(matches) >= limit:
+                        return {"items": matches, "source_files": [file.name for file in files]}
+        finally:
+            wb.close()
+    return {"items": matches, "source_files": [path.name for path in files]}
 
 
 def export_search(query, limit=500):
