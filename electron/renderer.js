@@ -16,9 +16,11 @@ const state = {
   storeOwners: [],
   sales: null,
   salesFocus: "missing",
+  salesEditingIndex: null,
   salesCompare: null,
   salesReport: null,
   businessReport: null,
+  homeBusinessReports: {},
   businessTab: "overview",
   businessRange: "30d",
   businessSource: "manual",
@@ -241,23 +243,7 @@ function selectedOperatorDraft() {
 }
 
 function renderRoleCopy() {
-  const operator = currentOperator();
-  const role = operator.role || "admin";
-  const title = $(".hero-copy h2");
-  const body = $(".hero-copy p");
-  const primary = $(".hero-actions .primary-button");
-  const secondary = $(".hero-actions .ghost-button");
-  if (role === "owner") {
-    if (title) title.textContent = "先填销售日销量，再整包处理任务。";
-    if (body) body.textContent = "店长只看到自己负责的店铺数据。每天先补齐销量，随后处理已推送的商品任务包。";
-    if (primary) primary.textContent = "填写我的销量";
-    if (secondary) secondary.textContent = "处理我的任务包";
-    return;
-  }
-  if (title) title.textContent = "先确认销量，再处理任务包。";
-  if (body) body.textContent = "管理员看全部平台和店铺；店长只看自己负责的数据。每个卡片都指向下一步动作。";
-  if (primary) primary.textContent = "填写销售日销量";
-  if (secondary) secondary.textContent = "处理商品任务";
+  renderTodayWorkflow();
 }
 
 function esc(value) {
@@ -1078,7 +1064,7 @@ function renderTaskPackages() {
       <div class="task-package-card">
         <div class="task-package-title">
           <strong>${esc(pkg.platform || "-")} · ${esc(pkg.store || "-")} · ${esc(pkg.task_type || "-")}</strong>
-          <span class="status-pill ${pkg.priority === "高" ? "status-danger" : pkg.priority === "中" ? "status-warn" : "status-ok"}">${esc(pkg.priority || "普通")}</span>
+          <span class="status-pill ${pkg.priority === "高" ? "status-danger" : pkg.priority === "中" ? "status-warn" : "status-ok"}">${esc(pkg.priority || "低")}</span>
         </div>
         <p>${esc(pkg.system_action || "-")}</p>
         <div class="task-package-meta">
@@ -1158,7 +1144,7 @@ function renderTaskCenter() {
     <div class="task-row">
       <div><input class="task-check" type="checkbox" value="${task.id || ""}" /></div>
       <div><span class="status-pill ${taskBadge(task.status)}">${taskStatusLabel(task.status)}</span></div>
-      <div><span class="status-pill ${task.priority === "高" ? "status-danger" : task.priority === "中" ? "status-warn" : task.priority === "低" ? "status-ok" : ""}">${task.priority || "普通"}</span></div>
+      <div><span class="status-pill ${task.priority === "高" ? "status-danger" : task.priority === "中" ? "status-warn" : task.priority === "低" ? "status-ok" : ""}">${task.priority || "低"}</span></div>
       <div class="task-copy">${task.platform || ""}</div>
       <div class="task-copy">${task.store || ""}</div>
       <div class="task-copy">${task.owner || ""}</div>
@@ -1274,9 +1260,26 @@ function applyRouteIntent(route = {}) {
   if (route.taskStatus && $("#taskStatus")) $("#taskStatus").value = route.taskStatus;
   if (route.taskNextHandler && $("#taskNextHandler")) $("#taskNextHandler").value = route.taskNextHandler;
   if (route.taskOpenOnly && $("#taskOpenOnly")) $("#taskOpenOnly").checked = route.taskOpenOnly === "true";
+  if (route.salesStore && $("#salesReportStore")) $("#salesReportStore").value = route.salesStore;
+  if (route.salesPlatform && $("#salesReportPlatform")) $("#salesReportPlatform").value = route.salesPlatform;
+  if (route.businessStore && $("#businessStore")) $("#businessStore").value = route.businessStore;
+  if (route.businessPlatform && $("#businessPlatform")) $("#businessPlatform").value = route.businessPlatform;
   if (route.salesFocus) setSalesFocus(route.salesFocus, { scroll: route.emptyPage === "sales" });
   if (route.importFocus) setImportFocus(route.importFocus, { scroll: route.emptyPage === "imports" || route.focus === "import-matrix" });
   if (route.bargainTab) openBargainHistoryDialog(route.bargainTab);
+  if (route.businessAction === "trend") {
+    state.businessTab = "store";
+    setBusinessTab("store");
+    loadBusinessReport(true);
+    setTimeout(() => document.querySelector("#businessTrendPanel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+  }
+  if (route.masterModule && typeof openMasterModule === "function") {
+    setTimeout(() => openMasterModule(route.masterModule), 80);
+  }
+  if (route.emptyPage === "sales" && (route.salesStore || route.salesPlatform)) {
+    loadSalesReport(false);
+    setTimeout(() => document.querySelector("#salesReportTable")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+  }
   if (route.emptyPage === "tasks" && (route.taskUser || route.taskStatus || route.taskNextHandler || route.taskOpenOnly)) {
     loadTasks();
   }
@@ -1326,13 +1329,8 @@ function renderSalesManagement() {
   const payload = state.sales || {};
   const entries = payload.entries || [];
   const list = $("#salesEntryList");
-  const ledger = $("#salesLedgerRows");
   const summary = payload.summary || {};
-  const visibleEntries = salesFocusEntries(entries);
   renderSalesFocus(summary, entries);
-  if ($("#salesStatusLine")) {
-    $("#salesStatusLine").textContent = `应填 ${summary.required || 0} 个店铺，已填 ${summary.submitted || 0}，未填 ${summary.missing || 0}，异常 ${summary.abnormal || 0}`;
-  }
   if (list) {
     if (!entries.length) {
       list.innerHTML = actionEmpty({
@@ -1343,27 +1341,52 @@ function renderSalesManagement() {
       });
       bindEmptyActions(list);
     } else {
-      list.innerHTML = visibleEntries.map((item) => {
-        const index = entries.indexOf(item);
-        const sourceHint = item.needs_confirmation ? "历史导入待确认" : (item.submitted ? "已保存" : "待填写");
-        return `
-        <div class="sales-entry ${item.submitted ? "sales-entry-done" : ""} ${item.needs_confirmation ? "sales-entry-pending" : ""}">
-          <span>${item.platform} · ${item.store}<small>${item.owner || "未分配"} · ${sourceHint}</small></span>
-          <input data-sales-index="${index}" inputmode="numeric" value="${item.sales || ""}" placeholder="销售件数" />
-          <input data-remark-index="${index}" value="${item.remark || ""}" placeholder="备注，可选" />
-          <button class="primary-button" data-action="submit-sales" data-index="${index}">${item.submitted ? "更新" : "保存"}</button>
+      list.innerHTML = `
+        <div class="sales-day-summary">
+          <span>销售日期：<strong>${esc($("#salesDate")?.value || salesDefaultDateText())}</strong></span>
+          <span>应填 <strong>${summary.required || 0}</strong></span>
+          <span>已填 <strong>${summary.submitted || 0}</strong></span>
+          <span>未填 <strong>${summary.missing || 0}</strong></span>
+          <span>异常 <strong>${summary.abnormal || 0}</strong></span>
+        </div>
+        <div class="report-table-wrap sales-day-wrap">
+          <table class="report-data-table sales-day-table">
+            <thead><tr><th>平台</th><th>店铺</th><th>负责人</th><th>销量</th><th>状态</th><th>异常</th><th>备注</th><th>操作</th></tr></thead>
+            <tbody>
+              ${entries.map((item, index) => {
+                const editing = state.salesEditingIndex === index || !item.submitted || item.needs_confirmation;
+                const statusLabel = item.needs_confirmation ? "待确认" : (item.submitted ? "已填写" : "未填写");
+                const sourceHint = item.needs_confirmation ? "历史导入待确认" : statusLabel;
+                return `
+                  <tr class="${item.submitted ? "sales-entry-done" : ""} ${item.needs_confirmation ? "sales-entry-pending" : ""}">
+                    <td>${esc(item.platform || "")}</td>
+                    <td><strong>${esc(item.store || "")}</strong></td>
+                    <td>${esc(item.owner || "未分配")}</td>
+                    <td><input data-sales-index="${index}" inputmode="numeric" value="${item.sales || ""}" placeholder="" ${editing ? "" : "disabled"} /></td>
+                    <td><span class="status-pill ${item.submitted ? "status-ok" : "status-warn"}">${esc(sourceHint)}</span></td>
+                    <td>${item.abnormal ? `<span class="status-pill status-danger">${esc(item.abnormal)}</span>` : "正常"}</td>
+                    <td><input data-remark-index="${index}" value="${esc(item.remark || "")}" placeholder="可空" ${editing ? "" : "disabled"} /></td>
+                    <td>
+                      ${editing
+                        ? `<button class="primary-button compact-button" data-action="submit-sales" data-index="${index}">确认</button>`
+                        : `<button class="tool-button" data-action="edit-sales" data-index="${index}">编辑</button>`}
+                    </td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
         </div>
       `;
-      }).join("") || actionEmpty({
-        title: state.salesFocus === "abnormal" ? "当前没有异常波动" : "当前没有未填店铺",
-        body: state.salesFocus === "abnormal" ? "异常波动只提醒不拦截；需要复核时切到“全部”查看店铺。" : "当前销售日没有未填店铺；需要补录或更正时，直接查看全部店铺行。",
-        primary: state.salesFocus === "missing" ? "查看/更正全部店铺" : "查看全部",
-        page: "sales",
-        attrs: 'data-sales-focus="all"',
-      });
-      bindEmptyActions(list);
       list.querySelectorAll('[data-action="submit-sales"]').forEach((button) => {
         button.addEventListener("click", () => submitSalesEntry(Number(button.dataset.index)));
+      });
+      list.querySelectorAll('[data-action="edit-sales"]').forEach((button) => {
+        button.addEventListener("click", () => {
+          state.salesEditingIndex = Number(button.dataset.index);
+          renderSalesManagement();
+          window.setTimeout(() => document.querySelector(`[data-sales-index="${button.dataset.index}"]`)?.focus(), 30);
+        });
       });
       list.querySelectorAll("[data-sales-index], [data-remark-index]").forEach((input) => {
         input.addEventListener("keydown", (event) => {
@@ -1374,27 +1397,6 @@ function renderSalesManagement() {
         });
       });
     }
-  }
-  if (ledger) {
-    ledger.innerHTML = entries.map((item, index) => `
-      <div>${item.platform}</div>
-      <div>${item.store}<small>${item.owner || ""}</small></div>
-      <div>${item.submitted ? item.sales : "待填写"}</div>
-      <div><span class="status-pill ${item.submitted ? "status-ok" : "status-warn"}">${item.status || (item.submitted ? "已填写" : "未填")}</span></div>
-      <div>${item.abnormal ? `<span class="status-pill status-danger">${item.abnormal}</span>` : "正常"}</div>
-      <div><button class="tool-button" data-action="ledger-submit" data-index="${index}">${item.submitted ? "更正" : "填写"}</button></div>
-    `).join("");
-    ledger.querySelectorAll('[data-action="ledger-submit"]').forEach((button) => {
-      button.addEventListener("click", () => {
-        const input = document.querySelector(`[data-sales-index="${button.dataset.index}"]`);
-        if (input) {
-          input.focus();
-          return;
-        }
-        setSalesFocus("all");
-        window.setTimeout(() => document.querySelector(`[data-sales-index="${button.dataset.index}"]`)?.focus(), 30);
-      });
-    });
   }
   renderReportSalesMetrics();
 }
@@ -1471,8 +1473,10 @@ async function loadSales(showToastOnDone = false) {
     state.sales = smokeSales?.sales
       ? await smokeSales.sales(operatorPayload({ date: salesDateValue() }))
       : await api.sales(operatorPayload({ date: salesDateValue() }));
+    if (currentOperator().role === "owner") await loadStoreOwners();
     renderSalesManagement();
     renderOperatorOwnerOptions();
+    renderBargainStoreOptions();
     renderTodayDashboard();
     if (showToastOnDone) showToast("销量已刷新");
   } catch (error) {
@@ -1496,6 +1500,7 @@ async function loadSalesCompare(showToastOnDone = false) {
 
 async function refreshSalesForSelectedDate(showToastOnDone = true) {
   state.salesFocus = "missing";
+  state.salesEditingIndex = null;
   await loadSales(false);
   await loadSalesCompare(false);
   await loadSalesReport(false);
@@ -1685,7 +1690,7 @@ async function exportSalesReport() {
 }
 
 function businessReportPayload() {
-  const explicitDates = ["7d", "14d", "30d"].includes(state.businessRange || "");
+  const explicitDates = ["7d", "14d", "30d", "90d"].includes(state.businessRange || "");
   return operatorPayload({
     date_from: explicitDates ? ($("#businessDateFrom")?.value || "") : "",
     date_to: explicitDates ? ($("#businessDateTo")?.value || "") : "",
@@ -1772,6 +1777,46 @@ function businessKpiSummary() {
   };
 }
 
+function homeRangeCard(rangeKey, label) {
+  const report = state.homeBusinessReports?.[rangeKey];
+  if (!report?.summary) {
+    return `
+      <div class="home-business-card">
+        <span>${label}</span>
+        <strong>加载中</strong>
+        <small>店长手填销量，不含今日</small>
+      </div>
+    `;
+  }
+  const range = report.summary.range || {};
+  const previous = report.summary.previous_range || {};
+  return `
+    <div class="home-business-card">
+      <span>${label} <b class="info-dot" title="${esc(report.definitions?.range || "店长手填销量，不含今日。")}">?</b></span>
+      <strong>${esc(range.sales || 0)} 件</strong>
+      <small>较上一周期 ${esc(signedNumber(previous.delta || 0))}${previous.rate === null || previous.rate === undefined ? "" : `（${esc(signedRate(previous.rate))}）`}</small>
+      <small>较去年同期 ${esc(signedNumber(range.delta || 0))}${range.rate === null || range.rate === undefined ? "" : `（${esc(signedRate(range.rate))}）`}</small>
+    </div>
+  `;
+}
+
+function renderHomeBusinessOverview() {
+  const wrap = $("#homeBusinessOverview");
+  if (!wrap) return;
+  const hot = temuHotSnapshot();
+  wrap.innerHTML = `
+    ${homeRangeCard("7d", "最近7天销量")}
+    ${homeRangeCard("30d", "最近30天销量")}
+    ${homeRangeCard("90d", "最近90天销量")}
+    <div class="home-business-card hot-card">
+      <span>Temu 爆旺款链接</span>
+      <strong>${esc(hot.rows)} 个</strong>
+      <small>${esc(hot.label)}</small>
+      <small>较上月同期：暂无历史同期数据</small>
+    </div>
+  `;
+}
+
 function sourceGroupByKey(key) {
   return (state.status?.source_groups || []).find((item) => item.key === key) || {};
 }
@@ -1827,39 +1872,127 @@ function renderBusinessKpis(report) {
   if (!box) return;
   const rangeLabel = businessRangeLabel(report.filters?.range_key || state.businessRange || "30d");
   const completion = summary.completion || {};
+  const sourceSummary = report.source_summary || {};
+  const sourceMode = sourceSummary.mode || report.filters?.source || state.businessSource || "manual";
+  const sourceKpi = sourceMode === "platform"
+    ? `<div class="business-kpi warn">
+      <span>导入覆盖店铺数 <b class="info-dot" title="${esc(sourceSummary.note || "平台导入参考用于核对趋势，不作为月结主口径。")}">?</b></span>
+      <strong>${esc(sourceSummary.covered_stores || 0)}</strong>
+      <small>未匹配负责人 ${esc(sourceSummary.unassigned_stores || 0)} 个</small>
+    </div>`
+    : `<div class="business-kpi ${completion.level || "ok"}">
+      <span>店长填报完整度 <b class="info-dot" title="${esc(businessDefinition(report, "completion"))}">?</b></span>
+      <strong>${esc(completion.rate ?? 100)}%</strong>
+      <small>缺失 ${esc(completion.missing || 0)} 个店铺销售日</small>
+    </div>`;
   box.innerHTML = [
     kpiHtml(rangeLabel, summary.previous_range || summary.range || {}, "较上期", businessDefinition(report, "range"), "business-kpi-main"),
     deltaKpiHtml("上期对比", summary.previous_range || {}, "上期销量", businessDefinition(report, "previous_range")),
     deltaKpiHtml("去年同期", summary.range || {}, "去年同期销量", businessDefinition(report, "year_over_year")),
     kpiHtml("本月累计", summary.month || {}, "较上月同期", businessDefinition(report, "month")),
     kpiHtml("本年累计", summary.year || {}, "较去年同期", businessDefinition(report, "year")),
-    `<div class="business-kpi ${completion.level || "ok"}">
-      <span>店长填报完整度 <b class="info-dot" title="${esc(businessDefinition(report, "completion"))}">?</b></span>
-      <strong>${esc(completion.rate ?? 100)}%</strong>
-      <small>缺失 ${esc(completion.missing || 0)} 个店铺销售日</small>
-    </div>`,
+    sourceKpi,
   ].join("");
 }
 
 function renderBusinessAlerts(report) {
-  const anomalies = report.anomalies || [];
+  const anomalies = report.action_items || report.anomalies || [];
   const text = $("#businessAlertText");
   const list = $("#businessAlertList");
   const strip = $("#businessAlertStrip");
   if (!text || !list || !strip) return;
   strip.classList.toggle("danger", anomalies.length > 0);
   text.textContent = anomalies.length
-    ? `${anomalies.length} 条需要处理，主要是超过 ${report.settings?.stale_days || 3} 天未更新的数据。`
+    ? `${anomalies.length} 条需要处理，含缺填、未更新、店铺下滑或负责人未匹配。`
     : "暂无超过阈值的数据异常。";
   list.innerHTML = anomalies.length
     ? anomalies.map((item) => `
       <div class="business-alert-row">
-        <strong>${esc(item.type)}</strong>
-        <span>${esc(item.dimension)} · ${esc(item.name)} · ${esc(item.message)}</span>
+        <strong>${esc(item.title || item.type)}</strong>
+        <span>${esc([item.platform, item.store, item.owner].filter(Boolean).join(" · "))} · ${esc(item.message)}</span>
         <em>${esc(item.latest_date || "-")}</em>
       </div>
     `).join("")
     : `<div class="business-alert-row muted-row"><strong>正常</strong><span>当前筛选范围内没有需要处理的异常。</span><em>-</em></div>`;
+}
+
+function businessActionAttrs(item) {
+  const platform = esc(item.platform || "");
+  const store = esc(item.store || "");
+  if (item.action === "sales_missing") {
+    return `data-empty-page="sales" data-sales-focus="missing" data-sales-platform="${platform}" data-sales-store="${store}"`;
+  }
+  if (item.action === "sales_store") {
+    return `data-empty-page="sales" data-sales-focus="all" data-sales-platform="${platform}" data-sales-store="${store}"`;
+  }
+  if (item.action === "assign_owner") {
+    return `data-empty-page="masterdata" data-master-module="store-info"`;
+  }
+  return `data-empty-page="reports" data-business-action="trend" data-business-platform="${platform}" data-business-store="${store}"`;
+}
+
+function businessActionLabel(item) {
+  if (item.action === "sales_missing") return "去补销量";
+  if (item.action === "sales_store") return "查店铺";
+  if (item.action === "assign_owner") return "去分配";
+  return "看趋势";
+}
+
+function renderBusinessActionList(report) {
+  const list = $("#businessActionList");
+  if (!list) return;
+  const items = report.action_items || [];
+  if (!items.length) {
+    list.innerHTML = actionEmpty({
+      title: "暂无需要处理的问题",
+      body: "当前范围内没有缺填、长期未更新、明显下滑或负责人未匹配。",
+      secondary: report.source_summary?.note || "",
+    });
+    bindEmptyActions(list);
+    return;
+  }
+  list.innerHTML = items.slice(0, 8).map((item) => `
+    <div class="business-action-row ${esc(item.severity || "ok")}">
+      <div>
+        <strong>${esc(item.title || "需要处理")}</strong>
+        <span>${esc(item.message || "")}</span>
+        <small>${esc([item.platform, item.store, item.owner].filter(Boolean).join(" · "))}</small>
+      </div>
+      <button class="ghost-button" type="button" ${businessActionAttrs(item)}>${businessActionLabel(item)}</button>
+    </div>
+  `).join("");
+  bindEmptyActions(list);
+}
+
+function moverRow(row, tone) {
+  const delta = Number(row?.mom_delta || 0);
+  return `
+    <div class="business-mover-row ${tone}">
+      <div>
+        <strong>${esc(row?.store || row?.name || "-")}</strong>
+        <span>${esc([row?.platform, row?.owner].filter(Boolean).join(" · "))}</span>
+      </div>
+      <em>${esc(signedNumber(delta))}</em>
+    </div>
+  `;
+}
+
+function renderBusinessMovers(report) {
+  const box = $("#businessMoverGrid");
+  if (!box) return;
+  const movers = report.movers || {};
+  const declines = movers.declines || [];
+  const growth = movers.growth || [];
+  box.innerHTML = `
+    <div class="business-mover-column">
+      <h3>下滑最多</h3>
+      ${declines.length ? declines.slice(0, 5).map((row) => moverRow(row, "down")).join("") : `<div class="muted-row">暂无明显下滑。</div>`}
+    </div>
+    <div class="business-mover-column">
+      <h3>增长最多</h3>
+      ${growth.length ? growth.slice(0, 5).map((row) => moverRow(row, "up")).join("") : `<div class="muted-row">暂无明显增长。</div>`}
+    </div>
+  `;
 }
 
 function businessDimensionRows(dimension) {
@@ -1959,6 +2092,8 @@ function renderBusinessReport() {
   const ownerMode = (currentOperator().role || "admin") === "owner";
   renderBusinessKpis(report);
   renderBusinessAlerts(report);
+  renderBusinessActionList(report);
+  renderBusinessMovers(report);
   renderBusinessRankingTable("#businessPlatformTable", businessDimensionRows("platform"), "暂无平台数据。");
   renderBusinessRankingTable("#businessOwnerTable", businessDimensionRows("owner"), "暂无业务员数据。");
   renderBusinessRankingTable("#businessStoreTable", businessDimensionRows("store"), "暂无店铺数据。");
@@ -1978,6 +2113,29 @@ async function loadBusinessReport(showToastOnDone = false) {
     if (showToastOnDone) showToast("经营报表已刷新");
   } catch (error) {
     showToast(userFacingError(error));
+  }
+}
+
+async function loadHomeBusinessReports() {
+  if (!api.businessReport) return;
+  const ranges = ["7d", "30d", "90d"];
+  const reports = {};
+  try {
+    await Promise.all(ranges.map(async (rangeKey) => {
+      reports[rangeKey] = await api.businessReport(operatorPayload({
+        date_from: "",
+        date_to: "",
+        platform: "",
+        store: "",
+        grain: "month",
+        range_key: rangeKey,
+        source: "manual",
+      }));
+    }));
+    state.homeBusinessReports = reports;
+    renderHomeBusinessOverview();
+  } catch (error) {
+    showToast(userFacingError(error) || "首页经营总览读取失败");
   }
 }
 
@@ -2018,9 +2176,11 @@ async function submitSalesEntry(index) {
     } else {
       await api.submitSales(payload);
     }
+    state.salesEditingIndex = null;
     await loadSales(false);
     await loadSalesReport(false);
     await loadBusinessReport(false);
+    await loadHomeBusinessReports();
     await loadSalesCompare(false);
     focusNextSalesEntry(index);
     showToast("销量已保存");
@@ -2063,9 +2223,11 @@ async function submitSalesBatch() {
       }
       saved += 1;
     }
+    state.salesEditingIndex = null;
     await loadSales(false);
     await loadSalesReport(false);
     await loadBusinessReport(false);
+    await loadHomeBusinessReports();
     await loadSalesCompare(false);
     const missing = Number(state.sales?.summary?.missing || 0);
     showToast(missing ? `已保存 ${saved} 条，还有 ${missing} 个店铺未填写` : `已保存 ${saved} 条，当前日期已填完`);
@@ -2096,8 +2258,8 @@ async function exportSales() {
 
 function renderTodayDashboard() {
   renderRoleCopy();
+  renderHomeBusinessOverview();
   renderTodayWorkflow();
-  renderOperationRhythm();
   const operator = currentOperator();
   const ownerMode = operator.role === "owner";
   const summary = state.taskOverview || state.taskSummary || {};
@@ -2119,36 +2281,6 @@ function renderTodayDashboard() {
   const missingSources = sourceGroups.filter((item) => String(item.status || "").includes("缺") || String(item.status || "").includes("待")).length;
   const importSummary = state.importMatrix?.summary || {};
   const importBlocked = Number(importSummary.blocked_stores || 0) || missingSources;
-
-  const metrics = $("#todaySalesMetrics");
-  if (metrics) {
-    metrics.innerHTML = [
-      ["应填店铺", salesSummary.required ?? 0, "平台 + 店铺口径", ""],
-      ["已填写", salesSummary.submitted ?? 0, `销售日销量 ${salesSummary.total_sales || 0}`, "ok"],
-      ["未填写", salesSummary.missing ?? 0, ownerMode ? "先补齐销售日" : "管理员可提醒店长", "warn"],
-      ["异常波动", salesSummary.abnormal ?? 0, "50% 阈值提醒", "danger"],
-    ].map(([label, value, hint, tone]) => `<div class="metric-card ${tone}"><span>${label}</span><strong>${value}</strong><small>${hint}</small></div>`).join("");
-  }
-
-  const salesActions = $("#todaySalesActions");
-  if (salesActions) {
-    const actions = ownerMode ? [
-      ["第 1 步：补销量", "按销售日期补录，通常处理 T-1 / T-2 的缺口。", "sales", "去补录", 'data-sales-focus="missing"'],
-      ["第 2 步：填议价", "输入商家编码，系统拉同货品编码下全部尺码。", "bargain", "去填议价", ""],
-      ["第 3 步：处理任务包", "已推送到你名下的任务按整包提交。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
-    ] : [
-      ["销量缺口", "查看未填销售日期和异常波动。", "sales", "看销量", 'data-sales-focus="missing"'],
-      ["议价审批", "看店长提交的议价，逐行通过或不通过。", "bargain", "去审批", 'data-bargain-tab="pending"'],
-      ["任务确认", "店长整包处理后管理员确认归档。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
-    ];
-    salesActions.innerHTML = actions.map(([title, text, page, label, attrs]) => `
-      <div class="action-route">
-        <div><strong>${title}</strong><span>${text}</span></div>
-        <button class="ghost-button" data-empty-page="${page}" ${attrs}>${label}</button>
-      </div>
-    `).join("");
-    bindEmptyActions(salesActions);
-  }
 
   const actionList = $("#todayActionList");
   if (actionList) {
@@ -2172,29 +2304,6 @@ function renderTodayDashboard() {
     `).join("");
     bindEmptyActions(actionList);
   }
-
-  const snapshot = $("#todaySnapshot");
-  if (snapshot) {
-    const business = businessKpiSummary();
-    const hot = temuHotSnapshot();
-    if (business.loading) {
-      snapshot.innerHTML = `
-        <div><span>${ownerMode ? "我负责店铺" : "全部店铺"}最近30天销量</span><strong>加载中</strong></div>
-        <div><span>较上一个30天</span><strong>加载中</strong></div>
-        <div><span>较去年同期</span><strong>加载中</strong></div>
-        <div><span>Temu爆旺款链接</span><strong>${esc(hot.rows)} 个</strong><small>${esc(hot.label)}</small></div>
-      `;
-    } else {
-    snapshot.innerHTML = `
-      <div><span>${ownerMode ? "我负责店铺" : "全部店铺"}最近30天销量</span><strong>${esc(business.sales || 0)} 件</strong></div>
-      <div><span>较上一个30天</span><strong>${esc(signedNumber(business.previous_delta || 0))}${business.previous_rate === null || business.previous_rate === undefined ? "" : `（${esc(signedRate(business.previous_rate))}）`}</strong></div>
-      <div><span>较去年同期</span><strong>${esc(signedNumber(business.year_delta || 0))}${business.year_rate === null || business.year_rate === undefined ? "" : `（${esc(signedRate(business.year_rate))}）`}</strong></div>
-      <div><span>Temu爆旺款链接</span><strong>${esc(hot.rows)} 个</strong><small>${esc(hot.label)}</small></div>
-    `;
-    }
-  }
-  renderDailyFollowups();
-  renderTodayGuide();
 }
 
 function ownerFollowupRows() {
@@ -2375,23 +2484,23 @@ function renderTodayWorkflow() {
   const ownerMode = operator.role === "owner";
   const title = $("#todayWorkflowTitle");
   const hint = $("#todayWorkflowHint");
-  if (title) title.textContent = ownerMode ? "店长每日流程" : "管理员日常流程";
+  if (title) title.textContent = ownerMode ? "店长每日操作流程" : "管理员每日操作流程";
   if (hint) {
     hint.textContent = ownerMode
-      ? "每天先补销售日期；有议价就在线提交；任务包按整包处理。"
-      : "每天看销量缺口和议价审批；每周看导入缺口和任务确认。";
+      ? "按顺序处理自己负责店铺：销量、议价、任务、导入、经营结果。"
+      : "按顺序看全局进度：销量缺口、议价审批、导入缺口、任务推送和归档。";
   }
   const steps = ownerMode ? [
-    ["01", "补录销售日期", "进入销量管理，只补自己负责店铺缺的销售日。", "sales", "去补录", 'data-sales-focus="missing"'],
-    ["02", "填写议价申请", "输入商家编码，确认同货品编码下全部尺码的议价。", "bargain", "去议价", ""],
+    ["01", "填我的销量", "进入销量管理，只补自己负责店铺缺的销售日。", "sales", "去填写", 'data-sales-focus="missing"'],
+    ["02", "填议价申请", "输入商家编码，确认同货品编码下全部尺码的议价。", "bargain", "去填写", ""],
     ["03", "处理我的任务包", "商品任务按整包提交，备注或凭证至少填一个。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
     ["04", "补导入缺口", "每周只补自己店铺缺的数据源。", "imports", "看缺口", 'data-focus="import-matrix" data-import-focus="blocked"'],
     ["05", "看经营结果", "回到经营报表查看自己店铺趋势和销量差异提醒。", "reports", "看报表", ""],
   ] : [
-    ["01", "检查销量进度", "先看未填店铺和异常波动，提醒负责人补齐原因。", "sales", "看销量", 'data-sales-focus="missing"'],
+    ["01", "查销量缺口", "先看未填店铺和异常波动，提醒负责人补齐原因。", "sales", "看销量", 'data-sales-focus="missing"'],
     ["02", "审批议价", "店长提交后逐行通过或不通过，管理员不改价。", "bargain", "去审批", ""],
-    ["03", "检查导入缺口", "按平台、店铺、数据类型看缺失矩阵，缺哪个店铺一眼定位。", "imports", "看矩阵", 'data-focus="import-matrix" data-import-focus="blocked"'],
-    ["04", "推送商品任务", "把待推送任务包确认后推送给店长处理。", "tasks", "去推送", 'data-task-status="待推送" data-task-open-only="true"'],
+    ["03", "查导入缺口", "按平台、店铺、数据类型看缺失矩阵，缺哪个店铺一眼定位。", "imports", "看矩阵", 'data-focus="import-matrix" data-import-focus="blocked"'],
+    ["04", "推送任务包", "把待推送任务包确认后推送给店长处理。", "tasks", "去推送", 'data-task-status="待推送" data-task-open-only="true"'],
     ["05", "确认任务归档", "店长整包处理后，管理员确认完成。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
   ];
   wrap.innerHTML = steps.map(([number, titleText, body, page, action, attrs]) => `
@@ -3061,12 +3170,27 @@ function addStoreOwnerRow() {
 
 async function loadStoreOwners() {
   const operator = currentOperator();
-  const result = await api.storeOwners(operatorPayload());
-  state.storeOwners = result.assignments || [];
-  state.customPlatforms = storeOwnerPlatformOptions(state.storeOwners).filter((platform) => !BUILT_IN_PLATFORMS.includes(platform));
-  renderOperatorOwnerOptions();
-  renderBargainStoreOptions();
   if (operator.role === "owner") {
+    const owned = (state.sales?.entries || [])
+      .filter((item) => !operator.user || item.owner === operator.user)
+      .map((item) => ({
+        platform: item.platform,
+        store: item.store,
+        owner: item.owner || operator.user,
+        enabled: true,
+        daily_required: true,
+      }))
+      .filter((item) => item.platform && item.store);
+    const seen = new Set();
+    state.storeOwners = owned.filter((item) => {
+      const key = `${item.platform}::${item.store}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    state.customPlatforms = storeOwnerPlatformOptions(state.storeOwners).filter((platform) => !BUILT_IN_PLATFORMS.includes(platform));
+    renderOperatorOwnerOptions();
+    renderBargainStoreOptions();
     const input = $("#storeOwnerMapText");
     const rows = $("#storeOwnerRows");
     const line = $("#storeOwnerStatus");
@@ -3084,6 +3208,11 @@ async function loadStoreOwners() {
     if (line) line.textContent = `已读取 ${state.storeOwners.length} 个负责店铺`;
     return;
   }
+  const result = await api.storeOwners(operatorPayload());
+  state.storeOwners = result.assignments || [];
+  state.customPlatforms = storeOwnerPlatformOptions(state.storeOwners).filter((platform) => !BUILT_IN_PLATFORMS.includes(platform));
+  renderOperatorOwnerOptions();
+  renderBargainStoreOptions();
   renderStoreOwners();
 }
 
@@ -3746,6 +3875,7 @@ function openBargainHistoryDialog(tab = "history") {
   const dialog = $("#bargainHistoryDialog");
   if (!dialog) return;
   state.bargainTab = tab;
+  $("#bargainPage")?.classList.add("subpage-open");
   dialog.classList.remove("hidden");
   dialog.setAttribute("aria-hidden", "false");
   renderBargainTabs();
@@ -3753,11 +3883,13 @@ function openBargainHistoryDialog(tab = "history") {
   if (tab === "history") loadBargainHistory(false);
   if (tab === "pending") loadBargainHistory(false);
   if (tab === "clearance") loadBargainClearance(false);
+  dialog.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function closeBargainHistoryDialog() {
   const dialog = $("#bargainHistoryDialog");
   if (!dialog) return;
+  $("#bargainPage")?.classList.remove("subpage-open");
   dialog.classList.add("hidden");
   dialog.setAttribute("aria-hidden", "true");
 }
@@ -3767,8 +3899,20 @@ function renderBargainHistory() {
   if (!wrap) return;
   const title = $("#bargainHistoryTitle");
   const hint = $("#bargainHistoryHint");
-  if (title) title.textContent = state.bargainTab === "pending" ? "待审核议价" : "议价历史";
-  if (hint) hint.textContent = state.bargainTab === "pending" ? "只显示待管理员审核的议价，支持筛选和批量处理。" : "管理员看全部；店长只看自己提交的数据。";
+  const titles = {
+    pending: "待审核议价",
+    history: "议价历史",
+    clearance: "清仓款式",
+    lowprice: "低价回追",
+  };
+  const hints = {
+    pending: "宽屏表格处理待管理员审核的议价，支持平台、店铺、申请人和风险筛选，也支持批量通过或拒绝。",
+    history: "管理员看全部；店长只看自己提交的数据。",
+    clearance: "集中查看清仓款式，不占用议价录入区。",
+    lowprice: "集中检查低于成本、低于批发价 80% 或继续下探的低价风险，屏蔽项也按紧凑表格展示。",
+  };
+  if (title) title.textContent = titles[state.bargainTab] || "议价历史";
+  if (hint) hint.textContent = hints[state.bargainTab] || hints.history;
   if (state.bargainTab === "lowprice") {
     renderBargainLowPriceTrace();
     return;
@@ -3895,18 +4039,27 @@ function renderBargainLowPriceTrace() {
   const wrap = $("#bargainHistoryRows");
   if (!wrap) return;
   const rows = state.bargainLowPriceRisks || [];
-  const list = rows.length ? rows.map((row) => `
-    <div class="output-row bargain-history-row">
-      <div>
-        <strong>${esc(row["平台"] || "")} / ${esc(row["店铺"] || "")} · ${esc(row["商家编码"] || "")}</strong>
-        <p>当前申报价：${esc(row["当前申报价"] || "")}　历史审批价：${esc(row["历史审批价"] || "未匹配")}</p>
-        <p>风险原因：${esc(row["风险原因"] || "")}</p>
-      </div>
-      <div class="task-actions">
-        <button class="tool-button danger-mini" data-low-price-ignore="${esc(row.id || "")}">忽略</button>
-      </div>
+  const list = rows.length ? `
+    <div class="report-table-wrap low-price-wrap">
+      <table class="report-data-table low-price-table">
+        <thead><tr><th>平台</th><th>店铺</th><th>商家编码</th><th>当前申报价</th><th>历史审批价</th><th>风险原因</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>${esc(row["平台"] || "")}</td>
+              <td>${esc(row["店铺"] || "")}</td>
+              <td>${esc(row["商家编码"] || "")}</td>
+              <td>${esc(row["当前申报价"] || "")}</td>
+              <td>${esc(row["历史审批价"] || "未匹配")}</td>
+              <td><span class="status-pill status-danger">${esc(row["风险原因"] || "")}</span></td>
+              <td>${esc(row.status || "待处理")}</td>
+              <td><button class="tool-button danger-mini" data-low-price-ignore="${esc(row.id || "")}">屏蔽</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
     </div>
-  `).join("") : `<div class="action-empty">
+  ` : `<div class="action-empty">
     <div><strong>暂无低价风险</strong><span>粘贴平台当前在线价格后点击重新检查。系统会判断是否存在已通过审批记录或价格继续下探。</span></div>
   </div>`;
   wrap.innerHTML = `
@@ -4000,6 +4153,7 @@ async function rebuildBargainClearance() {
   try {
     state.bargainClearance = await api.rebuildBargainClearance(operatorPayload());
     state.bargainTab = "clearance";
+    $("#bargainPage")?.classList.add("subpage-open");
     $("#bargainHistoryDialog")?.classList.remove("hidden");
     $("#bargainHistoryDialog")?.setAttribute("aria-hidden", "false");
     renderBargainTabs();
@@ -4061,13 +4215,29 @@ async function submitBargain() {
 }
 
 async function reviewBargainLine(batchId, lineId, decision) {
-  const remark = $(`[data-bargain-remark="${CSS.escape(lineId)}"]`)?.value.trim() || "";
+  if (!batchId || !lineId || !decision) {
+    showToast("审批数据缺少批次或行号，请刷新后再试");
+    return;
+  }
+  const remarkInput = [...document.querySelectorAll("[data-bargain-remark]")]
+    .find((input) => input.dataset.bargainRemark === lineId);
+  const remark = remarkInput?.value.trim() || "";
+  const buttons = [...document.querySelectorAll("[data-bargain-review]")]
+    .filter((button) => button.dataset.batch === batchId && button.dataset.line === lineId);
+  buttons.forEach((button) => {
+    button.disabled = true;
+    button.textContent = "处理中";
+  });
   try {
     await api.bargainReview(operatorPayload({ batch_id: batchId, line_ids: [lineId], decision, remark }));
     await loadBargainHistory(false);
     showToast(`议价已${decision}`);
   } catch (error) {
     showToast(error.message || "审批议价失败");
+    buttons.forEach((button) => {
+      button.disabled = false;
+      button.textContent = button.dataset.bargainReview === "通过" ? "通过" : "拒绝";
+    });
   }
 }
 
@@ -4108,6 +4278,7 @@ async function refreshAll() {
     await loadSales(false);
     await loadSalesReport(false);
     await loadBusinessReport(false);
+    await loadHomeBusinessReports();
     await loadSalesCompare(false);
     await loadImportMatrix(false);
     await loadTaskSuppressions();

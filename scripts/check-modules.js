@@ -81,8 +81,8 @@ const modules = [
     checks: [
       ["有首页入口和页面", hasPage("todayPage", "today")],
       ["有角色化工作流导航", html.includes("todayWorkflowSteps") && renderer.includes("renderTodayWorkflow")],
-      ["有开始使用清单", html.includes("todayGuideSteps") && renderer.includes("renderTodayGuide")],
-      ["有负责人每日督办", html.includes("dailyFollowupList") && renderer.includes("renderDailyFollowups") && renderer.includes("ownerFollowupRows")],
+      ["有 7/30/90 天经营总览", html.includes("homeBusinessOverview") && renderer.includes("renderHomeBusinessOverview") && renderer.includes('"7d", "30d", "90d"')],
+      ["有合并后的今日待处理", html.includes("todayActionList") && html.includes("今日待我处理")],
       ["角色入口有负责人候选校验", html.includes("operatorOwnerOptions") && renderer.includes("validateOperatorDraft")],
     ],
   },
@@ -91,8 +91,7 @@ const modules = [
     checks: [
       ["有销量页面入口", hasPage("salesPage", "sales")],
       ["有今日清单和提交按钮", html.includes("salesEntryList") && renderer.includes("submitSalesEntry")],
-      ["有未填/异常/全部快速筛选", html.includes("salesFocusBar") && renderer.includes("setSalesFocus") && renderer.includes("salesFocusEntries")],
-      ["有导出销量接口", hasButton("exportSalesBtn") && hasApi("exportSales", "api:export-sales")],
+      ["有单表编辑和批量保存", renderer.includes("sales-day-table") && renderer.includes("salesEditingIndex") && html.includes("保存当前列表")],
       ["CLI 返回销量结构", Array.isArray(sales.entries) && sales.summary && Array.isArray(sales.platforms)],
       ["差异提醒结构可用", Array.isArray(salesCompare.rows) && salesCompare.summary],
     ],
