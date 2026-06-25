@@ -142,7 +142,7 @@ class DailyOpsBargainAppTest(unittest.TestCase):
         self.assertEqual(rows["rows"][0]["货品名称"], "自动源商品")
         self.assertEqual(rows["rows"][0]["Temu 30天最高销量"], 45)
 
-    def test_lookup_bargain_staging_does_not_flag_missing_cost_when_goods_archive_has_wholesale(self):
+    def test_lookup_bargain_staging_flags_missing_cost_when_goods_archive_has_only_wholesale(self):
         bargain_file = self.root / "bargain_requests.json"
         erp_goods_archive = self.root / "erp_goods_archive.xlsx"
         write_rows(erp_goods_archive, ["货品编码", "货品名称", "商家编码", "规格名称", "成本价", "批发报价", "来源接口"], [
@@ -150,7 +150,8 @@ class DailyOpsBargainAppTest(unittest.TestCase):
         ])
 
         with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file), \
-             patch.object(daily_ops_app, "erp_base_files", return_value=[erp_goods_archive]):
+             patch.object(daily_ops_app, "erp_base_files", return_value=[erp_goods_archive]), \
+             patch.object(daily_ops_app, "erp_cost_files", return_value=[]):
             rows = daily_ops_app.lookup_bargain_staging({
                 "merchant_code": "330318390-L",
                 "store": "二弟",
@@ -162,7 +163,36 @@ class DailyOpsBargainAppTest(unittest.TestCase):
             })
 
         self.assertEqual(rows["rows"][0]["批发价"], 22)
-        self.assertEqual(rows["rows"][0]["风险标签"], "")
+        self.assertIn("ERP成本缺失", rows["rows"][0]["风险标签"])
+        self.assertIn("低于批发价80%", rows["rows"][0]["风险标签"])
+
+    def test_lookup_bargain_staging_supplements_cost_from_inventory_sales_export(self):
+        bargain_file = self.root / "bargain_requests.json"
+        erp_goods_archive = self.root / "erp_goods_archive.xlsx"
+        cost_file = self.root / "erp库存销量_宠物圈仓_20260623.xlsx"
+        write_rows(erp_goods_archive, ["货品编码", "货品名称", "商家编码", "规格名称", "批发报价", "来源接口"], [
+            {"货品编码": "330317800", "货品名称": "01棒球衫", "商家编码": "330317800-S", "规格名称": "黑/S", "批发报价": 16, "来源接口": "goods_query.php"},
+        ])
+        write_rows(cost_file, ["商家编码", "成本价", "昨日实际发货量", "近30天净销量"], [
+            {"商家编码": "330317800-S", "成本价": 12, "昨日实际发货量": 0, "近30天净销量": 25},
+        ])
+
+        with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file), \
+             patch.object(daily_ops_app, "erp_base_files", return_value=[erp_goods_archive]), \
+             patch.object(daily_ops_app, "erp_cost_files", return_value=[cost_file]):
+            rows = daily_ops_app.lookup_bargain_staging({
+                "merchant_code": "330317800-S",
+                "store": "四弟",
+                "platform": "Temu",
+                "owner": "洁琳",
+                "platform_rows": [
+                    {"平台": "Temu", "店铺": "四弟", "商家编码": "330317800-S", "申报价": 9, "30天销量": 2},
+                ],
+            })
+
+        self.assertEqual(rows["rows"][0]["成本价"], 12)
+        self.assertIn("低于成本", rows["rows"][0]["风险标签"])
+        self.assertEqual(rows["rows"][0]["风险等级"], "red")
 
     def test_lookup_bargain_staging_limits_platform_sales_to_erp_standard_size_codes(self):
         bargain_file = self.root / "bargain_requests.json"
@@ -215,6 +245,22 @@ class DailyOpsBargainAppTest(unittest.TestCase):
         self.assertEqual(result["count"], 1)
         self.assertEqual(history["rows"][0]["status"], "已通过")
         self.assertEqual(history["rows"][0]["review_remark"], "清仓通过")
+
+    def test_bargain_submit_recomputes_risk_from_submitted_price(self):
+        bargain_file = self.root / "bargain_requests.json"
+        with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file):
+            batch = daily_ops_app.submit_bargain_batch({
+                "store": "四弟",
+                "platform": "Temu",
+                "owner": "洁琳",
+                "lines": [
+                    {"货品编码": "330317800", "货品名称": "01棒球衫", "商家编码": "330317800-S", "尺码": "S", "本次议价": 9, "成本价": 12, "批发价": 16, "风险等级": "green", "风险标签": ""},
+                ],
+            })
+
+        self.assertEqual(batch["lines"][0]["风险等级"], "red")
+        self.assertIn("低于成本", batch["lines"][0]["风险标签"])
+        self.assertIn("低于批发价80%", batch["lines"][0]["风险标签"])
 
     def test_bargain_submit_requires_price_for_every_size(self):
         bargain_file = self.root / "bargain_requests.json"

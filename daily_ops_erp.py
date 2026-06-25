@@ -350,19 +350,28 @@ def manual_sync(settings, erp_dir, now=None):
 
     product_endpoint = _text(settings.get("product_endpoint")) or PRODUCT_ENDPOINT
     stock_endpoint = _text(settings.get("stock_endpoint")) or STOCK_ENDPOINT
-    product_params = {}
-    if product_endpoint != PRODUCT_ENDPOINT:
-        product_params.update({
-            "start_time": start_time,
-            "end_time": end_time,
-        })
-    if shop_id:
-        product_params["shop_id"] = shop_id
-    product_sync = fetch_paged_rows(settings, product_endpoint, product_params, ["goods_list", "data"], page_size, max_pages=max_pages)
-    if stock_endpoint == STOCK_CHANGE_ENDPOINT:
-        stock_sync = fetch_stock_change_rows(settings, stock_endpoint, shop_id, shop_no, stock_limit)
-    else:
-        stock_sync = fetch_available_stock_rows(settings, stock_endpoint, start_time, end_time, page_size, stock_limit, max_pages=max_pages)
+    sync_product_archive = settings.get("sync_product_archive", True) is not False
+    sync_stock_snapshot = settings.get("sync_stock_snapshot", True) is not False
+    if not sync_product_archive and not sync_stock_snapshot:
+        return {"status": "blocked", "message": "请至少选择一个 ERP 拉取内容：货品档案或库存快照", "missing": ["同步内容"]}
+
+    product_sync = {"rows": [], "pages": 0, "total": None, "messages": []}
+    stock_sync = {"rows": [], "pages": 0, "total": None, "messages": []}
+    if sync_product_archive:
+        product_params = {}
+        if product_endpoint != PRODUCT_ENDPOINT:
+            product_params.update({
+                "start_time": start_time,
+                "end_time": end_time,
+            })
+        if shop_id:
+            product_params["shop_id"] = shop_id
+        product_sync = fetch_paged_rows(settings, product_endpoint, product_params, ["goods_list", "data"], page_size, max_pages=max_pages)
+    if sync_stock_snapshot:
+        if stock_endpoint == STOCK_CHANGE_ENDPOINT:
+            stock_sync = fetch_stock_change_rows(settings, stock_endpoint, shop_id, shop_no, stock_limit)
+        else:
+            stock_sync = fetch_available_stock_rows(settings, stock_endpoint, start_time, end_time, page_size, stock_limit, max_pages=max_pages)
 
     product_rows = normalize_product_rows(product_sync["rows"])
     stock_rows = normalize_stock_rows(stock_sync["rows"], warehouse_no, warehouse_name)
@@ -374,19 +383,28 @@ def manual_sync(settings, erp_dir, now=None):
         stamp = now.strftime("%Y%m%d_%H%M%S")
         product_name = f"erp产品基础信息表_接口同步_{stamp}.xlsx"
         stock_name = f"erp库存同步_{stamp}.xlsx"
-    product_file = _write_rows(
-        erp_dir / product_name,
-        ["店铺编号", "店铺", "平台ID", "平台货品编码", "平台规格编码", "商家编码（新）", "货品编码", "货品名称", "规格名称", "条码", "平台库存", "成本价", "批发报价", "批发价", "零售价", "修改时间", "来源接口"],
-        product_rows,
-    )
-    stock_file = _write_rows(
-        erp_dir / stock_name,
-        ["店铺编号", "店铺", "仓库编号", "仓库", "平台货品编码", "平台规格编码", "商家编码（新）", "商家编码", "货品名称", "规格名称", "可销库存", "实际库存", "占用库存", "修改时间", "来源接口"],
-        stock_rows,
-    )
+    product_file = ""
+    stock_file = ""
+    if sync_product_archive:
+        product_file = _write_rows(
+            erp_dir / product_name,
+            ["店铺编号", "店铺", "平台ID", "平台货品编码", "平台规格编码", "商家编码（新）", "货品编码", "货品名称", "规格名称", "条码", "平台库存", "成本价", "批发报价", "批发价", "零售价", "修改时间", "来源接口"],
+            product_rows,
+        )
+    if sync_stock_snapshot:
+        stock_file = _write_rows(
+            erp_dir / stock_name,
+            ["店铺编号", "店铺", "仓库编号", "仓库", "平台货品编码", "平台规格编码", "商家编码（新）", "商家编码", "货品名称", "规格名称", "可销库存", "实际库存", "占用库存", "修改时间", "来源接口"],
+            stock_rows,
+        )
+    message_parts = []
+    if sync_product_archive:
+        message_parts.append(f"货品档案 {len(product_rows)} 条")
+    if sync_stock_snapshot:
+        message_parts.append(f"库存快照 {len(stock_rows)} 条")
     return {
         "status": "synced",
-        "message": f"已同步商品 {len(product_rows)} 条、库存 {len(stock_rows)} 条",
+        "message": f"已同步{'、'.join(message_parts)}",
         "product_count": len(product_rows),
         "stock_count": len(stock_rows),
         "product_pages": product_sync["pages"],
@@ -394,7 +412,7 @@ def manual_sync(settings, erp_dir, now=None):
         "product_total": product_sync["total"],
         "stock_total": stock_sync["total"],
         "warnings": product_sync["messages"] + stock_sync["messages"],
-        "product_file": str(product_file),
-        "stock_file": str(stock_file),
+        "product_file": str(product_file) if product_file else "",
+        "stock_file": str(stock_file) if stock_file else "",
         "api": {"product": product_endpoint, "stock": stock_endpoint},
     }

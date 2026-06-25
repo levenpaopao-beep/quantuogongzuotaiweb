@@ -118,6 +118,40 @@ def load_erp_items(erp_files):
     return items
 
 
+def load_erp_cost_map(cost_files):
+    cost_map = {}
+    for path in cost_files or []:
+        path = Path(path)
+        if not path.exists():
+            continue
+        for row in read_workbook_rows(path):
+            merchant_code = text(first_value(row, "商家编码", "商家编码（新）", "spec_no", "货品编号", "SKU"))
+            if not merchant_code:
+                continue
+            merchant_code = canonical_merchant_code(merchant_code)
+            cost = number(first_value(row, "成本价", "成本", "ref_cost_price", "sku_default_purchase_price"))
+            wholesale = number(first_value(row, "批发价", "批发报价", "wholesale_price"))
+            if merchant_code not in cost_map:
+                cost_map[merchant_code] = {"成本价": 0, "批发价": 0}
+            if cost and not cost_map[merchant_code]["成本价"]:
+                cost_map[merchant_code]["成本价"] = cost
+            if wholesale and not cost_map[merchant_code]["批发价"]:
+                cost_map[merchant_code]["批发价"] = wholesale
+    return cost_map
+
+
+def apply_cost_map(erp_items, cost_map):
+    for item in erp_items:
+        supplement = cost_map.get(canonical_merchant_code(item.get("商家编码")))
+        if not supplement:
+            continue
+        if not item.get("成本价") and supplement.get("成本价"):
+            item["成本价"] = supplement["成本价"]
+        if not item.get("批发价") and supplement.get("批发价"):
+            item["批发价"] = supplement["批发价"]
+    return erp_items
+
+
 def platform_item_from_row(row, fallback_code):
     merchant_code = text(row.get("商家编码") or row.get("merchant_code") or row.get("SKU货号") or row.get("商品SKU") or row.get("供应商SKU"))
     if not merchant_code:
@@ -214,8 +248,8 @@ class BargainStore:
     def list_batches(self):
         return self.load()["batches"]
 
-    def lookup_staging_rows(self, merchant_code, request_store, platform, owner, erp_files, clearance_catalog=None, platform_rows=None):
-        erp_items = load_erp_items(erp_files)
+    def lookup_staging_rows(self, merchant_code, request_store, platform, owner, erp_files, clearance_catalog=None, platform_rows=None, cost_files=None):
+        erp_items = apply_cost_map(load_erp_items(erp_files), load_erp_cost_map(cost_files))
         by_code = {item["商家编码"]: item for item in erp_items if item["商家编码"]}
         platform_rows = platform_rows or []
         wanted_code = text(merchant_code)
@@ -252,11 +286,16 @@ class BargainStore:
             cost = item["成本价"]
             clearance = is_clearance_goods(clearance_catalog, goods_code)
             risk_tags = []
-            if missing_erp or item.get("missing_erp") or (not cost and not wholesale):
+            if missing_erp or item.get("missing_erp") or not cost:
                 risk_tags.append("ERP成本缺失")
             if missing_erp or item.get("missing_erp") or not wholesale:
                 risk_tags.append("ERP批发价缺失")
-            risk_level = "review" if risk_tags else price_risk_level(suggest_price, cost, clearance)
+            if suggest_price and cost and suggest_price < cost:
+                risk_tags.append("低于成本")
+            if suggest_price and wholesale and suggest_price < wholesale * 0.8:
+                risk_tags.append("低于批发价80%")
+            price_level = price_risk_level(suggest_price, cost, clearance, wholesale)
+            risk_level = price_level if price_level != "green" else ("review" if risk_tags else "green")
             result.append({
                 "货品编码": goods_code,
                 "货品名称": item["货品名称"],
@@ -291,6 +330,7 @@ class BargainStore:
                 raise ValueError("每个尺码都必须填写本次议价")
             line_id = row_id("bargain-line", [batch_id, line.get("商家编码"), index])
             item = dict(line)
+            risk_level, risk_tags = submitted_price_risk(item)
             item.update({
                 "id": line_id,
                 "batch_id": batch_id,
@@ -305,6 +345,8 @@ class BargainStore:
                 "reviewed_at": "",
                 "review_remark": "",
                 "parent_line_id": text(line.get("parent_line_id")),
+                "风险等级": risk_level,
+                "风险标签": risk_tags,
             })
             prepared.append(item)
         batch = {
@@ -497,10 +539,35 @@ def platform_metrics_for_merchant(merchant_code, platform_rows):
     }
 
 
-def price_risk_level(price, cost, clearance):
+def price_risk_level(price, cost, clearance, wholesale=0):
     if price and cost and price < cost:
         return "orange" if clearance else "red"
+    if price and wholesale and price < wholesale * 0.8:
+        return "orange" if clearance else "red"
     return "green"
+
+
+def submitted_price_risk(line):
+    price = number(line.get("本次议价") or line.get("submitted_price"))
+    cost = number(line.get("成本价"))
+    wholesale = number(line.get("批发价") or line.get("批发报价"))
+    clearance = bool(line.get("清仓款"))
+    tags = []
+    if not cost:
+        tags.append("ERP成本缺失")
+    if not wholesale:
+        tags.append("ERP批发价缺失")
+    if price and cost and price < cost:
+        tags.append("低于成本")
+    if price and wholesale and price < wholesale * 0.8:
+        tags.append("低于批发价80%")
+    for tag in text(line.get("风险标签")).split("、"):
+        if tag and tag not in tags:
+            tags.append(tag)
+    level = price_risk_level(price, cost, clearance, wholesale)
+    if level == "green" and tags:
+        level = "review"
+    return level, "、".join(tags)
 
 
 def ignored_low_price(ignores, platform, store, merchant_code, price):

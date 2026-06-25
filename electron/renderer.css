@@ -1043,6 +1043,9 @@ label { color: var(--muted); font-size: 12px; }
   gap: 14px;
   align-items: start;
 }
+.workbench-grid.single-column {
+  grid-template-columns: minmax(0, 1fr);
+}
 .source-panel { min-height: 680px; }
 .queue-panel { min-height: 680px; display: flex; flex-direction: column; }
 .source-table {
@@ -1881,6 +1884,16 @@ label { color: var(--muted); font-size: 12px; }
   background: #fff;
 }
 .erp-settings-grid .check-line input { width: auto; }
+.erp-readonly-option {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #f8fbff;
+  color: var(--muted);
+}
+.erp-readonly-option strong { color: var(--ink); }
 #erpSettingsStatus {
   margin-top: 10px;
   color: var(--muted);

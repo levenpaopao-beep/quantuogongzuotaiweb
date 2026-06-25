@@ -3353,7 +3353,10 @@ function testErpSettings() {
     showToast(message);
     return;
   }
-  const scope = (settings.sync_scope || []).join("、") || "未设置同步范围";
+  const scope = [
+    settings.sync_product_archive !== false ? "货品档案" : "",
+    settings.sync_stock_snapshot !== false ? "库存快照" : "",
+  ].filter(Boolean).join("、") || "未选择同步内容";
   const warehouse = settings.warehouse_name || settings.warehouse_no || "未指定仓库";
   const environment = settings.environment === "prod" ? "正式环境" : "测试环境";
   const message = `本地校验通过：${settings.provider || "旺店通"}，${environment}，${settings.auto_sync ? "自动同步开启" : "手动同步为主"}，仓库：${warehouse}，范围：${scope}`;
@@ -3373,7 +3376,17 @@ async function manualErpSync() {
     return;
   }
   try {
-    if (status) status.textContent = "正在同步 ERP 商品和库存...";
+    const scopes = [
+      next.erp_api.sync_product_archive !== false ? "货品档案" : "",
+      next.erp_api.sync_stock_snapshot !== false ? "库存快照" : "",
+    ].filter(Boolean).join("、");
+    if (!scopes) {
+      const message = "请至少选择一个 ERP 拉取内容";
+      if (status) status.textContent = message;
+      showToast(message);
+      return;
+    }
+    if (status) status.textContent = `正在同步 ERP：${scopes}...`;
     state.rules = await api.saveRules(operatorPayload({ rules: next }));
     const result = await api.erpSync(operatorPayload());
     state.rules = await api.loadRules(operatorPayload());
@@ -3539,11 +3552,29 @@ function reportTaskBadges(reportId) {
   return `<div class="queue-task-badges">${badges.map(([label, value]) => `<span class="queue-task-badge">${label} ${value}</span>`).join("")}</div>`;
 }
 
-function bargainRiskText(row) {
-  if (row["风险标签"]) return row["风险标签"];
-  if (row["清仓款"] && row["风险等级"] === "orange") return "清仓低于成本";
-  if (row["风险等级"] === "red") return "低于成本";
-  return row["清仓款"] ? "清仓款" : "正常";
+function bargainComputedRisk(row) {
+  const price = Number(row["本次议价"] || 0);
+  const cost = Number(row["成本价"] || 0);
+  const wholesale = Number(row["批发价"] || 0);
+  const tags = [];
+  if (!cost) tags.push("ERP成本缺失");
+  if (!wholesale) tags.push("ERP批发价缺失");
+  if (price && cost && price < cost) tags.push("低于成本");
+  if (price && wholesale && price < wholesale * 0.8) tags.push("低于批发价80%");
+  (row["风险标签"] || "").split("、").filter(Boolean).forEach((tag) => {
+    if (!tags.includes(tag)) tags.push(tag);
+  });
+  let level = row["风险等级"] || "green";
+  if (tags.includes("低于成本") || tags.includes("低于批发价80%")) level = row["清仓款"] ? "orange" : "red";
+  else if (tags.length || level === "review") level = "review";
+  const text = tags.length ? tags.join("、") : (row["清仓款"] ? "清仓款" : "正常");
+  return { level, text };
+}
+
+function bargainRiskClass(level) {
+  if (level === "red") return "status-danger";
+  if (level === "orange" || level === "review") return "status-warn";
+  return "status-ok";
 }
 
 function renderBargainStoreOptions() {
@@ -3570,6 +3601,18 @@ function bargainPriceRatio(row) {
   return `${(price / wholesale * 100).toFixed(2)}%`;
 }
 
+function updateBargainRiskCells(index) {
+  const row = state.bargainDraft[index];
+  if (!row) return;
+  const ratioCell = document.querySelector(`[data-bargain-ratio="${index}"]`);
+  if (ratioCell) ratioCell.textContent = bargainPriceRatio(row);
+  const riskCell = document.querySelector(`[data-bargain-risk="${index}"]`);
+  if (riskCell) {
+    const risk = bargainComputedRisk(row);
+    riskCell.innerHTML = `<span class="status-pill ${bargainRiskClass(risk.level)}">${esc(risk.text)}</span>`;
+  }
+}
+
 function syncBargainPriceToGoods(index) {
   const source = state.bargainDraft[index];
   if (!source || !source["本次议价"]) {
@@ -3592,7 +3635,9 @@ function renderBargainDraft() {
     body.innerHTML = '<tr><td colspan="12" class="empty-table-cell">输入商家编码后，系统会把同一货品编码下所有尺码放到这里。</td></tr>';
     return;
   }
-  body.innerHTML = rows.map((row, index) => `
+  body.innerHTML = rows.map((row, index) => {
+    const risk = bargainComputedRisk(row);
+    return `
     <tr>
       <td>${esc(row["货品名称"] || "")}</td>
       <td>${esc(row["议价申请店铺"] || "")}</td>
@@ -3601,22 +3646,45 @@ function renderBargainDraft() {
       <td>${esc(row["商家编码"] || "")}</td>
       <td><input class="inline-price" data-bargain-price="${index}" value="${esc(row["本次议价"] || "")}" /></td>
       <td>${esc(row["成本价"] || "")}</td>
-      <td>${esc(bargainPriceRatio(row))}</td>
+      <td data-bargain-ratio="${index}">${esc(bargainPriceRatio(row))}</td>
       <td>${esc(row["在线销售链接数"] || 0)}</td>
       <td>${esc(row["在售最低申报价"] || "")}</td>
-      <td><span class="status-pill ${row["风险等级"] === "red" ? "status-danger" : row["风险等级"] === "orange" || row["风险等级"] === "review" ? "status-warn" : "status-ok"}">${esc(bargainRiskText(row))}</span></td>
+      <td data-bargain-risk="${index}"><span class="status-pill ${bargainRiskClass(risk.level)}">${esc(risk.text)}</span></td>
       <td><button class="tool-button" data-sync-bargain-price="${index}">同步到本款全部尺码</button></td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
   body.querySelectorAll("[data-bargain-price]").forEach((input) => {
     input.addEventListener("input", () => {
       const index = Number(input.dataset.bargainPrice);
-      if (state.bargainDraft[index]) state.bargainDraft[index]["本次议价"] = input.value.trim();
+      if (state.bargainDraft[index]) {
+        state.bargainDraft[index]["本次议价"] = input.value.trim();
+        updateBargainRiskCells(index);
+      }
     });
   });
   body.querySelectorAll("[data-sync-bargain-price]").forEach((button) => {
     button.addEventListener("click", () => syncBargainPriceToGoods(Number(button.dataset.syncBargainPrice)));
   });
+}
+
+function openBargainHistoryDialog(tab = "history") {
+  const dialog = $("#bargainHistoryDialog");
+  if (!dialog) return;
+  state.bargainTab = tab;
+  dialog.classList.remove("hidden");
+  dialog.setAttribute("aria-hidden", "false");
+  renderBargainTabs();
+  renderBargainHistory();
+  if (tab === "history") loadBargainHistory(false);
+  if (tab === "clearance") loadBargainClearance(false);
+}
+
+function closeBargainHistoryDialog() {
+  const dialog = $("#bargainHistoryDialog");
+  if (!dialog) return;
+  dialog.classList.add("hidden");
+  dialog.setAttribute("aria-hidden", "true");
 }
 
 function renderBargainHistory() {
@@ -3783,6 +3851,8 @@ async function rebuildBargainClearance() {
   try {
     state.bargainClearance = await api.rebuildBargainClearance(operatorPayload());
     state.bargainTab = "clearance";
+    $("#bargainHistoryDialog")?.classList.remove("hidden");
+    $("#bargainHistoryDialog")?.setAttribute("aria-hidden", "false");
     renderBargainTabs();
     renderBargainHistory();
     showToast(`已重建清仓款式：${state.bargainClearance?.summary?.goods_count || 0} 个款式`);
@@ -4147,6 +4217,11 @@ function bindEvents() {
     renderBargainDraft();
     showToast("议价暂存区已清空");
   });
+  $("#openBargainHistoryBtn")?.addEventListener("click", () => openBargainHistoryDialog("history"));
+  $("#openBargainLowPriceBtn")?.addEventListener("click", () => openBargainHistoryDialog("lowprice"));
+  document.querySelectorAll("[data-bargain-history-close]").forEach((button) => {
+    button.addEventListener("click", closeBargainHistoryDialog);
+  });
   $("#loadBargainHistoryBtn")?.addEventListener("click", () => loadBargainHistory(true));
   $("#searchBargainHistoryBtn")?.addEventListener("click", () => loadBargainHistory(true));
   $("#rebuildClearanceBtn")?.addEventListener("click", rebuildBargainClearance);
@@ -4155,6 +4230,8 @@ function bindEvents() {
       state.bargainTab = button.dataset.bargainTab || "history";
       renderBargainTabs();
       renderBargainHistory();
+      if (state.bargainTab === "history") loadBargainHistory(false);
+      if (state.bargainTab === "clearance") loadBargainClearance(false);
     });
   });
   $("#operatorRole")?.addEventListener("change", () => {

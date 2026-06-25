@@ -396,9 +396,29 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("renderBargainStoreOptions", source)
         self.assertIn("syncBargainPriceToGoods", source)
         self.assertIn("同步到本款全部尺码", source)
+        self.assertIn("bargainHistoryDialog", html)
+        self.assertIn("openBargainHistoryDialog", source)
         self.assertIn("bargainSelectAll", html)
         self.assertIn("reviewSelectedBargains", source)
         self.assertIn("拒绝原因", source)
+
+    def test_bargain_risk_recomputes_from_typed_price(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        self.assertIn("data-bargain-risk", source)
+        self.assertIn("bargainComputedRisk", source)
+        self.assertIn("低于批发价80%", source)
+        self.assertIn("ERP成本缺失", source)
+
+    def test_erp_settings_show_manual_pull_choices(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        self.assertIn('data-erp-field="sync_product_archive"', html)
+        self.assertIn('data-erp-field="sync_stock_snapshot"', html)
+        self.assertIn("销售出库单", html)
+        self.assertIn("不拉取", html)
+        self.assertIn("按选择同步 ERP", html)
+        self.assertIn("sync_product_archive", source)
 
     def test_bargain_draft_table_has_horizontal_scroll_boundary(self):
         html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")

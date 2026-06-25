@@ -228,6 +228,9 @@ DEFAULT_RULES = {
         "base_url": "https://openapi.ali.huice.cc/openapi",
         "product_endpoint": "goods_query.php",
         "stock_endpoint": "stock_query.php",
+        "sync_product_archive": True,
+        "sync_stock_snapshot": True,
+        "sync_sales_outbound": False,
         "shop_id": "",
         "shop_no": "",
         "warehouse_no": "",
@@ -832,6 +835,17 @@ def erp_base_files():
     if interface_files:
         return [interface_files[0]]
     return []
+
+
+def erp_cost_files():
+    files = []
+    for pattern in ["erp库存销量*.xlsx", "宠物圈仓_库存查询*.xlsx", "erp库存同步*.xlsx", "erp库存*.xlsx"]:
+        files.extend(ERP_DIR.glob(pattern))
+    unique = {}
+    for path in files:
+        if path.exists():
+            unique[str(path.resolve())] = path
+    return sorted(unique.values(), key=lambda path: path.stat().st_mtime if path.exists() else 0, reverse=True)
 
 
 def temu_sales_files():
@@ -2291,6 +2305,7 @@ def lookup_bargain_staging(payload):
         platform=payload.get("platform", ""),
         owner=payload.get("owner", ""),
         erp_files=erp_base_files(),
+        cost_files=erp_cost_files(),
         clearance_catalog=load_clearance_catalog(),
         platform_rows=bargain_platform_rows(payload),
     )

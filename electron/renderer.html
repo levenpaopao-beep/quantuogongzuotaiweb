@@ -304,12 +304,13 @@
               <p>选择店铺后输入一个商家编码，系统按货品编码拉出全部尺码；管理员只审批通过或不通过。</p>
             </div>
             <div class="download-actions">
-              <button class="ghost-button" id="loadBargainHistoryBtn">刷新历史</button>
+              <button class="ghost-button" id="openBargainHistoryBtn">议价历史</button>
+              <button class="ghost-button" id="openBargainLowPriceBtn" data-admin-only="bargain-lowprice">低价回追</button>
               <button class="ghost-button" id="rebuildClearanceBtn" data-admin-only="bargain-clearance">重建清仓款式</button>
             </div>
           </div>
 
-          <div class="workbench-grid">
+          <div class="workbench-grid single-column">
             <section class="panel source-panel">
               <div class="panel-head">
                 <div>
@@ -334,10 +335,17 @@
                 <button class="primary-button" id="submitBargainBtn">提交给管理员</button>
               </div>
             </section>
-
-            <aside class="panel queue-panel">
-              <h2>议价历史</h2>
-              <p id="bargainHistoryHint">管理员看全部；店长只看自己提交的数据。</p>
+          </div>
+          <div id="bargainHistoryDialog" class="dialog-backdrop hidden" aria-hidden="true">
+            <section class="task-dialog master-module-dialog" role="dialog" aria-modal="true" aria-labelledby="bargainHistoryTitle">
+              <div class="dialog-head">
+                <div>
+                  <span class="pill">议价管理</span>
+                  <h2 id="bargainHistoryTitle">议价历史</h2>
+                  <p id="bargainHistoryHint">管理员看全部；店长只看自己提交的数据。</p>
+                </div>
+                <button class="tool-button" type="button" data-bargain-history-close>关闭</button>
+              </div>
               <div class="business-tabs" id="bargainTabs">
                 <button class="segment active" data-bargain-tab="history" type="button">审批记录</button>
                 <button class="segment" data-bargain-tab="clearance" type="button" data-admin-only="bargain-clearance">清仓款式</button>
@@ -346,6 +354,7 @@
               <div class="task-filters">
                 <input id="bargainHistorySearch" placeholder="商家编码 / 货品编码" />
                 <button class="ghost-button" id="searchBargainHistoryBtn">查询</button>
+                <button class="ghost-button" id="loadBargainHistoryBtn">刷新历史</button>
               </div>
               <div class="download-actions" data-admin-only="bargain-review">
                 <label class="check-line"><input type="checkbox" id="bargainSelectAll" /> 全选当前待审批</label>
@@ -353,7 +362,7 @@
                 <button class="ghost-button danger-action" id="rejectSelectedBargainsBtn">拒绝勾选</button>
               </div>
               <div id="bargainHistoryRows" class="output-list"></div>
-            </aside>
+            </section>
           </div>
         </section>
 
@@ -718,6 +727,9 @@
                 <label>库存最多拉取<input data-erp-field="stock_limit" type="number" min="100" max="10000" placeholder="10000" /></label>
                 <label>商品接口<input data-erp-field="product_endpoint" placeholder="goods_query.php" /></label>
                 <label>库存接口<input data-erp-field="stock_endpoint" placeholder="api_goods_stock_change_query.php" /></label>
+                <label class="check-line"><input data-erp-field="sync_product_archive" type="checkbox" /> 拉取货品档案（goods_query.php，全量 ERP 基础资料）</label>
+                <label class="check-line"><input data-erp-field="sync_stock_snapshot" type="checkbox" /> 拉取库存快照（stock_query.php，可销/实际/占用库存）</label>
+                <div class="erp-readonly-option span-2"><strong>销售出库单</strong><span>不拉取。本系统不调用销售出库单接口；库存+销量导出文件仍可作为本地数据源保留。</span></div>
                 <label class="check-line"><input data-erp-field="enabled" type="checkbox" /> 启用 ERP 接口</label>
                 <label class="check-line"><input data-erp-field="auto_sync" type="checkbox" /> 自动同步</label>
                 <label class="check-line"><input data-erp-field="manual_sync_first" type="checkbox" /> 手动同步为主</label>
@@ -725,7 +737,7 @@
               </div>
               <div class="download-actions">
                 <button class="primary-button" id="saveErpSettingsBtn">保存 ERP 设置</button>
-                <button class="primary-button" id="manualErpSyncBtn">立即同步商品和库存</button>
+                <button class="primary-button" id="manualErpSyncBtn">按选择同步 ERP</button>
                 <button class="ghost-button" id="testErpSettingsBtn">本地校验</button>
               </div>
               <p id="erpSettingsStatus">等待读取 ERP 设置</p>
