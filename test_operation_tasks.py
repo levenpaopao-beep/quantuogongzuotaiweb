@@ -398,26 +398,27 @@ class OperationTaskStoreTest(unittest.TestCase):
                 for row in daily_ops_tasks.OperationTaskStore(task_db).list_tasks(now=datetime(2026, 6, 22, 12, 0, 0))
             }
             ordered_rows = daily_ops_tasks.OperationTaskStore(task_db).list_tasks(now=datetime(2026, 6, 22, 12, 0, 0))
-            self.assertEqual([row["id"] for row in ordered_rows], ["unassigned", "owner-overdue", "approved", "review", "owner-normal"])
+            self.assertEqual([row["id"] for row in ordered_rows], ["approved", "unassigned", "owner-overdue", "owner-normal", "review"])
             self.assertEqual(rows["unassigned"]["next_handler"], "管理员")
             self.assertEqual(rows["unassigned"]["next_action"], "指派负责人")
             self.assertEqual(rows["unassigned"]["priority"], "高")
-            self.assertEqual(rows["unassigned"]["priority_reason"], "未分配负责人")
+            self.assertEqual(rows["unassigned"]["priority_reason"], "爆旺冲突抢占资源")
             self.assertEqual(rows["owner-overdue"]["next_handler"], "管理员")
             self.assertEqual(rows["owner-overdue"]["next_action"], "跟进超时店长处理")
             self.assertEqual(rows["owner-overdue"]["priority"], "高")
-            self.assertEqual(rows["owner-overdue"]["priority_reason"], "超时未处理")
+            self.assertEqual(rows["owner-overdue"]["priority_reason"], "低分产品增多")
             self.assertEqual(rows["owner-normal"]["next_handler"], "店长")
             self.assertEqual(rows["owner-normal"]["next_action"], "填写处理结果")
-            self.assertEqual(rows["owner-normal"]["priority"], "普通")
+            self.assertEqual(rows["owner-normal"]["priority"], "中")
+            self.assertEqual(rows["owner-normal"]["priority_reason"], "滞销品催下架")
             self.assertEqual(rows["review"]["next_handler"], "管理员")
             self.assertEqual(rows["review"]["next_action"], "审核通过或驳回")
-            self.assertEqual(rows["review"]["priority"], "中")
-            self.assertEqual(rows["review"]["priority_reason"], "待管理员审核")
+            self.assertEqual(rows["review"]["priority"], "低")
+            self.assertEqual(rows["review"]["priority_reason"], "其他低级处理")
             self.assertEqual(rows["approved"]["next_handler"], "管理员")
             self.assertEqual(rows["approved"]["next_action"], "标记完成或归档")
-            self.assertEqual(rows["approved"]["priority"], "中")
-            self.assertEqual(rows["approved"]["priority_reason"], "待完成确认")
+            self.assertEqual(rows["approved"]["priority"], "高")
+            self.assertEqual(rows["approved"]["priority_reason"], "爆旺冲突抢占资源")
 
             admin_queue = daily_ops_tasks.OperationTaskStore(task_db).list_tasks(
                 next_handler="管理员",
@@ -433,7 +434,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                 priority="高",
                 now=datetime(2026, 6, 22, 12, 0, 0),
             )
-            self.assertEqual({row["id"] for row in high_priority}, {"unassigned", "owner-overdue"})
+            self.assertEqual({row["id"] for row in high_priority}, {"unassigned", "owner-overdue", "approved"})
 
             export_path = daily_ops_tasks.OperationTaskStore(task_db).export_tasks(root / "导出.xlsx", now=datetime(2026, 6, 22, 12, 0, 0))
             workbook = load_workbook(export_path, read_only=True, data_only=True)
@@ -459,7 +460,7 @@ class OperationTaskStoreTest(unittest.TestCase):
             workbook = load_workbook(export_path, read_only=True, data_only=True)
             try:
                 ws = workbook["任务台账"]
-                self.assertEqual(ws.max_row, 3)
+                self.assertEqual(ws.max_row, 4)
                 criteria_ws = workbook["导出口径"]
                 criteria = {
                     criteria_ws.cell(row=row, column=1).value: criteria_ws.cell(row=row, column=2).value
@@ -468,6 +469,41 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(criteria["priority"], "高")
             finally:
                 workbook.close()
+
+    def test_task_priority_uses_business_severity(self):
+        cases = [
+            (
+                {"task_type": "价格异常", "system_action": "低于成本价", "status": daily_ops_tasks.STATUS_PENDING_OWNER},
+                ("高", "低于成本价亏损销售"),
+            ),
+            (
+                {"task_type": "爆旺冲突", "system_action": "下架重复铺货", "status": daily_ops_tasks.STATUS_PENDING_REVIEW},
+                ("高", "爆旺冲突抢占资源"),
+            ),
+            (
+                {"task_type": "低分预警", "task_detail": "是否本周新增低分：是", "status": daily_ops_tasks.STATUS_PENDING_OWNER},
+                ("高", "低分产品增多"),
+            ),
+            (
+                {"task_type": "价格异常", "system_action": "低于批发价80%", "status": daily_ops_tasks.STATUS_PENDING_OWNER},
+                ("中", "低于80%申报价在售"),
+            ),
+            (
+                {"task_type": "滞销处理", "system_action": "老品滞销下架", "status": daily_ops_tasks.STATUS_PENDING_OWNER},
+                ("中", "滞销品催下架"),
+            ),
+            (
+                {"task_type": "库存异常", "system_action": "仓备大于30天销量2倍", "status": daily_ops_tasks.STATUS_PENDING_REVIEW},
+                ("低", "其他低级处理"),
+            ),
+            (
+                {"task_type": "价格异常", "system_action": "低于成本价", "status": daily_ops_tasks.STATUS_DONE},
+                ("低", "已完成"),
+            ),
+        ]
+        for row, expected in cases:
+            with self.subTest(row=row):
+                self.assertEqual(daily_ops_tasks.task_priority(row), expected)
 
     def test_task_summary_breaks_status_counts_down_by_owner(self):
         with TemporaryDirectory() as tmp:

@@ -367,6 +367,21 @@ class MasterDataImportTest(unittest.TestCase):
         self.assertIn("2026-06-01 至 2026-06-24", report["definitions"]["month"])
         self.assertIn("2026-01-01 至 2026-06-24", report["definitions"]["year"])
 
+    def test_business_report_supports_90_day_complete_period(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sales_path = Path(tmp) / "daily_sales.json"
+            master_data.import_history_sales_records(
+                sales_path,
+                [{"date": "2026-03-27", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 1}],
+                actor="管理员",
+            )
+
+            report = master_data.business_report(sales_path, range_key="90d", anchor_date="2026-06-25")
+
+        self.assertEqual(report["filters"]["date_from"], "2026-03-27")
+        self.assertEqual(report["filters"]["date_to"], "2026-06-24")
+        self.assertIn("最近90日销量", report["definitions"]["range"])
+
     def test_business_report_owner_scope_only_shows_owned_stores(self):
         with tempfile.TemporaryDirectory() as tmp:
             sales_path = Path(tmp) / "daily_sales.json"
@@ -394,6 +409,71 @@ class MasterDataImportTest(unittest.TestCase):
 
         self.assertEqual(report["summary"]["range"]["sales"], 100)
         self.assertEqual({row["store"] for row in report["dimensions"]["store"]}, {"一弟"})
+
+    def test_business_report_action_items_use_store_level_200_unit_decline_threshold(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sales_path = Path(tmp) / "daily_sales.json"
+            assignments = [
+                {"platform": "Temu", "store": "一弟", "owner": "小琴", "enabled": True, "daily_required": True},
+                {"platform": "Temu", "store": "二弟", "owner": "洁琳", "enabled": True, "daily_required": True},
+                {"platform": "Temu", "store": "三弟", "owner": "小琴", "enabled": True, "daily_required": True},
+                {"platform": "Temu", "store": "四弟", "owner": "胡娟", "enabled": True, "daily_required": True},
+            ]
+            master_data.import_history_sales_records(
+                sales_path,
+                [
+                    {"date": "2026-06-01", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 700},
+                    {"date": "2026-05-31", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 1000},
+                    {"date": "2025-06-01", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 1000},
+                    {"date": "2026-06-01", "platform": "Temu", "store": "三弟", "owner": "小琴", "sales": 90},
+                    {"date": "2026-05-31", "platform": "Temu", "store": "三弟", "owner": "小琴", "sales": 250},
+                    {"date": "2026-05-20", "platform": "Temu", "store": "四弟", "owner": "胡娟", "sales": 80},
+                ],
+                actor="管理员",
+            )
+
+            report = master_data.business_report(
+                sales_path,
+                assignments=assignments,
+                date_from="2026-06-01",
+                date_to="2026-06-01",
+                grain="day",
+            )
+
+        items = report["action_items"]
+        keys = {(item["type"], item.get("store")) for item in items}
+        self.assertIn(("missing_sales", "二弟"), keys)
+        self.assertIn(("stale_store", "四弟"), keys)
+        self.assertIn(("decline_previous", "一弟"), keys)
+        self.assertIn(("decline_yoy", "一弟"), keys)
+        self.assertNotIn(("decline_previous", "三弟"), keys)
+        decline = next(item for item in items if item["type"] == "decline_previous" and item["store"] == "一弟")
+        self.assertEqual(decline["delta"], -300)
+        self.assertEqual(decline["action"], "trend")
+
+    def test_platform_reference_report_exposes_source_coverage_and_unassigned_stores(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sales_path = Path(tmp) / "daily_sales.json"
+            assignments = [
+                {"platform": "Temu", "store": "一弟", "owner": "小琴", "enabled": True, "daily_required": True},
+            ]
+
+            report = master_data.business_report(
+                sales_path,
+                assignments=assignments,
+                source="platform",
+                range_key="30d",
+                anchor_date="2026-06-25",
+                rows_override=[
+                    {"date": "2026-06-24", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 300},
+                    {"date": "2026-06-24", "platform": "Temu", "store": "二弟", "owner": "", "sales": 200},
+                ],
+            )
+
+        self.assertEqual(report["source_summary"]["label"], "平台导入参考")
+        self.assertEqual(report["source_summary"]["covered_stores"], 2)
+        self.assertEqual(report["source_summary"]["unassigned_stores"], 1)
+        self.assertIn(("unassigned_owner", "二弟"), {(item["type"], item.get("store")) for item in report["action_items"]})
 
 
 if __name__ == "__main__":

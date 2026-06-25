@@ -3003,6 +3003,8 @@ def handle_business_report_api(headers, payload=None):
             "platform": payload.get("platform", ""),
             "store": payload.get("store", ""),
             "grain": payload.get("grain", "month"),
+            "range_key": payload.get("range_key", "30d"),
+            "source": payload.get("source", "manual"),
         })
         return json_bytes({"ok": True, "report": data})
     except PermissionError as exc:
@@ -3496,6 +3498,7 @@ let operatorToken = localStorage.getItem('operatorToken') || '';
 let operatorSession = JSON.parse(localStorage.getItem('operatorSession') || 'null');
 let businessReport = null;
 let businessTab = 'overview';
+let businessRangeWeb = '30d';
 const titles = {overview:'数据总览', reports:'经营报表', tasks:'任务包中心', weekly:'每周工作流', rules:'规则设置', search:'基础数据查询', files:'输出文件'};
 document.querySelectorAll('nav button').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -3646,6 +3649,7 @@ function setBusinessRangeActiveWeb(range){
   });
 }
 function applyBusinessRangeWeb(range){
+  businessRangeWeb = range || '30d';
   const end = new Date();
   const start = new Date(end);
   if(range === '7d') start.setDate(end.getDate() - 6);
@@ -3657,7 +3661,7 @@ function applyBusinessRangeWeb(range){
   if(range === 'year'){ start.setMonth(0); start.setDate(1); }
   document.getElementById('businessDateFrom').value = localDateText(start);
   document.getElementById('businessDateTo').value = localDateText(end);
-  setBusinessRangeActiveWeb(range);
+  setBusinessRangeActiveWeb(businessRangeWeb);
   loadBusinessReportWeb(true);
 }
 function signedNumber(value){
@@ -3780,6 +3784,8 @@ async function loadBusinessReportWeb(showMessage=false){
     grain: document.getElementById('businessGrain')?.value || 'month',
     platform: document.getElementById('businessPlatform')?.value || '',
     store: document.getElementById('businessStore')?.value || '',
+    range_key: businessRangeWeb,
+    source: 'manual',
   });
   if(st) st.textContent = '正在读取经营报表...';
   try {
@@ -4395,7 +4401,7 @@ function renderTaskRows(){
     return `<div class="package-card">
       <div class="task-select"><input class="task-check" type="checkbox" ${ids.length ? '' : 'disabled'} data-ids="${esc((ids || []).join(','))}"></div>
       <div class="package-metric">
-        <div class="package-title"><strong>${esc(pkg.store || '-')}</strong><span class="badge ${priorityClass}">${esc(pkg.priority || '普通')}</span>${packageStatusBadges(pkg) || `<span class="badge">${esc(pkg.main_status || '-')}</span>`}</div>
+        <div class="package-title"><strong>${esc(pkg.store || '-')}</strong><span class="badge ${priorityClass}">${esc(pkg.priority || '低')}</span>${packageStatusBadges(pkg) || `<span class="badge">${esc(pkg.main_status || '-')}</span>`}</div>
         <div class="package-meta" title="${esc(pkg.system_action || '')}">${esc(pkg.system_action || '-')}</div>
       </div>
       <div class="package-metric"><span>负责人 / 平台</span><strong>${esc(pkg.owner || '-')}</strong><div class="package-sub">${esc(pkg.platform || '-')}</div></div>
@@ -4701,6 +4707,8 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                     "platform": params.get("platform", [""])[0],
                     "store": params.get("store", [""])[0],
                     "grain": params.get("grain", ["month"])[0],
+                    "range_key": params.get("range_key", ["30d"])[0],
+                    "source": params.get("source", ["manual"])[0],
                 }))
             elif parsed.path == "/download":
                 self.handle_download(parsed)

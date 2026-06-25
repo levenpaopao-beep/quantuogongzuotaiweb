@@ -317,6 +317,34 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("店长填报完整度", html + js)
         self.assertNotIn("今日销量", html + js)
 
+    def test_business_report_first_screen_highlights_actions_and_reference_source(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        js = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        for text in [
+            "businessActionList",
+            "businessMoverGrid",
+            "平台导入参考",
+            "不作为月结主口径",
+            "renderBusinessActionList",
+            "renderBusinessMovers",
+            "data-business-action",
+            "导入覆盖店铺数",
+            "未匹配负责人",
+        ]:
+            self.assertIn(text, html + js)
+
+    def test_today_workbench_puts_daily_flow_first_without_slogan_hero(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        js = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        self.assertIn("homeBusinessOverview", html)
+        self.assertIn("todayActionList", html)
+        self.assertIn("todayWorkflowSteps", html)
+        self.assertIn("每日操作流程", html + js)
+        self.assertLess(html.index("todayWorkflowSteps"), html.index("homeBusinessOverview"))
+        self.assertLess(html.index("homeBusinessOverview"), html.index("todayActionList"))
+        for phrase in ["先填销售日销量", "先确认销量，再处理任务包", "再整包处理任务"]:
+            self.assertNotIn(phrase, html + js)
+
     def test_weekly_workflow_uses_table_workbench_layout(self):
         source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
         self.assertIn("renderSources", source)
@@ -400,6 +428,8 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("syncBargainPriceToGoods", source)
         self.assertIn("同步到本款全部尺码", source)
         self.assertIn("bargainHistoryDialog", html)
+        self.assertIn("subpage-panel", html)
+        self.assertIn("third-level-panel", html)
         self.assertIn("openBargainHistoryDialog", source)
         self.assertIn("openBargainPendingBtn", html)
         self.assertIn("bargainFilterDateFrom", html)
@@ -427,8 +457,20 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("function salesDefaultDateText", source)
         self.assertIn("date.setDate(date.getDate() - 1)", source)
         self.assertIn("历史导入待确认", source)
-        self.assertIn("查看/更正全部店铺", source)
+        self.assertIn("sales-day-table", source)
+        self.assertIn("salesEditingIndex", source)
+        self.assertIn("确认", source)
         self.assertIn("sales-entry-pending", css)
+
+    def test_home_dashboard_shows_manual_7_30_90_day_business_overview(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        self.assertIn("homeBusinessOverview", html)
+        self.assertIn("homeBusinessReports", source)
+        self.assertIn('"7d", "30d", "90d"', source)
+        self.assertIn('source: "manual"', source)
+        for text in ["最近7天销量", "最近30天销量", "最近90天销量", "Temu 爆旺款链接"]:
+            self.assertIn(text, source + html)
 
     def test_erp_settings_show_manual_pull_choices(self):
         html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
@@ -440,7 +482,7 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn('data-erp-field="sync_platform_goods"', html)
         self.assertIn('data-erp-field="sync_sales_outbound"', html)
         self.assertIn("销售出库单", html)
-        self.assertIn("单独保存", html)
+        self.assertIn("保存 ERP 设置", html)
         self.assertIn("按选择同步 ERP", html)
         self.assertIn("sync_product_archive", source)
 

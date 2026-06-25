@@ -497,6 +497,8 @@ def complete_period(range_key, anchor_day):
         return end - timedelta(days=6), end
     if range_key == "14d":
         return end - timedelta(days=13), end
+    if range_key == "90d":
+        return end - timedelta(days=89), end
     return end - timedelta(days=29), end
 
 
@@ -505,7 +507,37 @@ def business_definition(label, period, source_label="店长填报销量"):
 
 
 def business_source_label(source):
-    return "平台导入销量" if norm(source) == "platform" else "店长填报销量"
+    return "平台导入参考" if norm(source) == "platform" else "店长填报销量"
+
+
+def source_summary(rows, source, current_period):
+    mode = "platform" if norm(source) == "platform" else "manual"
+    visible_rows = sales_between(rows, *current_period)
+    stores = {
+        (platform_name(row.get("platform"), ""), clean_store_name(row.get("store")))
+        for row in visible_rows
+        if row.get("platform") and row.get("store")
+    }
+    unassigned = {
+        (platform_name(row.get("platform"), ""), clean_store_name(row.get("store")))
+        for row in visible_rows
+        if row.get("platform") and row.get("store") and norm(row.get("owner")) in {"", "未分配"}
+    }
+    if mode == "platform":
+        return {
+            "mode": "platform",
+            "label": "平台导入参考",
+            "covered_stores": len(stores),
+            "unassigned_stores": len(unassigned),
+            "note": "平台导入参考用于核对趋势，不作为月结主口径。",
+        }
+    return {
+        "mode": "manual",
+        "label": "店长填报销量",
+        "covered_stores": len(stores),
+        "unassigned_stores": len(unassigned),
+        "note": "店长填报销量作为经营报表默认口径。",
+    }
 
 
 def completion_summary(rows, assignments, current_period, role="admin", user=""):
@@ -532,6 +564,126 @@ def completion_summary(rows, assignments, current_period, role="admin", user="")
     rate = round(count / required * 100, 2) if required else 100
     level = "ok" if rate >= 100 else "warn" if rate >= 90 else "red"
     return {"required": required, "submitted": count, "missing": max(0, required - count), "rate": rate, "level": level}
+
+
+def required_business_pairs(assignments, role="admin", user="", platform="", store=""):
+    assignment_index = build_assignment_index(assignments)
+    wanted_platform = platform_name(platform, "") if platform else ""
+    wanted_store = clean_store_name(store)
+    pairs = []
+    for key, item in assignment_index.items():
+        if not item.get("enabled") or not item.get("daily_required"):
+            continue
+        if norm(role) != "admin" and item.get("owner") != norm(user):
+            continue
+        if wanted_platform and key[0] != wanted_platform:
+            continue
+        if wanted_store and key[1] != wanted_store:
+            continue
+        pairs.append((key, item))
+    return sorted(pairs, key=lambda pair: (pair[0][0], pair[0][1]))
+
+
+def missing_sales_action_items(rows, assignments, current_period, role="admin", user="", platform="", store=""):
+    start = parse_day(current_period[0])
+    end = parse_day(current_period[1])
+    days = max(0, (end - start).days + 1)
+    submitted = {
+        (norm(row.get("date")), platform_name(row.get("platform"), ""), clean_store_name(row.get("store")))
+        for row in sales_between(rows, *current_period)
+    }
+    items = []
+    for (item_platform, item_store), assignment in required_business_pairs(assignments, role, user, platform, store):
+        missing_dates = [
+            (start + timedelta(days=day_offset)).isoformat()
+            for day_offset in range(days)
+            if ((start + timedelta(days=day_offset)).isoformat(), item_platform, item_store) not in submitted
+        ]
+        if not missing_dates:
+            continue
+        items.append({
+            "type": "missing_sales",
+            "severity": "danger",
+            "platform": item_platform,
+            "store": item_store,
+            "owner": assignment.get("owner", ""),
+            "title": "销量缺填",
+            "message": f"{item_platform}「{item_store}」缺 {len(missing_dates)} 天销量",
+            "missing": len(missing_dates),
+            "latest_date": missing_dates[-1],
+            "action": "sales_missing",
+        })
+    return items
+
+
+def decline_action_item(row, decline_type, label, delta_key, rate_key, compare_key, diff_units, diff_percent):
+    delta = int(row.get(delta_key) or 0)
+    rate = row.get(rate_key)
+    if rate is None or delta > -abs(diff_units) or float(rate) > -abs(diff_percent):
+        return None
+    return {
+        "type": decline_type,
+        "severity": "warn",
+        "platform": row.get("platform", ""),
+        "store": row.get("store", ""),
+        "owner": row.get("owner", ""),
+        "title": label,
+        "message": f"{row.get('platform', '')}「{row.get('store', '')}」{label} {abs(delta)} 件（{rate}%）",
+        "sales": row.get("sales", 0),
+        "compare_sales": row.get(compare_key, 0),
+        "delta": delta,
+        "rate": rate,
+        "action": "trend",
+    }
+
+
+def business_action_items(rows, assignments, current_period, compare_period, previous_period, end_day, role="admin", user="", platform="", store="", stale_days=3, diff_percent=20, diff_units=200, small_base=100, source="manual"):
+    items = missing_sales_action_items(rows, assignments, current_period, role, user, platform, store)
+    store_rows = group_business_rows(rows, "store", current_period, compare_period, previous_period, end_day, stale_days, small_base)
+    if norm(source) == "platform":
+        for row in store_rows:
+            if norm(row.get("owner")) in {"", "未分配"}:
+                items.append({
+                    "type": "unassigned_owner",
+                    "severity": "danger",
+                    "platform": row.get("platform", ""),
+                    "store": row.get("store", ""),
+                    "owner": "未分配",
+                    "title": "未分配负责人",
+                    "message": f"{row.get('platform', '')}「{row.get('store', '')}」在平台导入参考中没有匹配负责人",
+                    "action": "assign_owner",
+                })
+    for row in store_rows:
+        if row.get("stale"):
+            items.append({
+                "type": "stale_store",
+                "severity": "danger",
+                "platform": row.get("platform", ""),
+                "store": row.get("store", ""),
+                "owner": row.get("owner", ""),
+                "title": "超过3天未更新",
+                "message": f"{row.get('platform', '')}「{row.get('store', '')}」超过 {stale_days} 天没有销量更新",
+                "latest_date": row.get("latest_date", ""),
+                "action": "sales_store",
+            })
+        previous_item = decline_action_item(row, "decline_previous", "较上期下滑", "mom_delta", "mom_rate", "previous_sales", diff_units, diff_percent)
+        yoy_item = decline_action_item(row, "decline_yoy", "较去年同期下滑", "yoy_delta", "yoy_rate", "compare_sales", diff_units, diff_percent)
+        if previous_item:
+            items.append(previous_item)
+        if yoy_item:
+            items.append(yoy_item)
+    severity_order = {"danger": 0, "warn": 1, "ok": 2}
+    return sorted(items, key=lambda item: (severity_order.get(item.get("severity"), 9), item.get("type", ""), item.get("platform", ""), item.get("store", "")))[:100]
+
+
+def business_movers(rows, current_period, compare_period, previous_period, end_day, stale_days=3, small_base=100, limit=5):
+    store_rows = group_business_rows(rows, "store", current_period, compare_period, previous_period, end_day, stale_days, small_base)
+    declines = [row for row in store_rows if int(row.get("mom_delta") or 0) < 0]
+    growth = [row for row in store_rows if int(row.get("mom_delta") or 0) > 0]
+    return {
+        "declines": sorted(declines, key=lambda row: (row.get("mom_delta") or 0, row.get("name", "")))[:limit],
+        "growth": sorted(growth, key=lambda row: (-(row.get("mom_delta") or 0), row.get("name", "")))[:limit],
+    }
 
 
 def business_group_key(row, dimension):
@@ -652,7 +804,7 @@ def scope_business_rows(records, assignments=None, role="admin", user="", platfo
     return rows
 
 
-def business_report(sales_path, assignments=None, role="admin", user="", date_from="", date_to="", platform="", store="", grain="month", stale_days=3, diff_percent=20, diff_units=20, small_base=100, range_key="30d", source="manual", anchor_date="", rows_override=None):
+def business_report(sales_path, assignments=None, role="admin", user="", date_from="", date_to="", platform="", store="", grain="month", stale_days=3, diff_percent=20, diff_units=200, small_base=100, range_key="30d", source="manual", anchor_date="", rows_override=None):
     rows = scope_business_rows(rows_override, assignments, role, user, platform, store) if rows_override is not None else scoped_sales_rows(sales_path, assignments, role, user, platform, store)
     available_days = [parse_day(row.get("date")) for row in rows if parse_day(row.get("date"))]
     anchor_day = parse_day(anchor_date) or date.today()
@@ -672,6 +824,9 @@ def business_report(sales_path, assignments=None, role="admin", user="", date_fr
     visible_rows = sales_between(rows, *current_period)
     completion = completion_summary(rows, assignments, current_period, role, user)
     source_label = business_source_label(source)
+    source_info = source_summary(rows, source, current_period)
+    store_rows = group_business_rows(rows, "store", current_period, compare_period, previous_period, end_day, stale_days, small_base)
+    action_items = business_action_items(rows, assignments, current_period, compare_period, previous_period, end_day, role, user, platform, store, stale_days, diff_percent, diff_units, small_base, source)
     anomalies = []
     for dimension, label in [("platform", "平台"), ("owner", "负责人"), ("store", "店铺")]:
         for row in group_business_rows(rows, dimension, current_period, compare_period, previous_period, end_day, stale_days, small_base):
@@ -710,8 +865,9 @@ def business_report(sales_path, assignments=None, role="admin", user="", date_fr
             "record_count": len(visible_rows),
             "store_count": len({(row.get("platform"), row.get("store")) for row in visible_rows}),
             "latest_date": latest_date(rows, end_day.isoformat()),
-            "anomaly_count": len(anomalies),
+            "anomaly_count": len(action_items),
         },
+        "source_summary": source_info,
         "definitions": {
             "range": business_definition(f"最近{(end_day - start_day).days + 1}日销量", current_period, source_label),
             "previous_range": f"上期对比：当前范围 {current_period[0]} 至 {current_period[1]}，对比上一段同长度完整销售日 {previous_period[0]} 至 {previous_period[1]}。",
@@ -719,11 +875,12 @@ def business_report(sales_path, assignments=None, role="admin", user="", date_fr
             "month": business_definition("本月累计", month_period, source_label),
             "year": business_definition("本年累计", year_period, source_label),
             "completion": f"店长填报完整度：当前统计范围内，应填店铺销售日中已填写的比例。当前范围 {current_period[0]} 至 {current_period[1]}。",
+            "source": source_info["note"],
         },
         "dimensions": {
             "platform": group_business_rows(rows, "platform", current_period, compare_period, previous_period, end_day, stale_days, small_base),
             "owner": group_business_rows(rows, "owner", current_period, compare_period, previous_period, end_day, stale_days, small_base),
-            "store": group_business_rows(rows, "store", current_period, compare_period, previous_period, end_day, stale_days, small_base),
+            "store": store_rows,
         },
         "trends": {
             "platform": trend_rows(rows, "platform", current_period, grain),
@@ -731,6 +888,8 @@ def business_report(sales_path, assignments=None, role="admin", user="", date_fr
             "store": trend_rows(rows, "store", current_period, grain),
         },
         "anomalies": anomalies[:100],
+        "action_items": action_items,
+        "movers": business_movers(rows, current_period, compare_period, previous_period, end_day, stale_days, small_base),
     }
 
 

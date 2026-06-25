@@ -200,23 +200,21 @@ function renderSmokeScript() {
       }
       await waitFor(() =>
         document.querySelectorAll("#todayWorkflowSteps .workflow-step").length >= 4 &&
-        document.querySelectorAll("#todayGuideSteps .guide-step").length >= 6 &&
+        document.querySelectorAll("#homeBusinessOverview .home-business-card").length >= 4 &&
         document.querySelectorAll("#todayActionList .action-route").length >= 4
       );
       await openPage("today", "#todayPage.page-active", "管理员进入今日工作台");
       requireText("title", "PETCIRCLE跨境工作台", "窗口标题");
       requireVisible(".sidebar", "侧边导航");
       requireVisible("#todayPage.page-active", "今日工作台首屏");
+      requireVisible("#homeBusinessOverview .home-business-card", "经营总览");
       requireVisible("#todayWorkflowSteps .workflow-step", "今日流程卡片");
-      requireVisible("#todayGuideSteps .guide-step", "开始使用清单");
-      requireVisible("#todaySalesMetrics .metric-card", "销量指标");
       requireVisible("#todayActionList .action-route", "今日待办入口");
-      requireVisible("#dailyFollowupList .daily-followup-row, #dailyFollowupList .action-empty", "每日督办入口");
       checkNoHorizontalOverflow("今日工作台首屏");
       const brokenImages = Array.from(document.images).filter((image) => image.complete && image.naturalWidth === 0);
       if (brokenImages.length) errors.push("存在破图：" + brokenImages.length);
       await clickRoute('#todayWorkflowSteps [data-empty-page="sales"][data-sales-focus="missing"]', "#salesPage.page-active", "管理员今日流程销量入口");
-      requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "管理员销量未填筛选");
+      requireVisible("#salesEntryList .sales-day-table", "管理员销量单表");
       await openPage("today", "#todayPage.page-active", "管理员返回今日工作台");
       await clickRoute('#todayWorkflowSteps [data-empty-page="imports"][data-import-focus="blocked"]', "#importPage.page-active", "管理员今日流程导入入口");
       requireActive('.import-health-tabs [data-import-focus="blocked"]', "管理员导入需处理筛选");
@@ -228,10 +226,8 @@ function renderSmokeScript() {
       await clickRoute('#todayActionList [data-empty-page="imports"][data-import-focus="blocked"]', "#importPage.page-active", "管理员今日待办导入入口");
       requireActive('.import-health-tabs [data-import-focus="blocked"]', "管理员今日待办导入需处理筛选");
       await openPage("today", "#todayPage.page-active", "管理员返回今日工作台");
-      await clickRoute('#todayGuideSteps [data-empty-page="imports"][data-import-focus="blocked"]', "#importPage.page-active", "管理员开始清单导入入口");
-      requireActive('.import-health-tabs [data-import-focus="blocked"]', "管理员开始清单导入需处理筛选");
       await openPage("sales", "#salesPage.page-active", "销量管理页面");
-      requireVisible("#salesFocusBar", "销量筛选条");
+      requireVisible("#salesEntryList .sales-day-table", "销量单表");
       await openPage("tasks", "#tasksPage.page-active", "商品任务页面");
       requireVisible("#taskWorkbar", "任务工作条");
       requireVisible('[data-admin-only="task-push"]', "管理员批量推送按钮");
@@ -268,8 +264,10 @@ function renderSmokeScript() {
       requireVisible('[data-settings-module="erp-settings"]', "ERP 接口设置模块入口");
       document.querySelector('[data-settings-module="erp-settings"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 80));
+      requireVisible("#erpSettingsPage.page-active", "ERP 接口设置二级页面");
       requireVisible("#erpSettingsForm", "ERP 接口设置");
-      document.querySelector("[data-settings-dialog-close]")?.click();
+      requireVisible("#erpSyncResult", "ERP 同步结果区");
+      document.querySelector('[data-page="rules"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 40));
       requireVisible('[data-settings-module="system-maintenance"]', "系统维护模块入口");
       document.querySelector('[data-settings-module="system-maintenance"]')?.click();
@@ -297,17 +295,16 @@ function renderSmokeScript() {
               return operator.role === "owner" &&
                 operator.user === ownerName &&
                 document.querySelector("#operatorHint")?.textContent.includes("只看自己") &&
-                document.querySelector("#todayWorkflowTitle")?.textContent.includes("店长每日流程");
+                document.querySelector("#todayWorkflowTitle")?.textContent.includes("店长每日操作流程");
             } catch (_error) {
               return false;
             }
           });
-          requireText("#todayWorkflowTitle", "店长每日流程", "店长工作流");
+          requireText("#todayWorkflowTitle", "店长每日操作流程", "店长工作流");
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
-          requireVisible("#dailyFollowupList .daily-followup-row, #dailyFollowupList .action-empty", "店长每日督办入口");
+          requireVisible("#homeBusinessOverview .home-business-card", "店长经营总览");
           await clickRoute('#todayWorkflowSteps [data-empty-page="sales"][data-sales-focus="missing"]', "#salesPage.page-active", "店长今日流程销量入口");
-          requireText("#salesFocusTitle", "先补未填销售日", "店长销量入口主筛选");
-          requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长销量入口未填筛选");
+          requireVisible("#salesEntryList .sales-day-table", "店长销量单表");
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
           await clickRoute('#todayWorkflowSteps [data-empty-page="tasks"][data-task-status="待店长处理"][data-task-open-only="true"]', "#tasksPage.page-active", "店长今日流程任务入口");
           if (document.querySelector("#taskStatus")?.value !== "待店长处理") errors.push("店长任务入口未带待店长处理筛选");
@@ -317,8 +314,7 @@ function renderSmokeScript() {
           requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长导入入口需处理筛选");
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
           await clickRoute('#todayActionList [data-empty-page="sales"][data-sales-focus="missing"]', "#salesPage.page-active", "店长今日待办销量入口");
-          requireText("#salesFocusTitle", "先补未填销售日", "店长今日待办销量主筛选");
-          requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长今日待办销量未填筛选");
+          requireVisible("#salesEntryList .sales-day-table", "店长今日待办销量单表");
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
           await clickRoute('#todayActionList [data-empty-page="tasks"][data-task-status="待店长处理"][data-task-open-only="true"]', "#tasksPage.page-active", "店长今日待办任务入口");
           if (document.querySelector("#taskStatus")?.value !== "待店长处理") errors.push("店长今日待办任务入口未带待店长处理筛选");
@@ -327,20 +323,8 @@ function renderSmokeScript() {
           await clickRoute('#todayActionList [data-empty-page="imports"][data-import-focus="blocked"]', "#importPage.page-active", "店长今日待办导入入口");
           requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长今日待办导入需处理筛选");
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
-          await clickRoute('#todayGuideSteps [data-empty-page="sales"][data-sales-focus="missing"]', "#salesPage.page-active", "店长开始清单销量入口");
-          requireText("#salesFocusTitle", "先补未填销售日", "店长开始清单销量主筛选");
-          requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长开始清单销量未填筛选");
-          await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
-          await clickRoute('#todayGuideSteps [data-empty-page="tasks"][data-task-status="待店长处理"][data-task-open-only="true"]', "#tasksPage.page-active", "店长开始清单任务入口");
-          if (document.querySelector("#taskStatus")?.value !== "待店长处理") errors.push("店长开始清单任务入口未带待店长处理筛选");
-          if (!document.querySelector("#taskOpenOnly")?.checked) errors.push("店长开始清单任务入口未带只看未完成筛选");
-          await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
-          await clickRoute('#todayGuideSteps [data-empty-page="imports"][data-import-focus="blocked"]', "#importPage.page-active", "店长开始清单导入入口");
-          requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长开始清单导入需处理筛选");
           await openPage("sales", "#salesPage.page-active", "店长销量管理页面");
-          requireVisible("#salesFocusBar", "店长销量筛选条");
-          requireText("#salesFocusTitle", "先补未填销售日", "店长销量主筛选");
-          requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长销量未填筛选");
+          requireVisible("#salesEntryList .sales-day-table", "店长销量单表");
           const smokeSalesEntry = {
             platform: "Temu",
             store: "烟测店铺",
@@ -387,7 +371,7 @@ function renderSmokeScript() {
             window.__PETCIRCLE_RENDER_SMOKE_SALES__.salesCompare = async () => ({ summary: { checked: 1, alerts: 0, source_platforms: [] }, rows: [] });
             document.querySelector('[data-page="sales"]')?.click();
             document.querySelector("#loadSalesHeaderBtn")?.click();
-            await waitFor(() => document.querySelector("#salesFocusTitle")?.textContent.includes("1 条"));
+            await waitFor(() => document.querySelector("#salesEntryList .sales-day-table [data-sales-index]"));
             const salesInput = document.querySelector("#salesEntryList [data-sales-index]");
             if (!salesInput) {
               errors.push("店长销量回车提交输入框缺失");
@@ -395,7 +379,7 @@ function renderSmokeScript() {
               salesInput.value = "37";
               salesInput.dispatchEvent(new Event("input", { bubbles: true }));
               salesInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
-              await waitFor(() => capturedSalesSubmit && document.querySelector("#salesStatusLine")?.textContent.includes("已填 1"));
+              await waitFor(() => capturedSalesSubmit && document.querySelector("#salesEntryList")?.textContent.includes("已填"));
               if (!capturedSalesSubmit) {
                 errors.push("店长销量回车提交未触发保存");
               } else {
@@ -403,8 +387,7 @@ function renderSmokeScript() {
                 if (capturedSalesSubmit.platform !== "Temu" || capturedSalesSubmit.store !== "烟测店铺") errors.push("店长销量回车提交店铺口径错误");
                 if (String(capturedSalesSubmit.sales) !== "37") errors.push("店长销量回车提交销量数错误");
               }
-              requireText("#salesFocusTitle", "先补未填销售日", "店长销量回车提交");
-              requireText("#salesStatusLine", "已填 1", "店长销量回车提交状态");
+              requireText("#salesEntryList", "已填", "店长销量回车提交状态");
             }
           } finally {
             delete window.__PETCIRCLE_RENDER_SMOKE_SALES__;

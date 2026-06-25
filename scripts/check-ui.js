@@ -122,17 +122,17 @@ if (!html.includes('id="todayWorkflowSteps"') || !html.includes('id="todayWorkfl
   ]);
 }
 if (
-  !html.includes('id="dailyFollowupList"') ||
-  !renderer.includes("function renderDailyFollowups(") ||
-  !renderer.includes("function ownerFollowupRows(") ||
-  !renderer.includes('data-task-user="${esc(item.owner)}"')
+  !html.includes('id="homeBusinessOverview"') ||
+  !renderer.includes("function renderHomeBusinessOverview(") ||
+  !renderer.includes('"7d", "30d", "90d"') ||
+  !renderer.includes('source: "manual"')
 ) {
-  fail("今日工作台缺少按负责人每日督办", [
-    "管理员每天需要按负责人看到未填销量、导入缺口和任务待办，店长也要看到自己的今日完成度。",
+  fail("今日工作台缺少经营总览", [
+    "首页需要同时展示最近 7 天、30 天、90 天销量，并固定使用店长手工填写销量作为历史对比来源。",
   ]);
 }
 const todayWorkflowBody = functionBody(renderer, "renderTodayWorkflow");
-if (!todayWorkflowBody.includes("店长每日流程") || !todayWorkflowBody.includes("管理员日常流程")) {
+if (!todayWorkflowBody.includes("店长每日操作流程") || !todayWorkflowBody.includes("管理员每日操作流程")) {
   fail("今日工作流缺少角色化文案", [
     "管理员和店长在同一个入口下必须看到不同的下一步操作说明。",
   ]);
@@ -142,31 +142,20 @@ if (!todayWorkflowBody.includes("data-empty-page") || !todayWorkflowBody.include
     "流程卡片里的操作按钮必须能跳到对应模块，并带任务筛选状态。",
   ]);
 }
-const operationRhythmBody = functionBody(renderer, "renderOperationRhythm");
-if (!html.includes('id="operationRhythmList"') || !operationRhythmBody.includes("每日必做") || !operationRhythmBody.includes("每周辅助")) {
-  fail("今日工作台缺少每日/每周操作节奏", [
-    "工作台需要明确每天先做什么、每周再补什么，减少店长和管理员的使用迷路感。",
+if (!html.includes('id="todayActionList"') || !html.includes("今日待我处理")) {
+  fail("今日工作台缺少今日待处理入口", [
+    "首页需要把销量、议价、导入和任务待办合并到一个清晰入口，避免重复模块分散注意力。",
   ]);
 }
-if (!operationRhythmBody.includes("店长每天先填销量") || !operationRhythmBody.includes("管理员每天盯进度") || !operationRhythmBody.includes("bindEmptyActions(wrap)")) {
-  fail("操作节奏缺少角色化说明或跳转绑定", [
-    "管理员和店长在同一入口下需要看到不同节奏，并且每个动作都能跳到对应模块。",
-  ]);
-}
-if (!html.includes('id="salesFocusBar"') || !renderer.includes("function setSalesFocus(") || !renderer.includes("salesFocusEntries")) {
-  fail("销量页缺少每日高频填报筛选", [
-    "店长每天进入销量页时需要优先看到未填店铺，并能切换异常和全部，避免在长列表里找。",
+if (!renderer.includes("sales-day-table") || !renderer.includes("salesEditingIndex") || !html.includes("保存当前列表")) {
+  fail("销量页缺少单表编辑", [
+    "销量页需要一张表按日期展示店铺销量；已填显示数量，未填为空，支持编辑确认和保存当前列表。",
   ]);
 }
 const applyRouteIntentBody = functionBody(renderer, "applyRouteIntent");
 if (!applyRouteIntentBody.includes("route.salesFocus") || !todayWorkflowBody.includes('data-sales-focus="missing"')) {
   fail("今日工作台未直达未填销量", [
     "首页“去填写/看销量”应把销量页切到未填口径，符合每天先补未填的主流程。",
-  ]);
-}
-if (!applyRouteIntentBody.includes("route.taskUser") || !applyRouteIntentBody.includes("#taskUser")) {
-  fail("每日督办缺少负责人任务筛选跳转", [
-    "管理员点某个负责人督办时，任务页需要自动带上负责人，避免进入大列表后重新筛选。",
   ]);
 }
 if (
@@ -181,10 +170,9 @@ if (
 const renderSmokeBody = functionBody(main, "renderSmokeScript");
 if (
   !renderSmokeBody.includes("店长今日待办销量入口") ||
-  !renderSmokeBody.includes("店长开始清单任务入口") ||
   !renderSmokeBody.includes("管理员今日待办导入入口") ||
-  !renderSmokeBody.includes("每日督办入口") ||
-  !renderSmokeBody.includes("店长每日督办入口") ||
+  !renderSmokeBody.includes("经营总览") ||
+  !renderSmokeBody.includes("销量单表") ||
   !renderSmokeBody.includes("店长销量回车提交") ||
   !renderSmokeBody.includes("管理员基础资料导入入口") ||
   !renderSmokeBody.includes("店长隐藏基础资料导入入口") ||

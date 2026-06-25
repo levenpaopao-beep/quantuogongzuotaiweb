@@ -271,8 +271,8 @@ def mark_operation_tasks_done_payload(payload):
 
 def store_owners_payload(payload=None):
     payload = payload or {}
-    operator = {"role": operator_role(payload), "user": operator_user(payload)}
-    return {"assignments": app.visible_store_owner_assignments(operator), "owners": app.operation_owner_directory()}
+    require_admin_payload(payload, "读取负责人配置")
+    return {"assignments": app.load_store_owner_assignments(), "owners": app.operation_owner_directory()}
 
 
 def store_owners():

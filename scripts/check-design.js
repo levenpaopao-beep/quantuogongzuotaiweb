@@ -44,29 +44,23 @@ expect(!/letter-spacing\s*:\s*-/.test(css), "存在负字距", [
 expect(html.includes('id="todayWorkflowSteps"') && renderer.includes("renderTodayWorkflow"), "首页缺少明确工作流", [
   "用户进入后需要先看到今天怎么跑，而不是只看到状态卡。",
 ]);
-expect(html.includes('id="operationRhythmList"') && renderer.includes("function renderOperationRhythm("), "首页缺少每日/每周操作节奏", [
-  "每天用为主、每周用为辅，需要在今日工作台明确分组，避免用户不知道先做什么。",
+expect(html.includes('id="homeBusinessOverview"') && renderer.includes("renderHomeBusinessOverview"), "首页缺少经营总览", [
+  "首页第一屏需要先看 7/30/90 天销量趋势，而不是先堆操作说明。",
 ]);
-expect(renderer.includes("每日必做") && renderer.includes("每周辅助") && renderer.includes("renderOperationRhythm();"), "操作节奏缺少分组或未接入首页渲染", [
-  "首页需要把高频填报、任务处理和每周导入/推送分开显示。",
+expect(/\.home-business-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/.test(css), "经营总览缺少桌面四卡布局", [
+  "7 天、30 天、90 天和 Temu 爆旺款需要并排展示，便于横向比较。",
 ]);
-expect(/\.rhythm-lanes\s*\{[\s\S]*grid-template-columns:\s*minmax/.test(css), "操作节奏缺少桌面双栏布局", [
-  "每日主线和每周辅助需要并排区分。",
+expect(/@media\s*\(max-width:\s*1260px\)\s*\{[\s\S]*\.home-business-grid/.test(css), "经营总览缺少中小屏响应式约束", [
+  "中小屏不能让经营总览撑宽页面。",
 ]);
-expect(/@media\s*\(max-width:\s*1260px\)\s*\{[\s\S]*\.rhythm-lanes\s*\{\s*grid-template-columns:\s*1fr/.test(css), "操作节奏缺少中屏单列布局", [
-  "中小屏不能让两组动作互相挤压。",
-]);
-expect(renderer.includes("店长每日流程") && renderer.includes("管理员日常流程"), "首页工作流缺少角色化表达", [
+expect(renderer.includes("店长每日操作流程") && renderer.includes("管理员每日操作流程"), "首页工作流缺少角色化表达", [
   "同一入口下，管理员和店长必须看到不同动作路径。",
 ]);
-expect(html.includes('id="dailyFollowupList"') && renderer.includes("renderDailyFollowups"), "首页缺少每日督办模块", [
-  "每天使用为主的工作台，需要按负责人合并销量、导入和任务缺口。",
+expect(html.includes('id="todayActionList"') && html.includes("今日待我处理"), "首页缺少合并待办入口", [
+  "销量、议价、导入和任务待办需要合并到一个明确入口，避免重复卡片。",
 ]);
-expect(/\.daily-followup-row\s*\{[\s\S]*grid-template-columns:\s*minmax/.test(css), "每日督办缺少稳定栅格", [
-  "负责人、指标和动作需要固定结构，避免列表刷新时布局跳动。",
-]);
-expect(/@media\s*\(max-width:\s*1260px\)\s*\{[\s\S]*\.daily-followup-row\s*\{\s*grid-template-columns:\s*1fr/.test(css), "每日督办缺少中小屏单列布局", [
-  "督办指标较多，小屏必须改成单列，避免文字挤压。",
+expect(renderer.includes("sales-day-table") && renderer.includes("salesEditingIndex"), "销量页缺少单表编辑体验", [
+  "店长销量录入应是一张表内编辑确认，不应再拆成清单和台账两套视图。",
 ]);
 expect(html.includes('id="businessKpis"') && html.includes('id="businessAlertStrip"') && html.includes('id="businessTrendTable"'), "经营报表缺少经营视图分区", [
   "经营报表应先看 KPI、异常提醒和趋势，不应只保留生成 Excel 的旧入口。",

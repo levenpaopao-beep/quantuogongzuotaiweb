@@ -195,27 +195,26 @@ def task_priority(row, now=None):
     status = norm(row.get("status"))
     if status == STATUS_DONE:
         return "低", "已完成"
-    if task_overdue(row, now):
-        return "高", "超时未处理"
-    if status == STATUS_PENDING_PUSH and not norm(row.get("owner")):
-        return "高", "待指派后推送"
-    if status == STATUS_PENDING_PUSH:
-        return "中", "待管理员推送"
-    if status == STATUS_PENDING_OWNER and not norm(row.get("owner")):
-        return "高", "未分配负责人"
-    if status == STATUS_PENDING_REVIEW:
-        return "中", "待管理员审核"
-    if status == STATUS_APPROVED:
-        return "中", "待完成确认"
-    if status == STATUS_REJECTED:
-        return "中", "驳回待返工"
-    if status == STATUS_PENDING_OWNER:
-        return "普通", "待店长处理"
-    return "中", "状态待确认"
+    task_type = norm(row.get("task_type"))
+    business_text = " ".join(
+        norm(row.get(key))
+        for key in ["task_type", "system_action", "task_detail", "source_report", "source_sheet"]
+    )
+    if task_type == "价格异常" and ("低于成本" in business_text or "亏损" in business_text):
+        return "高", "低于成本价亏损销售"
+    if task_type == "爆旺冲突":
+        return "高", "爆旺冲突抢占资源"
+    if task_type == "低分预警":
+        return "高", "低分产品增多"
+    if task_type == "价格异常" and ("低于批发价80" in business_text or "批发价80%" in business_text):
+        return "中", "低于80%申报价在售"
+    if task_type == "滞销处理":
+        return "中", "滞销品催下架"
+    return "低", "其他低级处理"
 
 
 def task_sort_key(row):
-    priority_order = {"高": 0, "中": 1, "普通": 2, "低": 3}
+    priority_order = {"高": 0, "中": 1, "低": 2}
     updated_at = parse_time(row.get("updated_at")) or parse_time(row.get("created_at"))
     timestamp = updated_at.timestamp() if updated_at else 0
     return (priority_order.get(norm(row.get("priority")), 9), -timestamp, norm(row.get("id")))
@@ -233,7 +232,7 @@ def task_package_id(row):
 
 
 def task_package_sort_key(package):
-    priority_order = {"高": 0, "中": 1, "普通": 2, "低": 3}
+    priority_order = {"高": 0, "中": 1, "低": 2}
     status_order = {
         STATUS_PENDING_REVIEW: 0,
         STATUS_PENDING_PUSH: 1,
