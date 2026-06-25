@@ -282,6 +282,38 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("createOperatorAccount", js)
         self.assertIn("erpProductInfo", (ROOT / "electron" / "preload.js").read_text(encoding="utf-8"))
 
+    def test_system_settings_are_grouped_into_admin_modules_with_thresholds(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        js = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        for module in ["field-rules", "sales-thresholds", "erp-settings", "system-maintenance"]:
+            self.assertIn(f'data-settings-module="{module}"', html)
+            self.assertIn(f'data-settings-panel="{module}"', html)
+        for field in [
+            "daily_diff_units",
+            "month_diff_percent",
+            "year_diff_percent",
+            "completion_yellow_percent",
+            "completion_red_percent",
+            "erp_yellow_days",
+            "platform_batch_yellow_time",
+            "platform_batch_red_time",
+        ]:
+            self.assertIn(f'data-rule="{field}"', html + js)
+        self.assertIn("备份当前系统数据", html)
+        self.assertIn("检查系统是否可正常运行", html)
+        self.assertIn("openSettingsModule", js)
+
+    def test_business_report_defaults_to_manual_30_day_period_with_tooltips(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        js = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        self.assertIn('data-business-source="manual"', html)
+        self.assertIn('data-business-range="30d"', html)
+        self.assertIn("最近30日销量", html + js)
+        self.assertIn("不含今日", html + js)
+        self.assertIn("businessDefinition", js)
+        self.assertIn("店长填报完整度", html + js)
+        self.assertNotIn("今日销量", html + js)
+
     def test_weekly_workflow_uses_table_workbench_layout(self):
         source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
         self.assertIn("renderSources", source)

@@ -1637,6 +1637,27 @@ label { color: var(--muted); font-size: 12px; }
 .business-kpi.down {
   background: linear-gradient(180deg, #fff0f5, #fff);
 }
+.business-kpi-main {
+  grid-column: span 2;
+}
+.business-kpi.warn strong,
+.business-kpi.red strong {
+  color: var(--red);
+}
+.info-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: #eef3ff;
+  color: #5570d9;
+  font-size: 12px;
+  font-style: normal;
+  cursor: help;
+}
 .business-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -1671,6 +1692,9 @@ label { color: var(--muted); font-size: 12px; }
   flex-wrap: wrap;
   gap: 8px;
   margin: 8px 0 10px;
+}
+.source-shortcuts {
+  margin-top: -2px;
 }
 .range-shortcuts .segment {
   min-height: 32px;
@@ -2045,6 +2069,7 @@ label { color: var(--muted); font-size: 12px; }
   .guide-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .business-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .business-kpi-main { grid-column: span 2; }
   .business-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .daily-followup-row { grid-template-columns: 1fr; }
 }
@@ -2057,6 +2082,7 @@ label { color: var(--muted); font-size: 12px; }
   .top-actions, .global-operator { width: 100%; }
   .global-operator { grid-template-columns: 1fr; }
   .metric-row, .task-summary, .report-grid, .rules-grid, .erp-settings-grid, .sales-report-filters, .business-kpi-grid, .business-filters { grid-template-columns: 1fr; }
+  .business-kpi-main { grid-column: span 1; }
   .backup-actions { grid-template-columns: 1fr; }
   .master-module-card { min-height: 96px; }
   .workflow-head { flex-direction: column; }

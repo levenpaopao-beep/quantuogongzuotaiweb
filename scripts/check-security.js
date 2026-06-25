@@ -121,8 +121,8 @@ expect(cli.includes('require_admin(read_payload(), "查看全局输出文件夹"
 expect(main.includes('runPython("outputs", [limit || 80], JSON.stringify(payload || {}))'), "输出列表 IPC 未传当前身份");
 expect(main.includes('runPython("load-rules", [], JSON.stringify(payload || {}))'), "读取规则 IPC 未传当前身份");
 expect(renderer.includes("api.loadRules(operatorPayload())"), "前端读取规则未传当前身份");
-expect(main.includes("function requireAdminPayload(") && main.includes("运行系统自检") && main.includes("运行交付检查"), "系统自检/交付检查缺少管理员校验");
-expect(renderer.includes("api.runDoctor(operatorPayload())") && renderer.includes("api.runReadyCheck(operatorPayload())"), "前端运行自检/交付检查未传当前身份");
+expect(main.includes("function requireAdminPayload(") && main.includes("检查系统是否可正常运行") && main.includes("运行交付检查"), "系统运行检查/交付检查缺少管理员校验");
+expect(renderer.includes("api.runDoctor(operatorPayload())") && renderer.includes("api.runReadyCheck(operatorPayload())"), "前端运行系统检查/交付检查未传当前身份");
 expect(renderer.includes("api.openOutput(latest.name, operatorPayload())") && renderer.includes("api.revealOutput(item.name, operatorPayload())"), "前端打开输出未传当前身份");
 expect(appPy.includes("allowed_roots") && appPy.includes("allowed_files"), "备份恢复缺少白名单");
 expect(appPy.includes("target = (ROOT / name).resolve()"), "备份恢复缺少目标路径 resolve");

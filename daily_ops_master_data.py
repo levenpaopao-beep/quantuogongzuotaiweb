@@ -482,7 +482,54 @@ def comparison_summary(rows, current_period, compare_period):
         "delta": current_sales - compare_sales,
         "rate": pct_change(current_sales, compare_sales),
         "record_count": len(current_rows),
+        "period": {"date_from": current_period[0], "date_to": current_period[1]},
+        "compare_period": {"date_from": compare_period[0], "date_to": compare_period[1]},
     }
+
+
+def complete_period(range_key, anchor_day):
+    end = anchor_day - timedelta(days=1)
+    if range_key == "7d":
+        return end - timedelta(days=6), end
+    if range_key == "14d":
+        return end - timedelta(days=13), end
+    if range_key == "90d":
+        return end - timedelta(days=89), end
+    return end - timedelta(days=29), end
+
+
+def business_definition(label, period, source_label="店长填报销量"):
+    return f"{label}：统计 {period[0]} 至 {period[1]} 的{source_label}，不含今日。"
+
+
+def business_source_label(source):
+    return "平台导入销量" if norm(source) == "platform" else "店长填报销量"
+
+
+def completion_summary(rows, assignments, current_period, role="admin", user=""):
+    start = parse_day(current_period[0])
+    end = parse_day(current_period[1])
+    days = max(0, (end - start).days + 1)
+    assignment_index = build_assignment_index(assignments)
+    required_pairs = [
+        key for key, item in assignment_index.items()
+        if item.get("enabled") and item.get("daily_required") and (norm(role) == "admin" or item.get("owner") == norm(user))
+    ]
+    if not required_pairs:
+        required_pairs = sorted({
+            (platform_name(row.get("platform"), ""), clean_store_name(row.get("store")))
+            for row in rows
+            if row.get("platform") and row.get("store")
+        })
+    submitted = {
+        (norm(row.get("date")), platform_name(row.get("platform"), ""), clean_store_name(row.get("store")))
+        for row in sales_between(rows, *current_period)
+    }
+    required = days * len(required_pairs)
+    count = sum(1 for day_offset in range(days) for pair in required_pairs if ((start + timedelta(days=day_offset)).isoformat(), pair[0], pair[1]) in submitted)
+    rate = round(count / required * 100, 2) if required else 100
+    level = "ok" if rate >= 100 else "warn" if rate >= 90 else "red"
+    return {"required": required, "submitted": count, "missing": max(0, required - count), "rate": rate, "level": level}
 
 
 def business_group_key(row, dimension):
@@ -569,23 +616,26 @@ def trend_rows(rows, dimension, current_period, grain="month"):
     return {"buckets": buckets, "rows": sorted(table, key=lambda row: (-row["total"], row["name"]))}
 
 
-def business_report(sales_path, assignments=None, role="admin", user="", date_from="", date_to="", platform="", store="", grain="month", stale_days=3, diff_percent=20, diff_units=20, small_base=100):
+def business_report(sales_path, assignments=None, role="admin", user="", date_from="", date_to="", platform="", store="", grain="month", stale_days=3, diff_percent=20, diff_units=20, small_base=100, range_key="30d", source="manual", anchor_date=""):
     rows = scoped_sales_rows(sales_path, assignments, role, user, platform, store)
     available_days = [parse_day(row.get("date")) for row in rows if parse_day(row.get("date"))]
-    end_day = parse_day(date_to) or (max(available_days) if available_days else date.today())
-    default_start = end_day.replace(day=1)
-    start_day = parse_day(date_from) or default_start
+    anchor_day = parse_day(anchor_date) or date.today()
+    if date_from or date_to:
+        end_day = parse_day(date_to) or (max(available_days) if available_days else anchor_day - timedelta(days=1))
+        default_start = end_day.replace(day=1)
+        start_day = parse_day(date_from) or default_start
+    else:
+        start_day, end_day = complete_period(range_key, anchor_day)
     if start_day > end_day:
         start_day, end_day = end_day, start_day
     current_period = period_tuple(start_day, end_day)
     compare_period = same_span_previous_year(start_day, end_day)
     previous_period = previous_span(start_day, end_day)
-    today_period = period_tuple(end_day, end_day)
-    yesterday = end_day - timedelta(days=1)
-    yesterday_period = period_tuple(yesterday, yesterday)
     month_period, previous_month_period = same_month_previous_period(end_day)
     year_period, previous_year_period = year_to_date_period(end_day)
     visible_rows = sales_between(rows, *current_period)
+    completion = completion_summary(rows, assignments, current_period, role, user)
+    source_label = business_source_label(source)
     anomalies = []
     for dimension, label in [("platform", "平台"), ("owner", "负责人"), ("store", "店铺")]:
         for row in group_business_rows(rows, dimension, current_period, compare_period, previous_period, end_day, stale_days, small_base):
@@ -606,6 +656,8 @@ def business_report(sales_path, assignments=None, role="admin", user="", date_fr
             "grain": grain,
             "role": norm(role) or "admin",
             "user": norm(user),
+            "range_key": range_key,
+            "source": source,
         },
         "settings": {
             "stale_days": stale_days,
@@ -614,14 +666,23 @@ def business_report(sales_path, assignments=None, role="admin", user="", date_fr
             "small_base": small_base,
         },
         "summary": {
-            "today": comparison_summary(rows, today_period, yesterday_period),
             "month": comparison_summary(rows, month_period, previous_month_period),
             "year": comparison_summary(rows, year_period, previous_year_period),
             "range": comparison_summary(rows, current_period, compare_period),
+            "previous_range": comparison_summary(rows, current_period, previous_period),
+            "completion": completion,
             "record_count": len(visible_rows),
             "store_count": len({(row.get("platform"), row.get("store")) for row in visible_rows}),
             "latest_date": latest_date(rows, end_day.isoformat()),
             "anomaly_count": len(anomalies),
+        },
+        "definitions": {
+            "range": business_definition(f"最近{(end_day - start_day).days + 1}日销量", current_period, source_label),
+            "previous_range": f"上期对比：当前范围 {current_period[0]} 至 {current_period[1]}，对比上一段同长度完整销售日 {previous_period[0]} 至 {previous_period[1]}。",
+            "year_over_year": f"去年同期：当前范围 {current_period[0]} 至 {current_period[1]}，对比去年同日期范围 {compare_period[0]} 至 {compare_period[1]}。",
+            "month": business_definition("本月累计", month_period, source_label),
+            "year": business_definition("本年累计", year_period, source_label),
+            "completion": f"店长填报完整度：当前统计范围内，应填店铺销售日中已填写的比例。当前范围 {current_period[0]} 至 {current_period[1]}。",
         },
         "dimensions": {
             "platform": group_business_rows(rows, "platform", current_period, compare_period, previous_period, end_day, stale_days, small_base),
@@ -730,11 +791,14 @@ def monthly_backup_status(backup_dir, now=None):
     now = now or datetime.now()
     backup_dir = Path(backup_dir)
     prefix = now.strftime("%Y%m")
-    exists = backup_dir.exists() and any(path.is_file() and path.name.startswith(prefix) and "运营状态备份" in path.name for path in backup_dir.glob("*.zip"))
+    exists = backup_dir.exists() and any(
+        path.is_file() and path.name.startswith(prefix) and ("系统数据备份" in path.name or "运营状态备份" in path.name)
+        for path in backup_dir.glob("*.zip")
+    )
     return {
         "month": now.strftime("%Y-%m"),
         "backup_exists": bool(exists),
-        "message": "" if exists else f"{now.strftime('%Y年%m月')}还没有生成运营状态备份，请管理员导出备份资料。",
+        "message": "" if exists else f"{now.strftime('%Y年%m月')}还没有生成系统数据备份，请管理员先备份当前系统数据。",
     }
 
 

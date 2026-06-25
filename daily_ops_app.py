@@ -192,6 +192,20 @@ DEFAULT_RULES = {
         "group_by": "店铺+SPU",
         "sales30_total_equals": 0,
     },
+    "sales_thresholds": {
+        "daily_diff_units": 10,
+        "month_diff_percent": 5,
+        "year_diff_percent": 5,
+        "short_period_unit_per_day": 10,
+        "long_period_diff_percent": 5,
+        "completion_yellow_percent": 100,
+        "completion_red_percent": 90,
+        "erp_yellow_days": 1,
+        "erp_red_days": 2,
+        "platform_batch_days": ["周一", "周四"],
+        "platform_batch_yellow_time": "12:00",
+        "platform_batch_red_time": "18:00",
+    },
     "erp_api": {
         "provider": "旺店通",
         "enabled": False,
@@ -492,7 +506,7 @@ def backup_relative_path(path):
 
 
 def create_operational_backup():
-    target = backup_output_dir() / f"{datetime.now():%Y%m%d-%H%M%S}-运营状态备份.zip"
+    target = backup_output_dir() / f"{datetime.now():%Y%m%d-%H%M%S}-系统数据备份.zip"
     files = []
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for source in backup_source_paths():
@@ -632,6 +646,9 @@ def business_report(payload=None):
         platform=payload.get("platform", ""),
         store=payload.get("store", ""),
         grain=payload.get("grain", "month"),
+        range_key=payload.get("range_key", "30d"),
+        source=payload.get("source", "manual"),
+        anchor_date=payload.get("anchor_date", ""),
     )
 
 
@@ -3427,11 +3444,13 @@ function renderBusinessKpisWeb(report){
   const box = document.getElementById('businessKpis');
   if(!box) return;
   const s = report?.summary || {};
+  const rangeLabel = `最近${String(report?.filters?.range_key || '30d').replace('d', '')}日销量`;
   box.innerHTML = [
-    kpiWeb('今日销量', s.today || {}, '较昨日'),
+    kpiWeb(rangeLabel, s.previous_range || s.range || {}, '较上期'),
+    kpiWeb('上期对比', s.previous_range || {}, '上期销量'),
+    kpiWeb('去年同期', s.range || {}, '去年同期销量'),
     kpiWeb('本月累计', s.month || {}, '较上月同期'),
     kpiWeb('本年累计', s.year || {}, '较去年同期'),
-    kpiWeb('当前范围', s.range || {}, '较去年同期'),
   ].join('');
 }
 function renderBusinessAlertWeb(report){

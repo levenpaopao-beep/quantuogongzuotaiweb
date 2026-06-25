@@ -20,6 +20,8 @@ const state = {
   salesReport: null,
   businessReport: null,
   businessTab: "overview",
+  businessRange: "30d",
+  businessSource: "manual",
   importMatrix: null,
   importFocus: "blocked",
   taskSuppressions: [],
@@ -62,6 +64,12 @@ const MASTER_MODULES = {
     title: "任务屏蔽清单",
     desc: "查看已屏蔽的重复商品任务和屏蔽原因。",
   },
+};
+const SETTINGS_MODULES = {
+  "field-rules": { pill: "规则", title: "字段与判断规则", desc: "维护爆旺、滞销、尺码排序和表格排序。" },
+  "sales-thresholds": { pill: "阈值", title: "销量与经营阈值", desc: "维护销量差异、完整度、ERP 过期和平台批次提醒。" },
+  "erp-settings": { pill: "ERP", title: "ERP 接口设置", desc: "维护旺店通接口、同步范围和商品库存拉取配置。" },
+  "system-maintenance": { pill: "维护", title: "系统维护", desc: "备份当前系统数据，检查系统是否可正常运行。" },
 };
 
 function $(selector) {
@@ -234,7 +242,7 @@ function renderRoleCopy() {
   const primary = $(".hero-actions .primary-button");
   const secondary = $(".hero-actions .ghost-button");
   if (role === "owner") {
-    if (title) title.textContent = "先填今日销量，再整包处理任务。";
+    if (title) title.textContent = "先填销售日销量，再整包处理任务。";
     if (body) body.textContent = "店长只看到自己负责的店铺数据。每天先补齐销量，随后处理已推送的商品任务包。";
     if (primary) primary.textContent = "填写我的销量";
     if (secondary) secondary.textContent = "处理我的任务包";
@@ -242,7 +250,7 @@ function renderRoleCopy() {
   }
   if (title) title.textContent = "先确认销量，再处理任务包。";
   if (body) body.textContent = "管理员看全部平台和店铺；店长只看自己负责的数据。每个卡片都指向下一步动作。";
-  if (primary) primary.textContent = "填写今日销量";
+  if (primary) primary.textContent = "填写销售日销量";
   if (secondary) secondary.textContent = "处理商品任务";
 }
 
@@ -319,6 +327,28 @@ function openMasterModule(moduleId) {
 
 function closeMasterModule() {
   const dialog = $("#masterModuleDialog");
+  if (!dialog) return;
+  dialog.classList.add("hidden");
+  dialog.setAttribute("aria-hidden", "true");
+}
+
+function openSettingsModule(moduleId) {
+  const config = SETTINGS_MODULES[moduleId];
+  const dialog = $("#settingsModuleDialog");
+  if (!config || !dialog) return;
+  $("#settingsModulePill").textContent = config.pill;
+  $("#settingsModuleTitle").textContent = config.title;
+  $("#settingsModuleDesc").textContent = config.desc;
+  document.querySelectorAll("[data-settings-panel]").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.settingsPanel !== moduleId);
+  });
+  dialog.classList.remove("hidden");
+  dialog.setAttribute("aria-hidden", "false");
+  dialog.querySelector(`[data-settings-panel="${moduleId}"] input, [data-settings-panel="${moduleId}"] button, [data-settings-panel="${moduleId}"] select`)?.focus();
+}
+
+function closeSettingsModule() {
+  const dialog = $("#settingsModuleDialog");
   if (!dialog) return;
   dialog.classList.add("hidden");
   dialog.setAttribute("aria-hidden", "true");
@@ -1247,7 +1277,7 @@ function renderSalesFocus(summary = {}, entries = []) {
   const hint = $("#salesFocusHint");
   const visible = salesFocusEntries(entries);
   if (title) {
-    const label = state.salesFocus === "abnormal" ? "只看异常波动" : state.salesFocus === "all" ? "查看全部店铺" : "今天先补未填";
+    const label = state.salesFocus === "abnormal" ? "只看异常波动" : state.salesFocus === "all" ? "查看全部店铺" : "先补未填销售日";
     title.textContent = `${label} · ${visible.length} 条`;
   }
   if (hint) {
@@ -1334,7 +1364,7 @@ function renderReportSalesMetrics() {
   const metrics = $("#reportSalesMetrics");
   if (metrics) {
     metrics.innerHTML = [
-      ["今日总销量", summary.total_sales ?? 0, `已填 ${summary.submitted || 0} / 应填 ${summary.required || 0}`, "ok"],
+      ["销售日销量", summary.total_sales ?? 0, `已填 ${summary.submitted || 0} / 应填 ${summary.required || 0}`, "ok"],
       ["未填店铺", summary.missing ?? 0, "每日销量口径", summary.missing ? "warn" : "ok"],
       ["异常波动", summary.abnormal ?? 0, "50% 阈值提醒", summary.abnormal ? "danger" : "ok"],
     ].map(([label, value, hint, tone]) => `<div class="metric-card ${tone}"><span>${label}</span><strong>${value}</strong><small>${hint}</small></div>`).join("");
@@ -1345,7 +1375,7 @@ function renderReportSalesMetrics() {
     if (!platforms.length) {
       list.innerHTML = actionEmpty({
         title: "暂无平台销量汇总",
-        body: "平台汇总会在每日销量填报后自动生成。先填写今日销量，再回来查看平台总览。",
+        body: "平台汇总会在每日销量填报后自动生成。先填写销售日销量，再回来查看平台总览。",
         primary: "填写销量",
         page: "sales",
       });
@@ -1621,6 +1651,8 @@ function businessReportPayload() {
     platform: $("#businessPlatform")?.value || "",
     store: $("#businessStore")?.value.trim() || "",
     grain: $("#businessGrain")?.value || "month",
+    range_key: state.businessRange || "30d",
+    source: state.businessSource || "manual",
   });
 }
 
@@ -1633,19 +1665,20 @@ function setBusinessDates(start, end, activeRange = "") {
 }
 
 function applyBusinessRange(range) {
-  const end = new Date();
-  const start = new Date(end);
-  if (range === "7d") start.setDate(end.getDate() - 6);
-  if (range === "30d") start.setDate(end.getDate() - 29);
-  if (range === "90d") start.setDate(end.getDate() - 89);
-  if (range === "half-year") start.setMonth(end.getMonth() - 6);
-  if (range === "1y") start.setFullYear(end.getFullYear() - 1);
-  if (range === "month") start.setDate(1);
-  if (range === "year") {
-    start.setMonth(0);
-    start.setDate(1);
-  }
-  setBusinessDates(start, end, range);
+  state.businessRange = range || "30d";
+  if ($("#businessDateFrom")) $("#businessDateFrom").value = "";
+  if ($("#businessDateTo")) $("#businessDateTo").value = "";
+  document.querySelectorAll("[data-business-range]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.businessRange === state.businessRange);
+  });
+  loadBusinessReport(true);
+}
+
+function applyBusinessSource(source) {
+  state.businessSource = source || "manual";
+  document.querySelectorAll("[data-business-source]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.businessSource === state.businessSource);
+  });
   loadBusinessReport(true);
 }
 
@@ -1654,11 +1687,13 @@ function clearBusinessRangeShortcut() {
 }
 
 function initializeBusinessRange() {
-  if ($("#businessDateFrom")?.value || $("#businessDateTo")?.value) return;
-  const end = new Date();
-  const start = new Date(end);
-  start.setDate(end.getDate() - 29);
-  setBusinessDates(start, end, "30d");
+  state.businessRange = "30d";
+  document.querySelectorAll("[data-business-range]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.businessRange === "30d");
+  });
+  document.querySelectorAll("[data-business-source]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.businessSource === (state.businessSource || "manual"));
+  });
 }
 
 function signedNumber(value) {
@@ -1680,14 +1715,30 @@ function deltaClass(value) {
   return "";
 }
 
-function kpiHtml(label, item, compareLabel) {
+function businessDefinition(report, key) {
+  return report?.definitions?.[key] || "";
+}
+
+function kpiHtml(label, item, compareLabel, definition = "", extraClass = "") {
   const delta = Number(item?.delta || 0);
   const rate = item?.rate;
   return `
-    <div class="business-kpi ${deltaClass(delta)}">
-      <span>${esc(label)}</span>
+    <div class="business-kpi ${extraClass} ${deltaClass(delta)}">
+      <span>${esc(label)}${definition ? ` <b class="info-dot" title="${esc(definition)}">?</b>` : ""}</span>
       <strong>${esc(item?.sales || 0)}</strong>
       <small>${esc(compareLabel)} ${esc(signedNumber(delta))} ${rate === null || rate === undefined ? "" : `(${esc(signedRate(rate))})`}</small>
+    </div>
+  `;
+}
+
+function deltaKpiHtml(label, item, compareLabel, definition = "", extraClass = "") {
+  const delta = Number(item?.delta || 0);
+  const rate = item?.rate;
+  return `
+    <div class="business-kpi ${extraClass} ${deltaClass(delta)}">
+      <span>${esc(label)}${definition ? ` <b class="info-dot" title="${esc(definition)}">?</b>` : ""}</span>
+      <strong>${esc(signedNumber(delta))}</strong>
+      <small>${esc(compareLabel)} ${esc(item?.compare_sales || 0)}${rate === null || rate === undefined ? "" : ` · ${esc(signedRate(rate))}`}</small>
     </div>
   `;
 }
@@ -1696,11 +1747,19 @@ function renderBusinessKpis(report) {
   const summary = report.summary || {};
   const box = $("#businessKpis");
   if (!box) return;
+  const rangeLabel = `最近${(report.filters?.range_key || state.businessRange || "30d").replace("d", "")}日销量`;
+  const completion = summary.completion || {};
   box.innerHTML = [
-    kpiHtml("今日销量", summary.today || {}, "较昨日"),
-    kpiHtml("本月累计", summary.month || {}, "较上月同期"),
-    kpiHtml("本年累计", summary.year || {}, "较去年同期"),
-    kpiHtml("当前范围", summary.range || {}, "较去年同期"),
+    kpiHtml(rangeLabel, summary.previous_range || summary.range || {}, "较上期", businessDefinition(report, "range"), "business-kpi-main"),
+    deltaKpiHtml("上期对比", summary.previous_range || {}, "上期销量", businessDefinition(report, "previous_range")),
+    deltaKpiHtml("去年同期", summary.range || {}, "去年同期销量", businessDefinition(report, "year_over_year")),
+    kpiHtml("本月累计", summary.month || {}, "较上月同期", businessDefinition(report, "month")),
+    kpiHtml("本年累计", summary.year || {}, "较去年同期", businessDefinition(report, "year")),
+    `<div class="business-kpi ${completion.level || "ok"}">
+      <span>店长填报完整度 <b class="info-dot" title="${esc(businessDefinition(report, "completion"))}">?</b></span>
+      <strong>${esc(completion.rate ?? 100)}%</strong>
+      <small>缺失 ${esc(completion.missing || 0)} 个店铺销售日</small>
+    </div>`,
   ].join("");
 }
 
@@ -1942,8 +2001,8 @@ function renderTodayDashboard() {
   if (metrics) {
     metrics.innerHTML = [
       ["应填店铺", salesSummary.required ?? 0, "平台 + 店铺口径", ""],
-      ["已填写", salesSummary.submitted ?? 0, `今日总销量 ${salesSummary.total_sales || 0}`, "ok"],
-      ["未填写", salesSummary.missing ?? 0, ownerMode ? "今天先补齐" : "管理员可提醒店长", "warn"],
+      ["已填写", salesSummary.submitted ?? 0, `销售日销量 ${salesSummary.total_sales || 0}`, "ok"],
+      ["未填写", salesSummary.missing ?? 0, ownerMode ? "先补齐销售日" : "管理员可提醒店长", "warn"],
       ["异常波动", salesSummary.abnormal ?? 0, "50% 阈值提醒", "danger"],
     ].map(([label, value, hint, tone]) => `<div class="metric-card ${tone}"><span>${label}</span><strong>${value}</strong><small>${hint}</small></div>`).join("");
   }
@@ -2123,7 +2182,7 @@ function renderOperationRhythm() {
       label: "每日必做",
       tone: "daily",
       items: [
-        ["填今日销量", "只看自己负责店铺，未填优先。", "sales", "去填写", 'data-sales-focus="missing"'],
+        ["填销售日销量", "只看自己负责店铺，未填优先。", "sales", "去填写", 'data-sales-focus="missing"'],
         ["处理任务包", "已推送到你名下的任务整包提交。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
         ["看异常提醒", "销量波动大时补原因，不影响提交。", "reports", "看提醒", ""],
       ],
@@ -2660,6 +2719,10 @@ function flattenRules(rules) {
     ["爆旺关键词", "hot_item.keywords", (rules.hot_item?.keywords || []).join(", ")],
     ["表格排序层级", "sort.group_order", (rules.sort?.group_order || []).join(", ")],
     ["尺码排序", "sort.size_order", (rules.sort?.size_order || []).join(", ")],
+    ["SHEIN新品爆旺：上架天数小于", "hot_item.shein_new_days_lt", rules.hot_item?.shein_new_days_lt ?? ""],
+    ["SHEIN新品爆旺：7天日均不低于", "hot_item.shein_new_7d_daily_gte", rules.hot_item?.shein_new_7d_daily_gte ?? ""],
+    ["SHEIN老品爆旺：上架天数不低于", "hot_item.shein_old_days_gte", rules.hot_item?.shein_old_days_gte ?? ""],
+    ["SHEIN老品爆旺：30天日均大于", "hot_item.shein_old_30d_daily_gt", rules.hot_item?.shein_old_30d_daily_gt ?? ""],
     ["新品滞销：上架天数超过", "slow_moving.new_slow_min_days", rules.slow_moving?.new_slow_min_days || ""],
     ["老品滞销：上架天数超过", "slow_moving.old_slow_min_days", rules.slow_moving?.old_slow_min_days || ""],
   ];
@@ -2674,7 +2737,16 @@ function renderRules() {
     card.innerHTML = `<label>${label}</label><input data-rule="${key}" value="${String(value).replaceAll('"', "&quot;")}" />`;
     form.appendChild(card);
   });
+  renderSalesThresholdRules();
   renderErpSettings();
+}
+
+function renderSalesThresholdRules() {
+  const settings = state.rules?.sales_thresholds || {};
+  document.querySelectorAll('[data-settings-panel="sales-thresholds"] [data-rule]').forEach((input) => {
+    const value = settings[input.dataset.rule];
+    input.value = value === undefined || value === null ? "" : String(value);
+  });
 }
 
 function renderErpSettings() {
@@ -3091,7 +3163,9 @@ async function importSalesHistory() {
 function collectRules() {
   const next = structuredClone(state.rules || {});
   document.querySelectorAll("[data-rule]").forEach((input) => {
-    const [section, key] = input.dataset.rule.split(".");
+    const parts = input.dataset.rule.split(".");
+    const section = parts.length > 1 ? parts[0] : "sales_thresholds";
+    const key = parts.length > 1 ? parts[1] : parts[0];
     next[section] = next[section] || {};
     const text = input.value.trim();
     if (key === "keywords" || key.endsWith("_order")) {
@@ -3272,22 +3346,22 @@ async function runDoctorCheck() {
     if (button) button.disabled = true;
     if (resultBox) {
       resultBox.className = "check-result running";
-      resultBox.innerHTML = "<strong>正在自检...</strong><span>会检查运行环境、界面绑定、角色权限、核心接口和业务测试。</span>";
+      resultBox.innerHTML = "<strong>正在检查...</strong><span>会检查运行环境、界面绑定、角色权限、核心接口和业务测试。</span>";
     }
     const result = await api.runDoctor(operatorPayload());
-    const output = result?.output || "自检通过";
+    const output = result?.output || "检查通过";
     if (resultBox) {
       resultBox.className = "check-result ok";
-      resultBox.innerHTML = `<strong>自检通过</strong><span>${esc(output).replace(/\n/g, "<br />")}</span>`;
+      resultBox.innerHTML = `<strong>检查通过</strong><span>${esc(output).replace(/\n/g, "<br />")}</span>`;
     }
-    showToast("系统自检通过");
+    showToast("系统运行检查通过");
   } catch (error) {
     const message = userFacingError(error);
     if (resultBox) {
       resultBox.className = "check-result danger";
-      resultBox.innerHTML = `<strong>自检未通过</strong><span>${esc(message).replace(/\n/g, "<br />")}</span>`;
+      resultBox.innerHTML = `<strong>检查未通过</strong><span>${esc(message).replace(/\n/g, "<br />")}</span>`;
     }
-    showToast("系统自检未通过");
+    showToast("系统运行检查未通过");
   } finally {
     if (button) button.disabled = false;
   }
@@ -3777,7 +3851,7 @@ function bindEvents() {
     await loadSales(false);
     await loadSalesCompare(false);
     document.querySelector("#salesEntryList")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    showToast("今日销量清单已刷新");
+    showToast("销售日销量清单已刷新");
   });
   document.querySelectorAll(".sales-focus-tabs [data-sales-focus]").forEach((button) => {
     button.addEventListener("click", () => setSalesFocus(button.dataset.salesFocus));
@@ -3789,6 +3863,9 @@ function bindEvents() {
   });
   document.querySelectorAll("[data-business-range]").forEach((button) => {
     button.addEventListener("click", () => applyBusinessRange(button.dataset.businessRange));
+  });
+  document.querySelectorAll("[data-business-source]").forEach((button) => {
+    button.addEventListener("click", () => applyBusinessSource(button.dataset.businessSource));
   });
   ["#salesReportDateFrom", "#salesReportDateTo"].forEach((selector) => {
     $(selector)?.addEventListener("change", clearSalesReportRangeShortcut);
@@ -3859,6 +3936,12 @@ function bindEvents() {
     renderRules();
     showToast("规则已保存");
   });
+  $("#saveThresholdRulesBtn")?.addEventListener("click", async () => {
+    state.rules = collectRules();
+    await api.saveRules(operatorPayload({ rules: state.rules }));
+    renderRules();
+    showToast("阈值已保存");
+  });
   $("#saveErpSettingsBtn")?.addEventListener("click", saveErpSettings);
   $("#manualErpSyncBtn")?.addEventListener("click", manualErpSync);
   $("#testErpSettingsBtn")?.addEventListener("click", testErpSettings);
@@ -3890,6 +3973,13 @@ function bindEvents() {
   $("#masterModuleDialog")?.addEventListener("click", (event) => {
     if (event.target?.id === "masterModuleDialog") closeMasterModule();
   });
+  document.querySelectorAll("[data-settings-module]").forEach((button) => {
+    button.addEventListener("click", () => openSettingsModule(button.dataset.settingsModule));
+  });
+  document.querySelectorAll("[data-settings-dialog-close]").forEach((button) => button.addEventListener("click", closeSettingsModule));
+  $("#settingsModuleDialog")?.addEventListener("click", (event) => {
+    if (event.target?.id === "settingsModuleDialog") closeSettingsModule();
+  });
   $("#taskDialogForm")?.addEventListener("submit", submitTaskDialog);
   document.querySelectorAll("[data-dialog-close]").forEach((button) => button.addEventListener("click", closeTaskDialog));
   $("#taskDialog")?.addEventListener("click", (event) => {
@@ -3898,6 +3988,7 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !$("#taskDialog")?.classList.contains("hidden")) closeTaskDialog();
     if (event.key === "Escape" && !$("#masterModuleDialog")?.classList.contains("hidden")) closeMasterModule();
+    if (event.key === "Escape" && !$("#settingsModuleDialog")?.classList.contains("hidden")) closeSettingsModule();
   });
 }
 

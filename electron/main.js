@@ -265,10 +265,19 @@ function renderSmokeScript() {
       requireVisible("#createOperatorAccountBtn", "管理员新增店长账号按钮");
       document.querySelector("[data-master-dialog-close]")?.click();
       await openPage("rules", "#rulesPage.page-active", "系统设置页面");
+      requireVisible('[data-settings-module="erp-settings"]', "ERP 接口设置模块入口");
+      document.querySelector('[data-settings-module="erp-settings"]')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 80));
       requireVisible("#erpSettingsForm", "ERP 接口设置");
-      requireVisible("#doctorResult", "系统自检结果区");
-      requireVisible('[data-admin-only="backup-reminder"]', "管理员月度备份提醒");
+      document.querySelector("[data-settings-dialog-close]")?.click();
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      requireVisible('[data-settings-module="system-maintenance"]', "系统维护模块入口");
+      document.querySelector('[data-settings-module="system-maintenance"]')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      requireVisible("#doctorResult", "系统运行检查结果区");
+      requireVisible('[data-settings-panel="system-maintenance"]', "管理员系统维护入口");
       requireVisible("#backupStatus", "管理员备份状态");
+      document.querySelector("[data-settings-dialog-close]")?.click();
       if (role && user && switchButton) {
         role.value = "owner";
         user.value = "";
@@ -297,7 +306,7 @@ function renderSmokeScript() {
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
           requireVisible("#dailyFollowupList .daily-followup-row, #dailyFollowupList .action-empty", "店长每日督办入口");
           await clickRoute('#todayWorkflowSteps [data-empty-page="sales"][data-sales-focus="missing"]', "#salesPage.page-active", "店长今日流程销量入口");
-          requireText("#salesFocusTitle", "今天先补未填", "店长销量入口主筛选");
+          requireText("#salesFocusTitle", "先补未填销售日", "店长销量入口主筛选");
           requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长销量入口未填筛选");
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
           await clickRoute('#todayWorkflowSteps [data-empty-page="tasks"][data-task-status="待店长处理"][data-task-open-only="true"]', "#tasksPage.page-active", "店长今日流程任务入口");
@@ -308,7 +317,7 @@ function renderSmokeScript() {
           requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长导入入口需处理筛选");
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
           await clickRoute('#todayActionList [data-empty-page="sales"][data-sales-focus="missing"]', "#salesPage.page-active", "店长今日待办销量入口");
-          requireText("#salesFocusTitle", "今天先补未填", "店长今日待办销量主筛选");
+          requireText("#salesFocusTitle", "先补未填销售日", "店长今日待办销量主筛选");
           requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长今日待办销量未填筛选");
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
           await clickRoute('#todayActionList [data-empty-page="tasks"][data-task-status="待店长处理"][data-task-open-only="true"]', "#tasksPage.page-active", "店长今日待办任务入口");
@@ -319,7 +328,7 @@ function renderSmokeScript() {
           requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长今日待办导入需处理筛选");
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
           await clickRoute('#todayGuideSteps [data-empty-page="sales"][data-sales-focus="missing"]', "#salesPage.page-active", "店长开始清单销量入口");
-          requireText("#salesFocusTitle", "今天先补未填", "店长开始清单销量主筛选");
+          requireText("#salesFocusTitle", "先补未填销售日", "店长开始清单销量主筛选");
           requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长开始清单销量未填筛选");
           await openPage("today", "#todayPage.page-active", "店长返回今日工作台");
           await clickRoute('#todayGuideSteps [data-empty-page="tasks"][data-task-status="待店长处理"][data-task-open-only="true"]', "#tasksPage.page-active", "店长开始清单任务入口");
@@ -330,7 +339,7 @@ function renderSmokeScript() {
           requireActive('.import-health-tabs [data-import-focus="blocked"]', "店长开始清单导入需处理筛选");
           await openPage("sales", "#salesPage.page-active", "店长销量管理页面");
           requireVisible("#salesFocusBar", "店长销量筛选条");
-          requireText("#salesFocusTitle", "今天先补未填", "店长销量主筛选");
+          requireText("#salesFocusTitle", "先补未填销售日", "店长销量主筛选");
           requireActive('.sales-focus-tabs [data-sales-focus="missing"]', "店长销量未填筛选");
           const smokeSalesEntry = {
             platform: "Temu",
@@ -394,7 +403,7 @@ function renderSmokeScript() {
                 if (capturedSalesSubmit.platform !== "Temu" || capturedSalesSubmit.store !== "烟测店铺") errors.push("店长销量回车提交店铺口径错误");
                 if (String(capturedSalesSubmit.sales) !== "37") errors.push("店长销量回车提交销量数错误");
               }
-              requireText("#salesFocusTitle", "今天先补未填", "店长销量回车提交");
+              requireText("#salesFocusTitle", "先补未填销售日", "店长销量回车提交");
               requireText("#salesStatusLine", "已填 1", "店长销量回车提交状态");
             }
           } finally {
@@ -423,8 +432,8 @@ function renderSmokeScript() {
           if (visible('[data-admin-only="business-owner-table"]')) errors.push("店长视角仍显示业务员排行表");
           if (visible('[data-report-action="generate-weekly"]')) errors.push("店长视角仍显示周报生成按钮");
           await openPage("rules", "#rulesPage.page-active", "店长系统设置页面");
-          if (visible('[data-admin-only="system-check"]')) errors.push("店长视角仍显示系统自检管理员区");
-          if (visible('[data-admin-only="backup-reminder"]')) errors.push("店长隐藏月度备份提醒失败");
+          if (visible('[data-admin-only="system-check"]')) errors.push("店长视角仍显示系统运行检查管理员区");
+          if (visible('[data-settings-module="system-maintenance"]')) errors.push("店长隐藏系统维护入口失败");
         }
         role.value = "admin";
         user.value = "管理员";
@@ -559,7 +568,7 @@ ipcMain.handle("api:bargain-ignore-low-price", (_event, payload) => runPython("b
 ipcMain.handle("api:create-backup", (_event, payload) => runPython("create-backup", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:restore-backup", (_event, payload) => runPython("restore-backup", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:run-doctor", (_event, payload) => {
-  requireAdminPayload(payload || {}, "运行系统自检");
+  requireAdminPayload(payload || {}, "检查系统是否可正常运行");
   return runNodeScript("doctor.js");
 });
 ipcMain.handle("api:run-ready-check", (_event, payload) => {
@@ -582,7 +591,7 @@ ipcMain.handle("api:select-files", async (_event, group) => {
 
 ipcMain.handle("api:select-backup", async () => {
   const result = await dialog.showOpenDialog({
-    title: "选择运营状态备份",
+    title: "选择系统数据备份",
     properties: ["openFile"],
     filters: [
       { name: "备份文件", extensions: ["zip"] },

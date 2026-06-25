@@ -272,6 +272,62 @@ class MasterDataImportTest(unittest.TestCase):
         self.assertEqual(platform_rows["Ozon"]["yoy_delta"], 40)
         self.assertEqual(report["summary"]["range"]["sales"], 150)
 
+    def test_business_report_defaults_to_last_30_complete_days_and_reports_completeness(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sales_path = Path(tmp) / "daily_sales.json"
+            assignments = [
+                {"platform": "Temu", "store": "一弟", "owner": "小琴", "enabled": True, "daily_required": True},
+                {"platform": "Shein", "store": "琪琪", "owner": "胡娟", "enabled": True, "daily_required": True},
+            ]
+            master_data.import_history_sales_records(
+                sales_path,
+                [
+                    {"date": "2026-05-25", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 999},
+                    {"date": "2026-05-26", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 10},
+                    {"date": "2026-06-24", "platform": "Shein", "store": "琪琪", "owner": "胡娟", "sales": 20},
+                    {"date": "2026-06-25", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 777},
+                    {"date": "2025-05-26", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 5},
+                    {"date": "2025-06-24", "platform": "Shein", "store": "琪琪", "owner": "胡娟", "sales": 6},
+                ],
+                actor="管理员",
+            )
+
+            report = master_data.business_report(sales_path, assignments=assignments, range_key="30d", anchor_date="2026-06-25")
+
+        self.assertEqual(report["filters"]["date_from"], "2026-05-26")
+        self.assertEqual(report["filters"]["date_to"], "2026-06-24")
+        self.assertEqual(report["summary"]["range"]["sales"], 30)
+        self.assertEqual(report["summary"]["range"]["compare_sales"], 11)
+        self.assertEqual(report["summary"]["previous_range"]["compare_period"], {"date_from": "2026-04-26", "date_to": "2026-05-25"})
+        self.assertEqual(report["summary"]["range"]["compare_period"], {"date_from": "2025-05-26", "date_to": "2025-06-24"})
+        self.assertEqual(report["summary"]["completion"]["required"], 60)
+        self.assertEqual(report["summary"]["completion"]["submitted"], 2)
+        self.assertLess(report["summary"]["completion"]["rate"], 90)
+        self.assertEqual(report["summary"]["completion"]["level"], "red")
+        self.assertIn("店长填报销量", report["definitions"]["range"])
+        self.assertIn("2026-05-26 至 2026-06-24", report["definitions"]["range"])
+
+    def test_business_report_month_and_year_totals_end_yesterday(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sales_path = Path(tmp) / "daily_sales.json"
+            master_data.import_history_sales_records(
+                sales_path,
+                [
+                    {"date": "2026-01-01", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 100},
+                    {"date": "2026-06-01", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 20},
+                    {"date": "2026-06-24", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 30},
+                    {"date": "2026-06-25", "platform": "Temu", "store": "一弟", "owner": "小琴", "sales": 999},
+                ],
+                actor="管理员",
+            )
+
+            report = master_data.business_report(sales_path, range_key="7d", anchor_date="2026-06-25")
+
+        self.assertEqual(report["summary"]["month"]["sales"], 50)
+        self.assertEqual(report["summary"]["year"]["sales"], 150)
+        self.assertIn("2026-06-01 至 2026-06-24", report["definitions"]["month"])
+        self.assertIn("2026-01-01 至 2026-06-24", report["definitions"]["year"])
+
     def test_business_report_owner_scope_only_shows_owned_stores(self):
         with tempfile.TemporaryDirectory() as tmp:
             sales_path = Path(tmp) / "daily_sales.json"

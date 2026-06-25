@@ -190,11 +190,11 @@ if (
   !renderSmokeBody.includes("店长隐藏基础资料导入入口") ||
   !renderSmokeBody.includes("店长视角仍显示平台分析入口") ||
   !renderSmokeBody.includes("店长经营报表关键指标") ||
-  !renderSmokeBody.includes("管理员月度备份提醒") ||
-  !renderSmokeBody.includes("店长隐藏月度备份提醒")
+  !renderSmokeBody.includes("管理员系统维护入口") ||
+  !renderSmokeBody.includes("店长隐藏系统维护入口")
 ) {
   fail("真实渲染烟测未覆盖首页待办和开始清单入口", [
-    "首页不止流程卡片可点击；今日待办、开始使用清单、销量回车提交、基础资料导入权限和月度备份提醒也必须在真实窗口里验证。",
+    "首页不止流程卡片可点击；今日待办、开始使用清单、销量回车提交、基础资料导入权限和系统维护入口也必须在真实窗口里验证。",
   ]);
 }
 const renderSalesBody = functionBody(renderer, "renderSalesManagement");
