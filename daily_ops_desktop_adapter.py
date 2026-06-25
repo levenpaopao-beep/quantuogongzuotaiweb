@@ -423,6 +423,9 @@ def business_report_payload(payload):
         "platform": platform,
         "store": store,
         "grain": payload.get("grain", "month"),
+        "range_key": payload.get("range_key", "30d"),
+        "source": payload.get("source", "manual"),
+        "anchor_date": payload.get("anchor_date", ""),
     })
 
 

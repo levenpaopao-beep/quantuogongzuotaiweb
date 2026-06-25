@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -53,6 +54,59 @@ class DailyOpsBargainAppTest(unittest.TestCase):
         self.assertEqual(rows["rows"][0]["货品名称"], "M拉链外套")
         self.assertTrue(rows["rows"][0]["清仓款"])
 
+    def test_lookup_bargain_staging_keeps_platform_row_when_erp_cost_is_missing(self):
+        bargain_file = self.root / "bargain_requests.json"
+        empty_erp = self.root / "empty_erp.xlsx"
+        write_rows(empty_erp, ["货品编码", "货品名称", "商家编码", "规格名称", "成本价", "批发价"], [])
+        with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file), \
+             patch.object(daily_ops_app, "erp_base_files", return_value=[empty_erp]):
+            rows = daily_ops_app.lookup_bargain_staging({
+                "merchant_code": "330318390-L",
+                "store": "二弟",
+                "platform": "Temu",
+                "owner": "洁琳",
+                "platform_rows": [
+                    {"平台": "Temu", "店铺": "二弟", "商家编码": "330318390-L", "货品名称": "平台商品", "规格名称": "黑/L", "申报价": 9.9, "30天销量": 45, "平台库存": 12},
+                ],
+            })
+
+        self.assertEqual(len(rows["rows"]), 1)
+        self.assertEqual(rows["rows"][0]["商家编码"], "330318390-L")
+        self.assertEqual(rows["rows"][0]["货品名称"], "平台商品")
+        self.assertEqual(rows["rows"][0]["成本价"], "")
+        self.assertEqual(rows["rows"][0]["批发价"], "")
+        self.assertEqual(rows["rows"][0]["风险等级"], "review")
+        self.assertIn("ERP成本缺失", rows["rows"][0]["风险标签"])
+
+    def test_lookup_bargain_staging_reads_imported_platform_source_without_payload_rows(self):
+        bargain_file = self.root / "bargain_requests.json"
+        manifest = self.root / "data_source_manifest.json"
+        empty_erp = self.root / "empty_erp.xlsx"
+        temu_file = self.root / "temu_sales.xlsx"
+        write_rows(empty_erp, ["货品编码", "货品名称", "商家编码", "规格名称", "成本价", "批发价"], [])
+        write_rows(temu_file, ["平台", "店铺", "商家编码", "货品名称", "规格名称", "申报价", "7天销量", "30天销量", "平台库存"], [
+            {"平台": "Temu", "店铺": "二弟", "商家编码": "330318390-L", "货品名称": "自动源商品", "规格名称": "黑/L", "申报价": 9.9, "7天销量": 12, "30天销量": 45, "平台库存": 8},
+        ])
+        manifest.write_text(json.dumps({
+            "categories": {
+                "temu_platform": {"paths": [str(temu_file)], "path": str(temu_file), "uploaded_at": "2026-06-25 12:00:00"}
+            }
+        }, ensure_ascii=False), encoding="utf-8")
+
+        with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file), \
+             patch.object(daily_ops_app, "DATA_SOURCE_MANIFEST", manifest), \
+             patch.object(daily_ops_app, "erp_base_files", return_value=[empty_erp]):
+            rows = daily_ops_app.lookup_bargain_staging({
+                "merchant_code": "330318390-L",
+                "store": "二弟",
+                "platform": "Temu",
+                "owner": "洁琳",
+            })
+
+        self.assertEqual(len(rows["rows"]), 1)
+        self.assertEqual(rows["rows"][0]["货品名称"], "自动源商品")
+        self.assertEqual(rows["rows"][0]["Temu 30天最高销量"], 45)
+
     def test_submit_and_review_bargain_batch(self):
         bargain_file = self.root / "bargain_requests.json"
         with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file):
@@ -74,6 +128,38 @@ class DailyOpsBargainAppTest(unittest.TestCase):
         self.assertEqual(result["count"], 1)
         self.assertEqual(history["rows"][0]["status"], "已通过")
         self.assertEqual(history["rows"][0]["review_remark"], "清仓通过")
+
+    def test_bargain_submit_requires_price_for_every_size(self):
+        bargain_file = self.root / "bargain_requests.json"
+        with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file):
+            with self.assertRaisesRegex(ValueError, "每个尺码都必须填写本次议价"):
+                daily_ops_app.submit_bargain_batch({
+                    "store": "一弟",
+                    "platform": "Temu",
+                    "owner": "小琴",
+                    "lines": [
+                        {"货品编码": "330318682", "商家编码": "330318682-XS", "本次议价": 8},
+                        {"货品编码": "330318682", "商家编码": "330318682-S", "本次议价": ""},
+                    ],
+                })
+
+    def test_bargain_reject_requires_review_remark(self):
+        bargain_file = self.root / "bargain_requests.json"
+        with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file):
+            batch = daily_ops_app.submit_bargain_batch({
+                "store": "一弟",
+                "platform": "Temu",
+                "owner": "小琴",
+                "lines": [{"货品编码": "330318682", "商家编码": "330318682-XS", "本次议价": 8}],
+            })
+            with self.assertRaisesRegex(ValueError, "拒绝议价必须填写原因"):
+                daily_ops_app.review_bargain_lines({
+                    "batch_id": batch["id"],
+                    "line_ids": [batch["lines"][0]["id"]],
+                    "decision": "不通过",
+                    "admin": "管理员",
+                    "remark": "",
+                })
 
 
 if __name__ == "__main__":

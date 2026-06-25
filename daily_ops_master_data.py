@@ -489,12 +489,14 @@ def comparison_summary(rows, current_period, compare_period):
 
 def complete_period(range_key, anchor_day):
     end = anchor_day - timedelta(days=1)
+    if range_key == "month":
+        return end.replace(day=1), end
+    if range_key == "year":
+        return end.replace(month=1, day=1), end
     if range_key == "7d":
         return end - timedelta(days=6), end
     if range_key == "14d":
         return end - timedelta(days=13), end
-    if range_key == "90d":
-        return end - timedelta(days=89), end
     return end - timedelta(days=29), end
 
 
@@ -616,8 +618,42 @@ def trend_rows(rows, dimension, current_period, grain="month"):
     return {"buckets": buckets, "rows": sorted(table, key=lambda row: (-row["total"], row["name"]))}
 
 
-def business_report(sales_path, assignments=None, role="admin", user="", date_from="", date_to="", platform="", store="", grain="month", stale_days=3, diff_percent=20, diff_units=20, small_base=100, range_key="30d", source="manual", anchor_date=""):
-    rows = scoped_sales_rows(sales_path, assignments, role, user, platform, store)
+def scope_business_rows(records, assignments=None, role="admin", user="", platform="", store=""):
+    platform = platform_name(platform, "") if platform else ""
+    store = clean_store_name(store)
+    user = norm(user)
+    assignment_index = build_assignment_index(assignments)
+    allowed = None
+    if norm(role) != "admin":
+        allowed = {
+            key for key, item in assignment_index.items()
+            if item.get("owner") == user and item.get("enabled") and item.get("daily_required")
+        }
+    rows = []
+    for row in records or []:
+        row_platform = platform_name(row.get("platform"), "")
+        row_store = clean_store_name(row.get("store"))
+        pair = (row_platform, row_store)
+        if allowed is not None and pair not in allowed:
+            continue
+        if platform and row_platform != platform:
+            continue
+        if store and row_store != store:
+            continue
+        item = dict(row)
+        item["platform"] = row_platform
+        item["store"] = row_store
+        current_assignment = assignment_index.get(pair)
+        if current_assignment and current_assignment.get("owner"):
+            item["owner"] = current_assignment["owner"]
+        else:
+            item["owner"] = norm(item.get("owner")) or "未分配"
+        rows.append(item)
+    return rows
+
+
+def business_report(sales_path, assignments=None, role="admin", user="", date_from="", date_to="", platform="", store="", grain="month", stale_days=3, diff_percent=20, diff_units=20, small_base=100, range_key="30d", source="manual", anchor_date="", rows_override=None):
+    rows = scope_business_rows(rows_override, assignments, role, user, platform, store) if rows_override is not None else scoped_sales_rows(sales_path, assignments, role, user, platform, store)
     available_days = [parse_day(row.get("date")) for row in rows if parse_day(row.get("date"))]
     anchor_day = parse_day(anchor_date) or date.today()
     if date_from or date_to:

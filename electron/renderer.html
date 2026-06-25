@@ -186,17 +186,9 @@
               <div class="sales-tools">
                 <input id="salesDate" type="date" />
                 <button class="ghost-button" id="loadSalesBtn">读取日期</button>
+                <button class="primary-button" id="saveSalesBatchBtn">保存当前列表</button>
               </div>
               <div class="sales-entry-list" id="salesEntryList"></div>
-            </section>
-            <section class="simple-panel">
-              <h2>异常与补填</h2>
-              <div class="flow-list">
-                <div><strong>7 天内补填</strong><span>店长可直接提交，系统保留修改记录。</span></div>
-                <div><strong>超 7 天补填</strong><span>提交申请，管理员确认后写入。</span></div>
-                <div><strong>异常波动</strong><span>超过 50% 会提示原因，不阻止提交。</span></div>
-                <div><strong>锁定/月结</strong><span>锁定后只能管理员更正。</span></div>
-              </div>
             </section>
           </div>
           <div class="simple-panel">
@@ -327,14 +319,14 @@
               </div>
               <div class="task-filters">
                 <select id="bargainPlatform"><option>Temu</option><option>Shein</option></select>
-                <input id="bargainStore" placeholder="议价申请店铺" />
+                <select id="bargainStore"><option value="">先选择店铺</option></select>
                 <input id="bargainMerchantCode" placeholder="商家编码，例如 330318682-XS" />
                 <button class="primary-button" id="lookupBargainBtn">拉取全尺码</button>
                 <button class="ghost-button" id="clearBargainDraftBtn">清空暂存</button>
               </div>
               <div class="report-table-wrap bargain-table-wrap">
                 <table class="report-data-table bargain-table">
-                  <thead><tr><th>货品名称</th><th>申请店铺</th><th>卖得最好店铺</th><th>尺码</th><th>商家编码</th><th>本次议价</th><th>成本价</th><th>批发价占比</th><th>链接</th><th>最低申报价</th><th>风险</th></tr></thead>
+                  <thead><tr><th>货品名称</th><th>申请店铺</th><th>卖得最好店铺</th><th>尺码</th><th>商家编码</th><th>本次议价</th><th>成本价</th><th>批发价占比</th><th>链接</th><th>最低申报价</th><th>风险</th><th>操作</th></tr></thead>
                   <tbody id="bargainDraftRows"></tbody>
                 </table>
               </div>
@@ -354,6 +346,11 @@
               <div class="task-filters">
                 <input id="bargainHistorySearch" placeholder="商家编码 / 货品编码" />
                 <button class="ghost-button" id="searchBargainHistoryBtn">查询</button>
+              </div>
+              <div class="download-actions" data-admin-only="bargain-review">
+                <label class="check-line"><input type="checkbox" id="bargainSelectAll" /> 全选当前待审批</label>
+                <button class="primary-button" id="approveSelectedBargainsBtn">通过勾选</button>
+                <button class="ghost-button danger-action" id="rejectSelectedBargainsBtn">拒绝勾选</button>
               </div>
               <div id="bargainHistoryRows" class="output-list"></div>
             </aside>
@@ -435,7 +432,8 @@
                 <button class="segment" type="button" data-business-range="7d">最近7日</button>
                 <button class="segment" type="button" data-business-range="14d">最近14日</button>
                 <button class="segment active" type="button" data-business-range="30d">最近30日</button>
-                <button class="segment" type="button" data-business-range="90d">最近90日</button>
+                <button class="segment" type="button" data-business-range="month">本月</button>
+                <button class="segment" type="button" data-business-range="year">本年</button>
               </div>
               <div class="range-shortcuts source-shortcuts" id="businessSourceShortcuts">
                 <button class="segment active" type="button" data-business-source="manual">店长填报销量</button>
@@ -549,15 +547,27 @@
               <strong>店铺信息管理</strong>
               <span>维护平台、店铺、负责人和每日填报开关。</span>
             </button>
-            <button class="master-module-card" data-action="open-master-module" data-master-module="product-info" data-admin-only="product-info">
+            <button class="master-module-card" data-action="focus-product-info" data-admin-only="product-info">
               <strong>商品信息查询</strong>
-              <span>查询 ERP 拉取的商品基础信息和价格字段。</span>
+              <span>默认展示 ERP 接口同步的商品基础信息和价格字段。</span>
             </button>
             <button class="master-module-card" data-action="open-master-module" data-master-module="task-suppressions" data-admin-only="task-suppressions">
               <strong>任务屏蔽清单</strong>
               <span>查看已屏蔽的重复商品任务和处理原因。</span>
             </button>
           </div>
+          <section class="simple-panel erp-product-panel" id="erpProductPanel" data-admin-only="product-info">
+            <div class="panel-head">
+              <div>
+                <h2>ERP 商品信息</h2>
+                <p>只读展示最新 ERP 接口同步数据；旧手工基础表不参与业务判断。</p>
+              </div>
+              <button class="ghost-button" id="reloadProductInfoBtn">刷新商品信息</button>
+            </div>
+            <div class="search-bar"><input id="productSearchInput" placeholder="商家编码、货品名称、规格或 SKU" /><button id="productSearchBtn">查询商品</button></div>
+            <p id="productSearchStatus">正在读取最新 ERP 商品信息。</p>
+            <div id="productSearchRows" class="output-list product-info-list"></div>
+          </section>
           <div id="masterModuleDialog" class="dialog-backdrop hidden" aria-hidden="true">
             <section class="task-dialog master-module-dialog" role="dialog" aria-modal="true" aria-labelledby="masterModuleTitle">
               <div class="dialog-head">
@@ -620,13 +630,6 @@
               </details>
               <p id="storeOwnerStatus">等待读取负责人配置</p>
             </section>
-                <section class="master-module-panel" data-master-panel="product-info" data-admin-only="product-info">
-            <h2>商品信息查询</h2>
-            <p>查询系统已从 ERP 拉取的商品基础信息，不会修改 ERP 数据。</p>
-            <div class="search-bar"><input id="productSearchInput" placeholder="输入商家编码、货品名称、规格或 SKU" /><button id="productSearchBtn">查询商品</button></div>
-            <p id="productSearchStatus">输入关键词后查询 ERP 商品基础信息。</p>
-            <div id="productSearchRows" class="output-list"></div>
-          </section>
                 <section class="master-module-panel" data-master-panel="task-suppressions" data-admin-only="task-suppressions">
             <h2>任务屏蔽清单</h2>
             <p>用于处理每周反复出现但管理员判断暂不需要再提示的 SKC/SPU/商家编码。</p>
@@ -681,18 +684,18 @@
                 </section>
                 <section class="master-module-panel" data-settings-panel="sales-thresholds">
                   <h2>销量与经营阈值</h2>
-                  <p>日差异按件数判断；7/14 日按天数放大；30/90 日、月、年按比例判断。</p>
+                  <p>日差异按件数判断；7/14/30 日按快捷范围统计；月、年按自然周期统计。</p>
                   <div class="rules-grid">
                     <div class="rule-card"><label>日销量差异容忍件数</label><input data-rule="daily_diff_units" type="number" min="0" placeholder="10" /></div>
                     <div class="rule-card"><label>月累计差异容忍比例 %</label><input data-rule="month_diff_percent" type="number" min="0" max="100" step="0.1" placeholder="5" /></div>
                     <div class="rule-card"><label>年累计差异容忍比例 %</label><input data-rule="year_diff_percent" type="number" min="0" max="100" step="0.1" placeholder="5" /></div>
-                    <div class="rule-card"><label>30/90日差异容忍比例 %</label><input data-rule="long_period_diff_percent" type="number" min="0" max="100" step="0.1" placeholder="5" /></div>
+                    <div class="rule-card"><label>30日/月/年差异容忍比例 %</label><input data-rule="long_period_diff_percent" type="number" min="0" max="100" step="0.1" placeholder="5" /></div>
                     <div class="rule-card"><label>完整度黄灯阈值 %</label><input data-rule="completion_yellow_percent" type="number" min="0" max="100" placeholder="100" /></div>
                     <div class="rule-card"><label>完整度红灯阈值 %</label><input data-rule="completion_red_percent" type="number" min="0" max="100" placeholder="90" /></div>
                     <div class="rule-card"><label>ERP 黄灯过期天数</label><input data-rule="erp_yellow_days" type="number" min="0" placeholder="1" /></div>
                     <div class="rule-card"><label>ERP 红灯过期天数</label><input data-rule="erp_red_days" type="number" min="0" placeholder="2" /></div>
-                    <div class="rule-card"><label>平台批次黄灯时间</label><input data-rule="platform_batch_yellow_time" placeholder="12:00" /></div>
-                    <div class="rule-card"><label>平台批次红灯时间</label><input data-rule="platform_batch_red_time" placeholder="18:00" /></div>
+                    <div class="rule-card"><label>平台销售/爆旺每日提醒时间</label><input data-rule="platform_batch_yellow_time" placeholder="12:00" /></div>
+                    <div class="rule-card"><label>平台销售/爆旺严重提醒时间</label><input data-rule="platform_batch_red_time" placeholder="18:00" /></div>
                   </div>
                   <button class="primary-button" id="saveThresholdRulesBtn">保存阈值</button>
                 </section>

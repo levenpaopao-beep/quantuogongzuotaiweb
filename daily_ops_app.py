@@ -26,6 +26,7 @@ import daily_ops_tasks
 import daily_ops_task_suppression
 import daily_ops_master_data
 import daily_ops_bargain
+from daily_ops_sales_compare import aggregate_source_sales
 import update_shein_summary_30d_skc as raw_xlsx
 
 
@@ -214,7 +215,7 @@ DEFAULT_RULES = {
         "completion_red_percent": 90,
         "erp_yellow_days": 1,
         "erp_red_days": 2,
-        "platform_batch_days": ["周一", "周四"],
+        "platform_batch_days": ["周一", "周二", "周三", "周四", "周五", "周六"],
         "platform_batch_yellow_time": "12:00",
         "platform_batch_red_time": "18:00",
     },
@@ -646,11 +647,43 @@ def export_sales_report(platform="", store="", date_from="", date_to=""):
     return daily_ops_master_data.export_sales_report(report, OUTPUT_DIR)
 
 
+def platform_business_rows(assignments, range_key="30d", anchor_date=""):
+    anchor_day = daily_ops_master_data.parse_day(anchor_date) or datetime.now().date()
+    start_day, end_day = daily_ops_master_data.complete_period(range_key or "30d", anchor_day)
+    days = max(1, (end_day - start_day).days + 1)
+    source_sales = aggregate_source_sales({
+        "Temu": temu_sales_files(),
+        "Shein": shein_platform_files(),
+    })
+    assignment_index = daily_ops_master_data.build_assignment_index(assignments)
+    rows = []
+    for platform, stores in source_sales.items():
+        for store, daily_avg in stores.items():
+            clean_store = daily_ops_master_data.clean_store_name(store)
+            assignment = assignment_index.get((platform, clean_store), {})
+            rows.append({
+                "id": f"platform|{platform}|{clean_store}|{end_day.isoformat()}",
+                "date": end_day.isoformat(),
+                "platform": platform,
+                "store": clean_store,
+                "owner": assignment.get("owner", ""),
+                "sales": int(round(float(daily_avg or 0) * days)),
+                "status": "平台导入折算",
+                "source": "平台导入销量",
+                "source_note": f"按导入表日均销量折算 {days} 天；经营报表默认仍以店长填报销量为准。",
+            })
+    return rows
+
+
 def business_report(payload=None):
     payload = payload or {}
+    assignments = load_store_owner_assignments()
+    rows_override = None
+    if payload.get("source") == "platform":
+        rows_override = platform_business_rows(assignments, payload.get("range_key", "30d"), payload.get("anchor_date", ""))
     return daily_ops_master_data.business_report(
         DAILY_SALES_FILE,
-        assignments=load_store_owner_assignments(),
+        assignments=assignments,
         role=payload.get("role", "admin"),
         user=payload.get("user", ""),
         date_from=payload.get("date_from", ""),
@@ -661,6 +694,7 @@ def business_report(payload=None):
         range_key=payload.get("range_key", "30d"),
         source=payload.get("source", "manual"),
         anchor_date=payload.get("anchor_date", ""),
+        rows_override=rows_override,
     )
 
 
@@ -790,10 +824,14 @@ def erp_base_files():
     latest_sync = ERP_DIR / "erp产品基础信息表_接口同步_最新.xlsx"
     if latest_sync.exists():
         return [latest_sync]
-    uploaded = manifest_paths("erp_base")
-    if uploaded:
-        return uploaded
-    return sorted(ERP_DIR.glob("erp产品基础信息表*.xlsx"))
+    interface_files = sorted(
+        ERP_DIR.glob("erp产品基础信息表_接口同步_*.xlsx"),
+        key=lambda path: path.stat().st_mtime if path.exists() else 0,
+        reverse=True,
+    )
+    if interface_files:
+        return [interface_files[0]]
+    return []
 
 
 def temu_sales_files():
@@ -818,6 +856,42 @@ def shein_platform_files():
     if uploaded:
         return uploaded
     return matching_files(SHEIN_DIR, WEEKLY_SOURCE_GROUPS["shein_platform"]["patterns"])
+
+
+def platform_source_rows_for_bargain(platform=""):
+    wanted = norm(platform)
+    source_plan = []
+    if not wanted or wanted == "Temu":
+        source_plan.append(("Temu", temu_sales_files()))
+    if not wanted or wanted == "Shein":
+        source_plan.append(("Shein", shein_platform_files()))
+    result = []
+    for platform_name, files in source_plan:
+        for path in files:
+            rows = raw_xlsx.read_xlsx_rows(path)
+            if not rows:
+                continue
+            headers = header_map(rows[0])
+            for row_number, row in enumerate(rows[1:], start=2):
+                merchant_code = norm(cell(row, headers, "商家编码", "SKU货号", "商品SKU", "供应商SKU", "小秘商品SKU"))
+                if not merchant_code:
+                    continue
+                store = norm(cell(row, headers, "店铺", "店铺名称", "店铺名"))
+                item = {
+                    "平台": platform_name,
+                    "店铺": store,
+                    "商家编码": merchant_code,
+                    "货品名称": norm(cell(row, headers, "货品名称", "商品名称", "产品名称")),
+                    "规格名称": norm(cell(row, headers, "规格名称", "货品规格", "SKU属性", "规格")),
+                    "申报价": to_number(cell(row, headers, "申报价", "申报价格", "售价", "价格")),
+                    "7天销量": to_number(cell(row, headers, "7天销量", "近7天销量")),
+                    "30天销量": to_number(cell(row, headers, "30天销量", "近30天销量")),
+                    "平台库存": to_number(cell(row, headers, "平台仓库备货库存", "平台库存", "总库存", "可用库存")),
+                    "源文件": path.name,
+                    "源行": row_number,
+                }
+                result.append(item)
+    return result
 
 
 def erp_combo_files():
@@ -1236,8 +1310,10 @@ def source_group_status():
     pending_batches = load_source_manifest().get("pending_batches", {})
     groups = []
     for key, config in WEEKLY_SOURCE_GROUPS.items():
-        uploaded_paths = manifest_paths(key)
+        uploaded_paths = [] if key == "erp_base" else manifest_paths(key)
         files = uploaded_paths if uploaded_paths else matching_files(config["folder"], config["patterns"])
+        if key == "erp_base":
+            files = erp_base_files()
         latest = files[0] if files else None
         if files:
             latest = max(files, key=lambda p: (p.stat().st_mtime, p.name))
@@ -1262,7 +1338,7 @@ def source_group_status():
         }
         if latest:
             stat = latest.stat()
-            uploaded = manifest.get(key, {})
+            uploaded = {} if key == "erp_base" else manifest.get(key, {})
             latest_hash = ""
             if uploaded.get("path") == str(latest) and uploaded.get("sha256"):
                 latest_hash = uploaded["sha256"]
@@ -1277,6 +1353,10 @@ def source_group_status():
             item["total_rows"] = uploaded.get("rows", "")
             item["batch_id"] = uploaded.get("batch_id", "")
             item["uploaded_at"] = uploaded.get("uploaded_at", "")
+            if key == "erp_base":
+                item["total_rows"] = readable_row_count(latest)
+                item["batch_id"] = latest.stem
+                item["uploaded_at"] = item["latest"]["modified"]
             item["recompute"] = source_recompute_state(key, item["uploaded_at"])
             item["count"] = len(files)
             if uploaded_paths:
@@ -2078,8 +2158,6 @@ def search_database(query, limit=100):
 
 def query_erp_product_info(query, limit=100):
     query = (query or "").strip()
-    if not query:
-        return {"items": [], "source_files": [path.name for path in erp_base_files()]}
     limit = max(1, min(int(limit or 100), 300))
     terms = [item.strip().lower() for item in re.split(r"\s+", query) if item.strip()]
     files = erp_base_files()
@@ -2103,7 +2181,7 @@ def query_erp_product_info(query, limit=100):
                 for row_index, row in enumerate(rows, start=2):
                     values = [daily_ops_master_data.norm(value) for value in row]
                     haystack = " ".join(values).lower()
-                    if not all(term in haystack for term in terms):
+                    if terms and not all(term in haystack for term in terms):
                         continue
                     record = {
                         headers[idx]: values[idx]
@@ -2201,6 +2279,8 @@ def bargain_platform_rows(payload=None):
     rows = []
     for row in (payload or {}).get("platform_rows") or []:
         rows.append(row)
+    if not rows:
+        rows.extend(platform_source_rows_for_bargain((payload or {}).get("platform", "")))
     return rows
 
 

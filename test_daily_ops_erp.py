@@ -475,5 +475,21 @@ class ErpSyncTest(unittest.TestCase):
             self.assertTrue(manual.exists())
             self.assertTrue(uploaded.exists())
 
+    def test_erp_base_files_uses_latest_interface_sync_instead_of_uploaded_legacy_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            erp_dir = Path(tmp)
+            older_sync = erp_dir / "erp产品基础信息表_接口同步_20260624_160552.xlsx"
+            newest_sync = erp_dir / "erp产品基础信息表_接口同步_20260624_161745.xlsx"
+            uploaded_legacy = erp_dir / "20260606-全部数据-无图版.xlsx"
+            older_sync.write_text("old sync", encoding="utf-8")
+            newest_sync.write_text("new sync", encoding="utf-8")
+            uploaded_legacy.write_text("legacy", encoding="utf-8")
+
+            with patch.object(daily_ops_app, "ERP_DIR", erp_dir), \
+                 patch.object(daily_ops_app, "manifest_paths", return_value=[uploaded_legacy]):
+                files = daily_ops_app.erp_base_files()
+
+            self.assertEqual(files, [newest_sync])
+
 if __name__ == "__main__":
     unittest.main()

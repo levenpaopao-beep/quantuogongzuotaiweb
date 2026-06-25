@@ -399,6 +399,7 @@ function renderSourceProgress(group) {
     return `<div class="source-progress source-progress-${progress.kind}">
       <strong>${progress.title}</strong>
       <span>${progress.message}</span>
+      ${progress.detail ? `<small>${esc(progress.detail)}</small>` : ""}
     </div>`;
   }
   if (group.pending_count) {
@@ -1665,9 +1666,10 @@ async function exportSalesReport() {
 }
 
 function businessReportPayload() {
+  const explicitDates = ["7d", "14d", "30d"].includes(state.businessRange || "");
   return operatorPayload({
-    date_from: $("#businessDateFrom")?.value || "",
-    date_to: $("#businessDateTo")?.value || "",
+    date_from: explicitDates ? ($("#businessDateFrom")?.value || "") : "",
+    date_to: explicitDates ? ($("#businessDateTo")?.value || "") : "",
     platform: $("#businessPlatform")?.value || "",
     store: $("#businessStore")?.value.trim() || "",
     grain: $("#businessGrain")?.value || "month",
@@ -1728,6 +1730,43 @@ function signedRate(value) {
   return `${number > 0 ? "+" : ""}${number}%`;
 }
 
+function businessRangeLabel(rangeKey) {
+  if (rangeKey === "month") return "本月累计";
+  if (rangeKey === "year") return "本年累计";
+  return `最近${String(rangeKey || "30d").replace("d", "")}日销量`;
+}
+
+function businessKpiSummary() {
+  if (!state.businessReport?.summary) {
+    return { loading: true };
+  }
+  const summary = state.businessReport?.summary || {};
+  const range = summary.range || {};
+  const previous = summary.previous_range || {};
+  return {
+    sales: range.sales || previous.sales || 0,
+    previous_delta: previous.delta || 0,
+    previous_rate: previous.rate,
+    year_delta: range.delta || 0,
+    year_rate: range.rate,
+    latest_date: summary.latest_date || "",
+  };
+}
+
+function sourceGroupByKey(key) {
+  return (state.status?.source_groups || []).find((item) => item.key === key) || {};
+}
+
+function temuHotSnapshot() {
+  const group = sourceGroupByKey("temu_hot");
+  const rows = Number(group.total_rows || group.latest?.rows || 0);
+  const recomputeNeeded = group.recompute?.needed;
+  return {
+    rows,
+    label: group.latest?.modified ? `${group.latest.modified.slice(5, 16)}${recomputeNeeded ? " · 待重算" : ""}` : "暂无数据",
+  };
+}
+
 function deltaClass(value) {
   const number = Number(value || 0);
   if (number > 0) return "up";
@@ -1767,7 +1806,7 @@ function renderBusinessKpis(report) {
   const summary = report.summary || {};
   const box = $("#businessKpis");
   if (!box) return;
-  const rangeLabel = `最近${(report.filters?.range_key || state.businessRange || "30d").replace("d", "")}日销量`;
+  const rangeLabel = businessRangeLabel(report.filters?.range_key || state.businessRange || "30d");
   const completion = summary.completion || {};
   box.innerHTML = [
     kpiHtml(rangeLabel, summary.previous_range || summary.range || {}, "较上期", businessDefinition(report, "range"), "business-kpi-main"),
@@ -1971,6 +2010,51 @@ async function submitSalesEntry(index) {
   }
 }
 
+async function submitSalesBatch() {
+  const entries = state.sales?.entries || [];
+  const inputs = [...document.querySelectorAll("[data-sales-index]")];
+  const filled = inputs
+    .map((input) => {
+      const index = Number(input.dataset.salesIndex);
+      const sales = input.value.trim();
+      const entry = entries[index];
+      const remark = document.querySelector(`[data-remark-index="${index}"]`)?.value.trim() || "";
+      return { index, entry, sales, remark };
+    })
+    .filter((item) => item.entry && item.sales !== "");
+  if (!filled.length) {
+    showToast("当前列表没有已填写的销量");
+    return;
+  }
+  let saved = 0;
+  try {
+    for (const item of filled) {
+      const payload = operatorPayload({
+        date: salesDateValue(),
+        platform: item.entry.platform,
+        store: item.entry.store,
+        sales: item.sales,
+        remark: item.remark,
+      });
+      const smokeSales = window.__PETCIRCLE_RENDER_SMOKE_SALES__;
+      if (smokeSales?.submitSales) {
+        await smokeSales.submitSales(payload);
+      } else {
+        await api.submitSales(payload);
+      }
+      saved += 1;
+    }
+    await loadSales(false);
+    await loadSalesReport(false);
+    await loadBusinessReport(false);
+    await loadSalesCompare(false);
+    const missing = Number(state.sales?.summary?.missing || 0);
+    showToast(missing ? `已保存 ${saved} 条，还有 ${missing} 个店铺未填写` : `已保存 ${saved} 条，当前日期已填完`);
+  } catch (error) {
+    showToast(`已保存 ${saved} 条，后续保存失败：${userFacingError(error)}`);
+  }
+}
+
 function focusNextSalesEntry(index) {
   setTimeout(() => {
     const inputs = [...document.querySelectorAll("[data-sales-index]")];
@@ -2072,12 +2156,23 @@ function renderTodayDashboard() {
 
   const snapshot = $("#todaySnapshot");
   if (snapshot) {
+    const business = businessKpiSummary();
+    const hot = temuHotSnapshot();
+    if (business.loading) {
+      snapshot.innerHTML = `
+        <div><span>${ownerMode ? "我负责店铺" : "全部店铺"}最近30天销量</span><strong>加载中</strong></div>
+        <div><span>较上一个30天</span><strong>加载中</strong></div>
+        <div><span>较去年同期</span><strong>加载中</strong></div>
+        <div><span>Temu爆旺款链接</span><strong>${esc(hot.rows)} 个</strong><small>${esc(hot.label)}</small></div>
+      `;
+    } else {
     snapshot.innerHTML = `
-      <div><span>当前任务总数</span><strong>${summary.total || 0}</strong></div>
-      <div><span>超时/重复风险</span><strong>${overdue.total || 0}</strong></div>
-      <div><span>数据源待提交</span><strong>${pendingSources}</strong></div>
-      <div><span>经营平台</span><strong>Temu / Shein / 速卖通 / TK / Ozon</strong></div>
+      <div><span>${ownerMode ? "我负责店铺" : "全部店铺"}最近30天销量</span><strong>${esc(business.sales || 0)} 件</strong></div>
+      <div><span>较上一个30天</span><strong>${esc(signedNumber(business.previous_delta || 0))}${business.previous_rate === null || business.previous_rate === undefined ? "" : `（${esc(signedRate(business.previous_rate))}）`}</strong></div>
+      <div><span>较去年同期</span><strong>${esc(signedNumber(business.year_delta || 0))}${business.year_rate === null || business.year_rate === undefined ? "" : `（${esc(signedRate(business.year_rate))}）`}</strong></div>
+      <div><span>Temu爆旺款链接</span><strong>${esc(hot.rows)} 个</strong><small>${esc(hot.label)}</small></div>
     `;
+    }
   }
   renderDailyFollowups();
   renderTodayGuide();
@@ -2953,6 +3048,7 @@ async function loadStoreOwners() {
   if (operator.role === "owner") {
     state.storeOwners = [];
     renderOperatorOwnerOptions();
+    renderBargainStoreOptions();
     const input = $("#storeOwnerMapText");
     const rows = $("#storeOwnerRows");
     const line = $("#storeOwnerStatus");
@@ -2975,6 +3071,7 @@ async function loadStoreOwners() {
   state.customPlatforms = storeOwnerPlatformOptions(state.storeOwners).filter((platform) => !BUILT_IN_PLATFORMS.includes(platform));
   renderStoreOwners();
   renderOperatorOwnerOptions();
+  renderBargainStoreOptions();
 }
 
 async function saveStoreOwners() {
@@ -3110,15 +3207,11 @@ function renderProductInfoRows(result = {}) {
   }).join("");
 }
 
-async function queryProductInfo() {
+async function loadProductInfo() {
   const query = $("#productSearchInput")?.value.trim() || "";
-  if (!query) {
-    showToast("请先输入商品关键词");
-    return;
-  }
   const status = $("#productSearchStatus");
   try {
-    if (status) status.textContent = "正在查询 ERP 商品信息...";
+    if (status) status.textContent = query ? "正在查询 ERP 商品信息..." : "正在读取最新 ERP 商品信息...";
     const result = await api.erpProductInfo(operatorPayload({ query, limit: 80 }));
     state.productInfo = result.items || [];
     renderProductInfoRows(result);
@@ -3127,6 +3220,8 @@ async function queryProductInfo() {
     showToast(userFacingError(error));
   }
 }
+
+const queryProductInfo = loadProductInfo;
 
 async function chooseWorkbookPath(inputSelector, title) {
   const paths = await api.selectFiles({ name: title || "表格文件" });
@@ -3445,9 +3540,48 @@ function reportTaskBadges(reportId) {
 }
 
 function bargainRiskText(row) {
+  if (row["风险标签"]) return row["风险标签"];
   if (row["清仓款"] && row["风险等级"] === "orange") return "清仓低于成本";
   if (row["风险等级"] === "red") return "低于成本";
   return row["清仓款"] ? "清仓款" : "正常";
+}
+
+function renderBargainStoreOptions() {
+  const select = $("#bargainStore");
+  if (!select) return;
+  const platform = $("#bargainPlatform")?.value || "Temu";
+  const operator = currentOperator();
+  const stores = (state.storeOwners || [])
+    .filter((item) => item.enabled !== false)
+    .filter((item) => !platform || item.platform === platform)
+    .filter((item) => operator.role !== "owner" || item.owner === operator.user)
+    .map((item) => item.store)
+    .filter(Boolean);
+  const unique = Array.from(new Set(stores));
+  const current = select.value;
+  select.innerHTML = `<option value="">选择店铺</option>${unique.map((store) => `<option value="${esc(store)}">${esc(store)}</option>`).join("")}`;
+  if (unique.includes(current)) select.value = current;
+}
+
+function bargainPriceRatio(row) {
+  const price = Number(row["本次议价"] || 0);
+  const wholesale = Number(row["批发价"] || 0);
+  if (!price || !wholesale) return "";
+  return `${(price / wholesale * 100).toFixed(2)}%`;
+}
+
+function syncBargainPriceToGoods(index) {
+  const source = state.bargainDraft[index];
+  if (!source || !source["本次议价"]) {
+    showToast("请先填写当前尺码的本次议价");
+    return;
+  }
+  const goodsCode = source["货品编码"];
+  state.bargainDraft.forEach((row) => {
+    if (row["货品编码"] === goodsCode) row["本次议价"] = source["本次议价"];
+  });
+  renderBargainDraft();
+  showToast("已同步到本款全部尺码，可继续单独修改");
 }
 
 function renderBargainDraft() {
@@ -3455,7 +3589,7 @@ function renderBargainDraft() {
   if (!body) return;
   const rows = state.bargainDraft || [];
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="11" class="empty-table-cell">输入商家编码后，系统会把同一货品编码下所有尺码放到这里。</td></tr>';
+    body.innerHTML = '<tr><td colspan="12" class="empty-table-cell">输入商家编码后，系统会把同一货品编码下所有尺码放到这里。</td></tr>';
     return;
   }
   body.innerHTML = rows.map((row, index) => `
@@ -3467,10 +3601,11 @@ function renderBargainDraft() {
       <td>${esc(row["商家编码"] || "")}</td>
       <td><input class="inline-price" data-bargain-price="${index}" value="${esc(row["本次议价"] || "")}" /></td>
       <td>${esc(row["成本价"] || "")}</td>
-      <td>${esc(row["建议申报价/批发价占比"] || "")}${row["建议申报价/批发价占比"] ? "%" : ""}</td>
+      <td>${esc(bargainPriceRatio(row))}</td>
       <td>${esc(row["在线销售链接数"] || 0)}</td>
       <td>${esc(row["在售最低申报价"] || "")}</td>
-      <td><span class="status-pill ${row["风险等级"] === "red" ? "status-danger" : row["风险等级"] === "orange" ? "status-warn" : "status-ok"}">${esc(bargainRiskText(row))}</span></td>
+      <td><span class="status-pill ${row["风险等级"] === "red" ? "status-danger" : row["风险等级"] === "orange" || row["风险等级"] === "review" ? "status-warn" : "status-ok"}">${esc(bargainRiskText(row))}</span></td>
+      <td><button class="tool-button" data-sync-bargain-price="${index}">同步到本款全部尺码</button></td>
     </tr>
   `).join("");
   body.querySelectorAll("[data-bargain-price]").forEach((input) => {
@@ -3478,6 +3613,9 @@ function renderBargainDraft() {
       const index = Number(input.dataset.bargainPrice);
       if (state.bargainDraft[index]) state.bargainDraft[index]["本次议价"] = input.value.trim();
     });
+  });
+  body.querySelectorAll("[data-sync-bargain-price]").forEach((button) => {
+    button.addEventListener("click", () => syncBargainPriceToGoods(Number(button.dataset.syncBargainPrice)));
   });
 }
 
@@ -3510,17 +3648,30 @@ function renderBargainHistory() {
     return `
       <div class="output-row bargain-history-row">
         <div>
-          <strong>${esc(row["货品名称"] || row["货品编码"] || "")} · ${esc(row["商家编码"] || "")}</strong>
+          <strong>${canReview ? `<input type="checkbox" class="bargain-review-check" data-bargain-line="${esc(row.id)}" data-bargain-batch="${esc(row.batch_id)}" /> ` : ""}${esc(row["货品名称"] || row["货品编码"] || "")} · ${esc(row["商家编码"] || "")}</strong>
           <p>${esc(row.platform || row["平台"] || "")} / ${esc(row.store || row["店铺"] || "")}　提交价：${esc(row.submitted_price || row["本次议价"] || "")}　版本：${esc(row.version || 1)}</p>
           <p>状态：${esc(row.status || "")}　备注：${esc(row.review_remark || "-")}</p>
         </div>
-        ${canReview ? `<div class="task-actions"><input class="inline-remark" data-bargain-remark="${esc(row.id)}" placeholder="备注可选" /><button class="tool-button primary-mini" data-bargain-review="通过" data-line="${esc(row.id)}" data-batch="${esc(row.batch_id)}">通过</button><button class="tool-button danger-mini" data-bargain-review="不通过" data-line="${esc(row.id)}" data-batch="${esc(row.batch_id)}">不通过</button></div>` : ""}
+        ${canReview ? `<div class="task-actions"><input class="inline-remark" data-bargain-remark="${esc(row.id)}" placeholder="拒绝原因 / 备注可选" /><button class="tool-button primary-mini" data-bargain-review="通过" data-line="${esc(row.id)}" data-batch="${esc(row.batch_id)}">通过</button><button class="tool-button danger-mini" data-bargain-review="不通过" data-line="${esc(row.id)}" data-batch="${esc(row.batch_id)}">不通过</button></div>` : ""}
       </div>
     `;
   }).join("");
   wrap.querySelectorAll("[data-bargain-review]").forEach((button) => {
     button.addEventListener("click", () => reviewBargainLine(button.dataset.batch, button.dataset.line, button.dataset.bargainReview));
   });
+}
+
+function selectedBargainLines() {
+  const checks = [...document.querySelectorAll(".bargain-review-check:checked")];
+  const byBatch = new Map();
+  checks.forEach((item) => {
+    const batch = item.dataset.bargainBatch;
+    if (!batch) return;
+    const rows = byBatch.get(batch) || [];
+    rows.push(item.dataset.bargainLine);
+    byBatch.set(batch, rows);
+  });
+  return byBatch;
 }
 
 function parseBargainLowPriceRows() {
@@ -3648,7 +3799,7 @@ function renderBargainTabs() {
 
 async function lookupBargain() {
   const merchantCode = $("#bargainMerchantCode")?.value.trim() || "";
-  const store = $("#bargainStore")?.value.trim() || "";
+  const store = $("#bargainStore")?.value || "";
   const platform = $("#bargainPlatform")?.value || "Temu";
   if (!merchantCode) {
     showToast("请先输入商家编码");
@@ -3662,7 +3813,7 @@ async function lookupBargain() {
     const result = await api.bargainLookup(operatorPayload({ merchant_code: merchantCode, store, platform }));
     const existing = new Set(state.bargainDraft.map((row) => row["商家编码"]));
     (result.rows || []).forEach((row) => {
-      if (!existing.has(row["商家编码"])) state.bargainDraft.push(row);
+      if (!existing.has(row["商家编码"])) state.bargainDraft.push({ ...row, "本次议价": "" });
     });
     renderBargainDraft();
     if ($("#bargainStatusLine")) $("#bargainStatusLine").textContent = `暂存区 ${state.bargainDraft.length} 条尺码议价`;
@@ -3692,12 +3843,39 @@ async function submitBargain() {
 
 async function reviewBargainLine(batchId, lineId, decision) {
   const remark = $(`[data-bargain-remark="${CSS.escape(lineId)}"]`)?.value.trim() || "";
+  if (decision !== "通过" && !remark) {
+    showToast("拒绝原因必填");
+    return;
+  }
   try {
     await api.bargainReview(operatorPayload({ batch_id: batchId, line_ids: [lineId], decision, remark }));
     await loadBargainHistory(false);
     showToast(`议价已${decision}`);
   } catch (error) {
     showToast(error.message || "审批议价失败");
+  }
+}
+
+async function reviewSelectedBargains(decision) {
+  const byBatch = selectedBargainLines();
+  const total = [...byBatch.values()].reduce((sum, rows) => sum + rows.length, 0);
+  if (!total) {
+    showToast("请先勾选要审批的议价行");
+    return;
+  }
+  const remark = decision === "通过" ? "" : (prompt("拒绝原因") || "").trim();
+  if (decision !== "通过" && !remark) {
+    showToast("拒绝原因必填");
+    return;
+  }
+  try {
+    for (const [batchId, lineIds] of byBatch.entries()) {
+      await api.bargainReview(operatorPayload({ batch_id: batchId, line_ids: lineIds, decision, remark }));
+    }
+    await loadBargainHistory(false);
+    showToast(`已${decision} ${total} 条议价`);
+  } catch (error) {
+    showToast(error.message || "批量审批失败");
   }
 }
 
@@ -3718,6 +3896,7 @@ async function refreshAll() {
     await loadOperatorAccounts(false);
     await loadSales(false);
     await loadSalesReport(false);
+    await loadBusinessReport(false);
     await loadSalesCompare(false);
     await loadImportMatrix(false);
     await loadTaskSuppressions();
@@ -3832,6 +4011,13 @@ async function recomputeSource(group) {
     (result.results || []).forEach((item) => {
       if (item.status === "ok") state.reportTaskSync[item.report] = item.task_sync || {};
     });
+    const failed = (result.results || []).filter((item) => item.status !== "ok");
+    state.sourceProgress[group.key] = {
+      kind: failed.length ? "error" : "done",
+      title: failed.length ? "重算完成但有失败" : "关联任务重算成功",
+      message: `成功 ${result.summary?.ok || 0} 个，失败 ${result.summary?.failed || 0} 个；${taskSyncSummary(result.task_sync)}`,
+      detail: failed.map((item) => `${item.name || item.report}：${item.error || "未知原因"}`).join("；"),
+    };
     await refreshAll();
     showToast(`重算完成：成功 ${result.summary?.ok || 0} 个，失败 ${result.summary?.failed || 0} 个；${taskSyncSummary(result.task_sync)}`);
   } catch (error) {
@@ -3857,6 +4043,7 @@ function showPage(name) {
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === next));
   const active = document.querySelector(`.nav-item[data-page="${next}"] span`);
   setText("#pageTitle", active?.textContent || "今日工作台");
+  if (next === "masterdata") loadProductInfo();
 }
 
 function bindEvents() {
@@ -3884,6 +4071,7 @@ function bindEvents() {
   $("#dailyFollowupRefreshBtn")?.addEventListener("click", refreshAll);
   $("#salesDate")?.addEventListener("change", () => refreshSalesForSelectedDate(true));
   $("#loadSalesBtn")?.addEventListener("click", () => refreshSalesForSelectedDate(true));
+  $("#saveSalesBatchBtn")?.addEventListener("click", submitSalesBatch);
   $("#loadSalesHeaderBtn")?.addEventListener("click", async () => {
     state.salesFocus = "missing";
     await loadSales(false);
@@ -3942,10 +4130,18 @@ function bindEvents() {
   $("#suppressTasksBtn")?.addEventListener("click", () => suppressTasks());
   $("#saveOperatorBtn")?.addEventListener("click", saveOperator);
   $("#lookupBargainBtn")?.addEventListener("click", lookupBargain);
+  $("#bargainPlatform")?.addEventListener("change", renderBargainStoreOptions);
   $("#bargainMerchantCode")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") lookupBargain();
   });
   $("#submitBargainBtn")?.addEventListener("click", submitBargain);
+  $("#approveSelectedBargainsBtn")?.addEventListener("click", () => reviewSelectedBargains("通过"));
+  $("#rejectSelectedBargainsBtn")?.addEventListener("click", () => reviewSelectedBargains("不通过"));
+  $("#bargainSelectAll")?.addEventListener("change", (event) => {
+    document.querySelectorAll(".bargain-review-check").forEach((item) => {
+      item.checked = event.target.checked;
+    });
+  });
   $("#clearBargainDraftBtn")?.addEventListener("click", () => {
     state.bargainDraft = [];
     renderBargainDraft();
@@ -4001,8 +4197,15 @@ function bindEvents() {
   $("#importSalesHistoryBtn")?.addEventListener("click", importSalesHistory);
   $("#createOperatorAccountBtn")?.addEventListener("click", createOperatorAccount);
   $("#productSearchBtn")?.addEventListener("click", queryProductInfo);
+  $("#reloadProductInfoBtn")?.addEventListener("click", loadProductInfo);
   $("#productSearchInput")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") queryProductInfo();
+  });
+  document.querySelectorAll('[data-action="focus-product-info"]').forEach((button) => {
+    button.addEventListener("click", () => {
+      $("#erpProductPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      loadProductInfo();
+    });
   });
   document.querySelectorAll("[data-master-module]").forEach((button) => {
     button.addEventListener("click", () => openMasterModule(button.dataset.masterModule));

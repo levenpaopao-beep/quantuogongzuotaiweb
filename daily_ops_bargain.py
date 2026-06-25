@@ -63,6 +63,22 @@ def size_from_spec(spec_name, merchant_code=""):
     return spec or code
 
 
+def goods_code_from_merchant(merchant_code):
+    code = text(merchant_code)
+    if "-" in code:
+        return code.rsplit("-", 1)[0]
+    return code.split("@", 1)[0]
+
+
+def standard_size_merchant_code(merchant_code, goods_code):
+    code = text(merchant_code)
+    prefix = text(goods_code)
+    if not code or not prefix or not code.startswith(f"{prefix}-"):
+        return False
+    suffix = code.rsplit("-", 1)[-1].strip().upper()
+    return suffix in {"XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL"}
+
+
 def load_erp_items(erp_files):
     items = []
     seen = set()
@@ -77,7 +93,7 @@ def load_erp_items(erp_files):
                 continue
             spec_name = text(first_value(row, "规格名称", "spec_name"))
             item = {
-                "货品编码": goods_code or merchant_code.split("-", 1)[0],
+                "货品编码": goods_code or goods_code_from_merchant(merchant_code),
                 "货品名称": text(first_value(row, "货品名称", "goods_name")),
                 "商家编码": merchant_code,
                 "尺码": size_from_spec(spec_name, merchant_code),
@@ -92,6 +108,24 @@ def load_erp_items(erp_files):
             seen.add(key)
             items.append(item)
     return items
+
+
+def platform_item_from_row(row, fallback_code):
+    merchant_code = text(row.get("商家编码") or row.get("merchant_code") or row.get("SKU货号") or row.get("商品SKU") or row.get("供应商SKU"))
+    if not merchant_code:
+        merchant_code = text(fallback_code)
+    spec_name = text(row.get("规格名称") or row.get("货品规格") or row.get("SKU属性") or row.get("规格"))
+    return {
+        "货品编码": goods_code_from_merchant(merchant_code),
+        "货品名称": text(row.get("货品名称") or row.get("商品名称") or row.get("product_name")),
+        "商家编码": merchant_code,
+        "尺码": size_from_spec(spec_name, merchant_code),
+        "规格名称": spec_name,
+        "货品分类": "",
+        "成本价": "",
+        "批发价": "",
+        "missing_erp": True,
+    }
 
 
 def build_clearance_catalog(erp_files):
@@ -156,13 +190,31 @@ class BargainStore:
     def lookup_staging_rows(self, merchant_code, request_store, platform, owner, erp_files, clearance_catalog=None, platform_rows=None):
         erp_items = load_erp_items(erp_files)
         by_code = {item["商家编码"]: item for item in erp_items if item["商家编码"]}
-        source = by_code.get(text(merchant_code))
+        platform_rows = platform_rows or []
+        wanted_code = text(merchant_code)
+        source = by_code.get(wanted_code)
+        missing_erp = False
         if not source:
-            raise ValueError("未在 ERP 商品基础信息里找到该商家编码")
+            prefix = goods_code_from_merchant(wanted_code)
+            fallback_rows = [
+                row for row in platform_rows
+                if standard_size_merchant_code(
+                    row.get("商家编码") or row.get("merchant_code") or row.get("SKU货号") or row.get("商品SKU") or row.get("供应商SKU"),
+                    prefix,
+                )
+            ]
+            if not fallback_rows:
+                raise ValueError("未在 ERP 商品基础信息里找到该商家编码")
+            erp_items = [platform_item_from_row(row, wanted_code) for row in fallback_rows]
+            by_code = {item["商家编码"]: item for item in erp_items if item["商家编码"]}
+            source = by_code.get(wanted_code) or erp_items[0]
+            missing_erp = True
         goods_code = source["货品编码"]
         variants = [item for item in erp_items if item["货品编码"] == goods_code]
+        standard_variants = [item for item in variants if standard_size_merchant_code(item.get("商家编码"), goods_code)]
+        if standard_variants:
+            variants = standard_variants
         clearance_catalog = clearance_catalog or build_clearance_catalog(erp_files)
-        platform_rows = platform_rows or []
         best_store = best_store_for_goods(goods_code, platform_rows)
         result = []
         for item in variants:
@@ -171,7 +223,12 @@ class BargainStore:
             wholesale = item["批发价"]
             cost = item["成本价"]
             clearance = is_clearance_goods(clearance_catalog, goods_code)
-            risk_level = price_risk_level(suggest_price, cost, clearance)
+            risk_tags = []
+            if missing_erp or item.get("missing_erp") or not cost:
+                risk_tags.append("ERP成本缺失")
+            if missing_erp or item.get("missing_erp") or not wholesale:
+                risk_tags.append("ERP批发价缺失")
+            risk_level = "review" if risk_tags else price_risk_level(suggest_price, cost, clearance)
             result.append({
                 "货品编码": goods_code,
                 "货品名称": item["货品名称"],
@@ -192,6 +249,7 @@ class BargainStore:
                 "ERP 返回库存": metrics["ERP 返回库存"],
                 "清仓款": clearance,
                 "风险等级": risk_level,
+                "风险标签": "、".join(risk_tags),
             })
         return sorted(result, key=lambda row: size_sort_key(row["尺码"]))
 
@@ -201,6 +259,8 @@ class BargainStore:
         batch_id = row_id("bargain-batch", [store, platform, owner, timestamp, len(data["batches"])])
         prepared = []
         for index, line in enumerate(lines or [], start=1):
+            if not text(line.get("本次议价")) or number(line.get("本次议价")) <= 0:
+                raise ValueError("每个尺码都必须填写本次议价")
             line_id = row_id("bargain-line", [batch_id, line.get("商家编码"), index])
             item = dict(line)
             item.update({
@@ -241,6 +301,8 @@ class BargainStore:
         raise ValueError("议价记录不存在")
 
     def review_lines(self, batch_id, line_ids, decision, admin, remark=""):
+        if decision != "通过" and not text(remark):
+            raise ValueError("拒绝议价必须填写原因")
         data = self.load()
         wanted = set(line_ids or [])
         count = 0

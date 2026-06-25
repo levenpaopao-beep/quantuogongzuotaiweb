@@ -260,7 +260,7 @@ class DesktopAppTest(unittest.TestCase):
         html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
         js = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
         css = (ROOT / "electron" / "renderer.css").read_text(encoding="utf-8")
-        for module in ["master-import", "operator-accounts", "store-info", "product-info", "task-suppressions"]:
+        for module in ["master-import", "operator-accounts", "store-info", "task-suppressions"]:
             self.assertIn(f'data-master-module="{module}"', html)
             self.assertIn(f'data-master-panel="{module}"', html)
         self.assertIn("masterModuleDialog", html)
@@ -268,6 +268,9 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("closeMasterModule", js)
         self.assertIn("master-module-card", css)
         self.assertIn("商品信息查询", html)
+        self.assertIn("erpProductPanel", html)
+        self.assertIn("loadProductInfo", js)
+        self.assertNotIn('data-master-panel="product-info"', html)
         self.assertNotIn("基础数据查询", html)
         self.assertNotIn("searchBtn", html + js)
 
@@ -385,6 +388,17 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("api.bargainIgnoreLowPrice", source)
         for text in ["低价回追", "重新检查", "忽略", "历史审批价", "风险原因"]:
             self.assertIn(text, source)
+
+    def test_bargain_form_uses_store_dropdown_price_reuse_and_batch_review(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        self.assertIn('<select id="bargainStore"', html)
+        self.assertIn("renderBargainStoreOptions", source)
+        self.assertIn("syncBargainPriceToGoods", source)
+        self.assertIn("同步到本款全部尺码", source)
+        self.assertIn("bargainSelectAll", html)
+        self.assertIn("reviewSelectedBargains", source)
+        self.assertIn("拒绝原因", source)
 
     def test_bargain_draft_table_has_horizontal_scroll_boundary(self):
         html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")

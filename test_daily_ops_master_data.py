@@ -98,6 +98,26 @@ class MasterDataImportTest(unittest.TestCase):
         self.assertEqual(result["items"][0]["summary"]["商家编码（新）"], "SKU-001")
         self.assertEqual(result["items"][0]["summary"]["货品名称"], "宠物雨衣")
 
+    def test_query_erp_product_info_defaults_to_latest_interface_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            erp_dir = Path(tmp)
+            legacy = erp_dir / "20260606-全部数据-无图版.xlsx"
+            latest = erp_dir / "erp产品基础信息表_接口同步_20260624_161745.xlsx"
+            for path, code, name in [(legacy, "OLD-001", "旧表商品"), (latest, "NEW-001", "接口商品")]:
+                wb = Workbook()
+                ws = wb.active
+                ws.append(["商家编码（新）", "货品名称", "规格名称", "成本价", "批发价"])
+                ws.append([code, name, "蓝色L", 10, 18])
+                wb.save(path)
+
+            with patch.object(daily_ops_app, "ERP_DIR", erp_dir), \
+                 patch.object(daily_ops_app, "manifest_paths", return_value=[legacy]):
+                result = daily_ops_app.query_erp_product_info("", 20)
+
+        self.assertEqual(result["source_files"], [latest.name])
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(result["items"][0]["summary"]["商家编码（新）"], "NEW-001")
+
     def test_parse_crossborder_sales_workbook_normalizes_month_sheets(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "跨境运营总表new.xlsx"
@@ -238,6 +258,25 @@ class MasterDataImportTest(unittest.TestCase):
                         "platform": "Temu",
                         "store": "二弟",
                     })
+
+    def test_desktop_business_report_payload_forwards_source_and_range(self):
+        with patch.object(daily_ops_desktop_adapter.app, "business_report", return_value={"summary": {}}) as mocked:
+            report = daily_ops_desktop_adapter.business_report_payload({
+                "role": "admin",
+                "user": "管理员",
+                "platform": "Temu",
+                "store": "一弟",
+                "grain": "month",
+                "range_key": "14d",
+                "source": "platform",
+            })
+
+        self.assertEqual(report, {"summary": {}})
+        payload = mocked.call_args.args[0]
+        self.assertEqual(payload["range_key"], "14d")
+        self.assertEqual(payload["source"], "platform")
+        self.assertEqual(payload["platform"], "Temu")
+        self.assertEqual(payload["store"], "一弟")
 
     def test_business_report_uses_current_owner_assignment_and_comparisons(self):
         with tempfile.TemporaryDirectory() as tmp:
