@@ -65,13 +65,18 @@ def size_from_spec(spec_name, merchant_code=""):
 
 def goods_code_from_merchant(merchant_code):
     code = text(merchant_code)
+    code = code.split("@", 1)[0]
     if "-" in code:
         return code.rsplit("-", 1)[0]
-    return code.split("@", 1)[0]
+    return code
+
+
+def canonical_merchant_code(merchant_code):
+    return text(merchant_code).split("@", 1)[0]
 
 
 def standard_size_merchant_code(merchant_code, goods_code):
-    code = text(merchant_code)
+    code = canonical_merchant_code(merchant_code)
     prefix = text(goods_code)
     if not code or not prefix or not code.startswith(f"{prefix}-"):
         return False
@@ -91,9 +96,12 @@ def load_erp_items(erp_files):
             goods_code = text(first_value(row, "货品编码", "goods_no"))
             if not merchant_code and not goods_code:
                 continue
+            goods_code = goods_code or goods_code_from_merchant(merchant_code)
+            if standard_size_merchant_code(merchant_code, goods_code):
+                merchant_code = canonical_merchant_code(merchant_code)
             spec_name = text(first_value(row, "规格名称", "spec_name"))
             item = {
-                "货品编码": goods_code or goods_code_from_merchant(merchant_code),
+                "货品编码": goods_code,
                 "货品名称": text(first_value(row, "货品名称", "goods_name")),
                 "商家编码": merchant_code,
                 "尺码": size_from_spec(spec_name, merchant_code),
@@ -114,9 +122,12 @@ def platform_item_from_row(row, fallback_code):
     merchant_code = text(row.get("商家编码") or row.get("merchant_code") or row.get("SKU货号") or row.get("商品SKU") or row.get("供应商SKU"))
     if not merchant_code:
         merchant_code = text(fallback_code)
+    goods_code = goods_code_from_merchant(merchant_code)
+    if standard_size_merchant_code(merchant_code, goods_code):
+        merchant_code = canonical_merchant_code(merchant_code)
     spec_name = text(row.get("规格名称") or row.get("货品规格") or row.get("SKU属性") or row.get("规格"))
     return {
-        "货品编码": goods_code_from_merchant(merchant_code),
+        "货品编码": goods_code,
         "货品名称": text(row.get("货品名称") or row.get("商品名称") or row.get("product_name")),
         "商家编码": merchant_code,
         "尺码": size_from_spec(spec_name, merchant_code),
@@ -215,7 +226,8 @@ class BargainStore:
         if standard_variants:
             variants = standard_variants
         clearance_catalog = clearance_catalog or build_clearance_catalog(erp_files)
-        best_store = best_store_for_goods(goods_code, platform_rows)
+        variant_codes = {item["商家编码"] for item in variants if item.get("商家编码")}
+        best_store = best_store_for_goods(goods_code, platform_rows, variant_codes)
         result = []
         for item in variants:
             metrics = platform_metrics_for_merchant(item["商家编码"], platform_rows)
@@ -430,12 +442,17 @@ def size_sort_key(size):
         return (len(order), text_size)
 
 
-def best_store_for_goods(goods_code, platform_rows):
+def best_store_for_goods(goods_code, platform_rows, merchant_codes=None):
     totals = {}
     prefix = text(goods_code)
+    allowed_codes = {canonical_merchant_code(code) for code in (merchant_codes or []) if text(code)}
     for row in platform_rows or []:
         merchant_code = text(row.get("商家编码") or row.get("merchant_code"))
-        if prefix and not merchant_code.startswith(prefix):
+        compare_code = canonical_merchant_code(merchant_code)
+        if allowed_codes:
+            if compare_code not in allowed_codes:
+                continue
+        elif prefix and not standard_size_merchant_code(merchant_code, prefix):
             continue
         store = text(row.get("店铺") or row.get("store"))
         if not store:
@@ -449,7 +466,8 @@ def best_store_for_goods(goods_code, platform_rows):
 
 
 def platform_metrics_for_merchant(merchant_code, platform_rows):
-    rows = [row for row in platform_rows or [] if text(row.get("商家编码") or row.get("merchant_code")) == text(merchant_code)]
+    wanted_code = canonical_merchant_code(merchant_code)
+    rows = [row for row in platform_rows or [] if canonical_merchant_code(row.get("商家编码") or row.get("merchant_code")) == wanted_code]
     prices = [number(row.get("申报价") or row.get("price")) for row in rows if number(row.get("申报价") or row.get("price")) > 0]
     temu_sales = [number(row.get("30天销量") or row.get("sales30")) for row in rows if text(row.get("平台") or row.get("platform")) == "Temu"]
     shein_sales = [number(row.get("30天销量") or row.get("sales30")) for row in rows if text(row.get("平台") or row.get("platform")) == "Shein"]

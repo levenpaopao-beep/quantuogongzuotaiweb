@@ -129,6 +129,36 @@ class DailyOpsBargainAppTest(unittest.TestCase):
         self.assertEqual(rows["rows"][0]["批发价"], 22)
         self.assertEqual(rows["rows"][0]["风险标签"], "")
 
+    def test_lookup_bargain_staging_limits_platform_sales_to_erp_standard_size_codes(self):
+        bargain_file = self.root / "bargain_requests.json"
+        erp_goods_archive = self.root / "erp_goods_archive.xlsx"
+        write_rows(erp_goods_archive, ["货品编码", "货品名称", "商家编码", "规格名称", "批发报价", "来源接口"], [
+            {"货品编码": "330318390", "货品名称": "么么牛仔衣", "商家编码": "330318390-XS", "规格名称": "蓝色/XS", "批发报价": 22, "来源接口": "goods_query.php"},
+            {"货品编码": "330318390", "货品名称": "么么牛仔衣", "商家编码": "330318390-S", "规格名称": "蓝色/S", "批发报价": 22, "来源接口": "goods_query.php"},
+            {"货品编码": "330318390", "货品名称": "么么牛仔衣", "商家编码": "330318390-M", "规格名称": "蓝色/M", "批发报价": 22, "来源接口": "goods_query.php"},
+            {"货品编码": "330318390", "货品名称": "么么牛仔衣", "商家编码": "330318390-L", "规格名称": "蓝色/L", "批发报价": 22, "来源接口": "goods_query.php"},
+            {"货品编码": "330318390", "货品名称": "么么牛仔衣", "商家编码": "330318390-XL", "规格名称": "蓝色/XL", "批发报价": 22, "来源接口": "goods_query.php"},
+        ])
+
+        with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file), \
+             patch.object(daily_ops_app, "erp_base_files", return_value=[erp_goods_archive]):
+            rows = daily_ops_app.lookup_bargain_staging({
+                "merchant_code": "330318390-L",
+                "store": "二弟",
+                "platform": "Temu",
+                "owner": "洁琳",
+                "platform_rows": [
+                    {"平台": "Temu", "店铺": "正确店", "商家编码": "330318390-L", "申报价": 16.62, "30天销量": 2},
+                    {"平台": "Temu", "店铺": "同码后缀店", "商家编码": "330318390-L@1", "申报价": 15.00, "30天销量": 8},
+                    {"平台": "Temu", "店铺": "错误前缀店", "商家编码": "330318390-L33", "申报价": 1.00, "30天销量": 999},
+                ],
+            })
+
+        self.assertEqual([row["尺码"] for row in rows["rows"]], ["XS", "S", "M", "L", "XL"])
+        self.assertTrue(all(row["货品名称"] == "么么牛仔衣" for row in rows["rows"]))
+        self.assertEqual(rows["rows"][0]["卖得最好的店铺"], "同码后缀店")
+        self.assertEqual(next(row for row in rows["rows"] if row["尺码"] == "L")["在售最低申报价"], 15.00)
+
     def test_submit_and_review_bargain_batch(self):
         bargain_file = self.root / "bargain_requests.json"
         with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file):
