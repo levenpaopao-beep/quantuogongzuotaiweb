@@ -350,11 +350,15 @@ def manual_sync(settings, erp_dir, now=None):
 
     product_endpoint = _text(settings.get("product_endpoint")) or PRODUCT_ENDPOINT
     stock_endpoint = _text(settings.get("stock_endpoint")) or STOCK_ENDPOINT
-    product_sync = fetch_paged_rows(settings, product_endpoint, {
-        "start_time": start_time,
-        "end_time": end_time,
-        "shop_id": shop_id,
-    }, ["goods_list", "data"], page_size, max_pages=max_pages)
+    product_params = {}
+    if product_endpoint != PRODUCT_ENDPOINT:
+        product_params.update({
+            "start_time": start_time,
+            "end_time": end_time,
+        })
+    if shop_id:
+        product_params["shop_id"] = shop_id
+    product_sync = fetch_paged_rows(settings, product_endpoint, product_params, ["goods_list", "data"], page_size, max_pages=max_pages)
     if stock_endpoint == STOCK_CHANGE_ENDPOINT:
         stock_sync = fetch_stock_change_rows(settings, stock_endpoint, shop_id, shop_no, stock_limit)
     else:

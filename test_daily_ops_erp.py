@@ -300,6 +300,36 @@ class ErpSyncTest(unittest.TestCase):
         self.assertNotIn("limit", stock_calls[0])
         self.assertEqual(stock_calls[1]["page_no"], 1)
 
+    def test_goods_archive_sync_does_not_limit_product_rows_by_time_window(self):
+        settings = {
+            "base_url": "https://api.wangdian.cn/openapi2",
+            "app_key": "app",
+            "app_secret": "secret",
+            "sid": "sid",
+            "shop_id": "",
+            "warehouse_name": "",
+            "page_size": 1,
+            "stock_endpoint": "stock_query.php",
+            "sync_days": 30,
+        }
+        calls = []
+
+        def fake_post(_settings, endpoint, params):
+            calls.append((endpoint, dict(params)))
+            if endpoint == daily_ops_erp.PRODUCT_ENDPOINT:
+                return {"goods_list": [], "total_count": 0}
+            return {"stock_list": [], "total_count": 0}
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(daily_ops_erp, "post_api", side_effect=fake_post):
+            daily_ops_erp.manual_sync(settings, Path(tmp))
+
+        product_params = [params for endpoint, params in calls if endpoint == daily_ops_erp.PRODUCT_ENDPOINT][0]
+        stock_params = [params for endpoint, params in calls if endpoint == "stock_query.php"][0]
+        self.assertNotIn("start_time", product_params)
+        self.assertNotIn("end_time", product_params)
+        self.assertIn("start_time", stock_params)
+        self.assertIn("end_time", stock_params)
+
     def test_manual_sync_can_read_more_than_default_50_product_pages(self):
         settings = {
             "base_url": "https://api.wangdian.cn/openapi2",

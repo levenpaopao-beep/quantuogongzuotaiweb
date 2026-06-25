@@ -78,6 +78,41 @@ class DailyOpsBargainAppTest(unittest.TestCase):
         self.assertEqual(rows["rows"][0]["风险等级"], "review")
         self.assertIn("ERP成本缺失", rows["rows"][0]["风险标签"])
 
+    def test_lookup_bargain_staging_collapses_platform_fallback_links_to_standard_sizes(self):
+        bargain_file = self.root / "bargain_requests.json"
+        empty_erp = self.root / "empty_erp.xlsx"
+        write_rows(empty_erp, ["货品编码", "货品名称", "商家编码", "规格名称", "成本价", "批发价"], [])
+        platform_rows = []
+        for size in ["XS", "S", "M", "L", "XL"]:
+            for index in range(3):
+                platform_rows.append({
+                    "平台": "Temu",
+                    "店铺": "店铺A",
+                    "商家编码": f"330317800-{size}" + ("@1" if index == 1 else ""),
+                    "货品名称": "平台棒球衫",
+                    "规格名称": f"米色/{size}",
+                    "申报价": 14.32 - index,
+                    "30天销量": index + 1,
+                    "在线链接数": 1,
+                })
+        platform_rows.append({"平台": "Temu", "店铺": "错误店", "商家编码": "330317800-L33", "申报价": 1, "30天销量": 999})
+
+        with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file), \
+             patch.object(daily_ops_app, "erp_base_files", return_value=[empty_erp]):
+            rows = daily_ops_app.lookup_bargain_staging({
+                "merchant_code": "330317800-S",
+                "store": "一弟",
+                "platform": "Temu",
+                "owner": "洁琳",
+                "platform_rows": platform_rows,
+            })
+
+        self.assertEqual([row["商家编码"] for row in rows["rows"]], [
+            "330317800-XS", "330317800-S", "330317800-M", "330317800-L", "330317800-XL",
+        ])
+        self.assertTrue(all(row["在线销售链接数"] == 3 for row in rows["rows"]))
+        self.assertTrue(all(row["在售最低申报价"] == 12.32 for row in rows["rows"]))
+
     def test_lookup_bargain_staging_reads_imported_platform_source_without_payload_rows(self):
         bargain_file = self.root / "bargain_requests.json"
         manifest = self.root / "data_source_manifest.json"

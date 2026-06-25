@@ -139,6 +139,22 @@ def platform_item_from_row(row, fallback_code):
     }
 
 
+def collapse_platform_fallback_items(rows, fallback_code):
+    items = []
+    seen = set()
+    for row in rows or []:
+        item = platform_item_from_row(row, fallback_code)
+        code = item.get("商家编码")
+        goods_code = item.get("货品编码")
+        if not standard_size_merchant_code(code, goods_code):
+            continue
+        if code in seen:
+            continue
+        seen.add(code)
+        items.append(item)
+    return sorted(items, key=lambda item: size_sort_key(item.get("尺码")))
+
+
 def build_clearance_catalog(erp_files):
     rows = []
     goods_codes = set()
@@ -216,7 +232,7 @@ class BargainStore:
             ]
             if not fallback_rows:
                 raise ValueError("未在 ERP 商品基础信息里找到该商家编码")
-            erp_items = [platform_item_from_row(row, wanted_code) for row in fallback_rows]
+            erp_items = collapse_platform_fallback_items(fallback_rows, wanted_code)
             by_code = {item["商家编码"]: item for item in erp_items if item["商家编码"]}
             source = by_code.get(wanted_code) or erp_items[0]
             missing_erp = True
