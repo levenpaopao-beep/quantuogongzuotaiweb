@@ -849,6 +849,10 @@ label { color: var(--muted); font-size: 12px; }
   font-size: 12px;
 }
 .sales-entry-done { background: #f6fff9; }
+.sales-entry-pending {
+  background: #fff9ed;
+  border-color: #ffd99b;
+}
 .sales-focus-bar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

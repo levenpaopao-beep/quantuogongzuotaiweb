@@ -210,7 +210,13 @@ function operatorPayload(extra = {}) {
 }
 
 function todayDateText() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateValue(new Date());
+}
+
+function salesDefaultDateText() {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return localDateValue(date);
 }
 
 function showToast(message) {
@@ -1275,8 +1281,8 @@ function applyRouteIntent(route = {}) {
 
 function salesDateValue() {
   const input = $("#salesDate");
-  if (input && !input.value) input.value = todayDateText();
-  return input?.value || todayDateText();
+  if (input && !input.value) input.value = salesDefaultDateText();
+  return input?.value || salesDefaultDateText();
 }
 
 function setSalesFocus(focus = "missing", options = {}) {
@@ -1333,20 +1339,21 @@ function renderSalesManagement() {
     } else {
       list.innerHTML = visibleEntries.map((item) => {
         const index = entries.indexOf(item);
+        const sourceHint = item.needs_confirmation ? "历史导入待确认" : (item.submitted ? "已保存" : "待填写");
         return `
-        <div class="sales-entry ${item.submitted ? "sales-entry-done" : ""}">
-          <span>${item.platform} · ${item.store}<small>${item.owner || "未分配"}</small></span>
+        <div class="sales-entry ${item.submitted ? "sales-entry-done" : ""} ${item.needs_confirmation ? "sales-entry-pending" : ""}">
+          <span>${item.platform} · ${item.store}<small>${item.owner || "未分配"} · ${sourceHint}</small></span>
           <input data-sales-index="${index}" inputmode="numeric" value="${item.sales || ""}" placeholder="销售件数" />
           <input data-remark-index="${index}" value="${item.remark || ""}" placeholder="备注，可选" />
-          <button class="primary-button" data-action="submit-sales" data-index="${index}">${item.submitted ? "更新" : "提交"}</button>
+          <button class="primary-button" data-action="submit-sales" data-index="${index}">${item.submitted ? "更新" : "保存"}</button>
         </div>
       `;
       }).join("") || actionEmpty({
         title: state.salesFocus === "abnormal" ? "当前没有异常波动" : "当前没有未填店铺",
-        body: state.salesFocus === "abnormal" ? "异常波动只提醒不拦截；需要复核时切到“全部”查看店铺。" : "今天的销量清单已经填完，可以回到今日工作台处理任务包。",
-        primary: state.salesFocus === "missing" ? "处理任务包" : "查看全部",
-        page: state.salesFocus === "missing" ? "tasks" : "sales",
-        attrs: state.salesFocus === "missing" ? 'data-task-status="待店长处理" data-task-open-only="true"' : 'data-sales-focus="all"',
+        body: state.salesFocus === "abnormal" ? "异常波动只提醒不拦截；需要复核时切到“全部”查看店铺。" : "当前销售日没有未填店铺；需要补录或更正时，直接查看全部店铺行。",
+        primary: state.salesFocus === "missing" ? "查看/更正全部店铺" : "查看全部",
+        page: "sales",
+        attrs: 'data-sales-focus="all"',
       });
       bindEmptyActions(list);
       list.querySelectorAll('[data-action="submit-sales"]').forEach((button) => {
@@ -1374,7 +1381,12 @@ function renderSalesManagement() {
     ledger.querySelectorAll('[data-action="ledger-submit"]').forEach((button) => {
       button.addEventListener("click", () => {
         const input = document.querySelector(`[data-sales-index="${button.dataset.index}"]`);
-        input?.focus();
+        if (input) {
+          input.focus();
+          return;
+        }
+        setSalesFocus("all");
+        window.setTimeout(() => document.querySelector(`[data-sales-index="${button.dataset.index}"]`)?.focus(), 30);
       });
     });
   }
@@ -3046,33 +3058,30 @@ function addStoreOwnerRow() {
 
 async function loadStoreOwners() {
   const operator = currentOperator();
+  const result = await api.storeOwners(operatorPayload());
+  state.storeOwners = result.assignments || [];
+  state.customPlatforms = storeOwnerPlatformOptions(state.storeOwners).filter((platform) => !BUILT_IN_PLATFORMS.includes(platform));
+  renderOperatorOwnerOptions();
+  renderBargainStoreOptions();
   if (operator.role === "owner") {
-    state.storeOwners = [];
-    renderOperatorOwnerOptions();
-    renderBargainStoreOptions();
     const input = $("#storeOwnerMapText");
     const rows = $("#storeOwnerRows");
     const line = $("#storeOwnerStatus");
-    if (input) input.value = "店长视角只查看自己负责的数据，平台、店铺、负责人由管理员维护。";
+    if (input) input.value = (state.storeOwners || []).map((item) => `${item.platform}，${item.store}，${item.owner}`).join("\n") || "未读取到你负责的店铺。";
     if (rows) {
       rows.innerHTML = `
         <div class="action-empty">
           <div>
-            <strong>负责人配置由管理员维护</strong>
-            <span>如果你看不到负责店铺，请联系管理员在基础资料里分配平台、店铺和负责人。</span>
+            <strong>只显示你负责的店铺</strong>
+            <span>这里不能修改负责人配置；如果缺店铺，请让管理员在基础资料里分配。</span>
           </div>
         </div>
       `;
     }
-    if (line) line.textContent = "店长视角不读取全量负责人配置";
+    if (line) line.textContent = `已读取 ${state.storeOwners.length} 个负责店铺`;
     return;
   }
-  const result = await api.storeOwners(operatorPayload());
-  state.storeOwners = result.assignments || [];
-  state.customPlatforms = storeOwnerPlatformOptions(state.storeOwners).filter((platform) => !BUILT_IN_PLATFORMS.includes(platform));
   renderStoreOwners();
-  renderOperatorOwnerOptions();
-  renderBargainStoreOptions();
 }
 
 async function saveStoreOwners() {
@@ -4198,7 +4207,7 @@ function showPage(name) {
 
 function bindEvents() {
   installImageFallbacks();
-  if ($("#salesDate") && !$("#salesDate").value) $("#salesDate").value = todayDateText();
+  if ($("#salesDate") && !$("#salesDate").value) $("#salesDate").value = salesDefaultDateText();
   document.querySelectorAll("[data-page]").forEach((button) => {
     button.addEventListener("click", () => showPage(button.dataset.page));
   });

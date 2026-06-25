@@ -1465,7 +1465,8 @@ class OperationTaskStoreTest(unittest.TestCase):
                     "GET",
                     {"X-Operator-Token": owner["token"]},
                 )
-                self.assertEqual(status, 403)
+                self.assertEqual(status, 200)
+                self.assertEqual(json.loads(body)["assignments"], [])
 
                 status, _content_type, body = daily_ops_app.handle_store_owners_api(
                     "GET",
@@ -1491,6 +1492,14 @@ class OperationTaskStoreTest(unittest.TestCase):
                 payload = json.loads(body)
                 self.assertEqual(status, 200)
                 self.assertEqual([row["store"] for row in payload["assignments"]], ["7", "琪琪"])
+
+                status, _content_type, body = daily_ops_app.handle_store_owners_api(
+                    "GET",
+                    {"X-Operator-Token": owner["token"]},
+                )
+                payload = json.loads(body)
+                self.assertEqual(status, 200)
+                self.assertEqual([row["store"] for row in payload["assignments"]], ["7"])
 
     def test_saving_store_owner_mapping_assigns_existing_unassigned_tasks(self):
         daily_ops_app.OPERATOR_SESSIONS.clear()
@@ -2103,16 +2112,17 @@ class OperationTaskStoreTest(unittest.TestCase):
                     result = daily_ops_cli.command(argv)
                 self.assertTrue(result["ok"])
 
-    def test_desktop_store_owner_directory_requires_admin_role(self):
+    def test_desktop_store_owner_directory_scopes_owner_role(self):
         owner_payload = {"role": "owner", "user": "小琴"}
         admin_payload = {"role": "admin", "user": "管理员"}
         with patch("sys.stdin", io.StringIO(json.dumps(owner_payload, ensure_ascii=False))), \
-             patch.object(daily_ops_desktop_adapter, "store_owners", return_value={"assignments": []}):
-            with self.assertRaises(PermissionError):
-                daily_ops_cli.command(["store-owners"])
+             patch.object(daily_ops_desktop_adapter, "store_owners_payload", return_value={"assignments": [{"owner": "小琴", "store": "七弟"}]}):
+            result = daily_ops_cli.command(["store-owners"])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["data"]["assignments"][0]["store"], "七弟")
 
         with patch("sys.stdin", io.StringIO(json.dumps(admin_payload, ensure_ascii=False))), \
-             patch.object(daily_ops_desktop_adapter, "store_owners", return_value={"assignments": []}):
+             patch.object(daily_ops_desktop_adapter, "store_owners_payload", return_value={"assignments": []}):
             result = daily_ops_cli.command(["store-owners"])
         self.assertTrue(result["ok"])
 

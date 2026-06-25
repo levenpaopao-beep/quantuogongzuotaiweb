@@ -269,8 +269,14 @@ def mark_operation_tasks_done_payload(payload):
     return mark_operation_tasks_done(payload.get("ids", []), operator_user(payload), payload.get("remark", ""))
 
 
+def store_owners_payload(payload=None):
+    payload = payload or {}
+    operator = {"role": operator_role(payload), "user": operator_user(payload)}
+    return {"assignments": app.visible_store_owner_assignments(operator), "owners": app.operation_owner_directory()}
+
+
 def store_owners():
-    return {"assignments": app.load_store_owner_assignments(), "owners": app.operation_owner_directory()}
+    return store_owners_payload({"role": "admin", "user": "管理员"})
 
 
 def save_store_owners(assignments, actor="管理员"):

@@ -36,6 +36,28 @@ class DailySalesStoreTest(unittest.TestCase):
         self.assertEqual(payload["summary"]["submitted"], 1)
         self.assertEqual(payload["summary"]["total_sales"], 15)
 
+    def test_history_import_does_not_count_as_owner_daily_submission(self):
+        data = self.store.load()
+        data["records"].append({
+            "id": "2026-06-23|Temu|七弟",
+            "date": "2026-06-23",
+            "platform": "Temu",
+            "store": "七弟",
+            "owner": "小琴",
+            "sales": 0,
+            "status": "历史导入",
+            "source": "历史导入",
+        })
+        self.store.save(data)
+
+        payload = self.store.daily_payload(self.assignments, role="owner", user="小琴", day="2026-06-23")
+
+        self.assertEqual(payload["summary"]["required"], 1)
+        self.assertEqual(payload["summary"]["submitted"], 0)
+        self.assertEqual(payload["summary"]["missing"], 1)
+        self.assertEqual(payload["entries"][0]["status"], "待确认")
+        self.assertTrue(payload["entries"][0]["needs_confirmation"])
+
     def test_owner_can_only_submit_own_store(self):
         with self.assertRaises(PermissionError):
             self.store.submit(self.assignments, role="owner", user="别人", day="2026-06-23", platform="Temu", store="七弟", sales="12")

@@ -410,6 +410,8 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("bargainSelectAll", html)
         self.assertIn("reviewSelectedBargains", source)
         self.assertIn("可空", source)
+        self.assertIn("api.storeOwners(operatorPayload())", source)
+        self.assertNotIn("state.storeOwners = [];", source)
 
     def test_bargain_risk_recomputes_from_typed_price(self):
         html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
@@ -418,6 +420,15 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("bargainComputedRisk", source)
         self.assertIn("低于批发价80%", source)
         self.assertIn("ERP成本缺失", source)
+
+    def test_owner_sales_entry_defaults_to_yesterday_and_marks_imported_rows_editable(self):
+        source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        css = (ROOT / "electron" / "renderer.css").read_text(encoding="utf-8")
+        self.assertIn("function salesDefaultDateText", source)
+        self.assertIn("date.setDate(date.getDate() - 1)", source)
+        self.assertIn("历史导入待确认", source)
+        self.assertIn("查看/更正全部店铺", source)
+        self.assertIn("sales-entry-pending", css)
 
     def test_erp_settings_show_manual_pull_choices(self):
         html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")

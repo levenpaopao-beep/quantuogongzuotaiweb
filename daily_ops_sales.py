@@ -85,6 +85,14 @@ def owner_visible_assignments(assignments, role="admin", user=""):
     return rows
 
 
+def is_manual_sales_record(record):
+    if not record:
+        return False
+    source = norm(record.get("source"))
+    status = norm(record.get("status"))
+    return source != "历史导入" and status != "历史导入"
+
+
 def platform_summary(entries):
     summary = {}
     for item in entries:
@@ -252,17 +260,21 @@ class DailySalesStore:
         for item in visible:
             key = sales_record_id(day, item["platform"], item["store"])
             record = records.get(key)
+            submitted = is_manual_sales_record(record)
+            display_status = "待确认" if record and not submitted else (record.get("status", "未填") if record else "未填")
             entries.append({
                 "date": day,
                 "platform": item["platform"],
                 "store": item["store"],
                 "owner": item["owner"],
-                "submitted": bool(record),
+                "submitted": submitted,
                 "sales": record.get("sales", "") if record else "",
-                "status": record.get("status", "未填") if record else "未填",
+                "status": display_status,
                 "abnormal": record.get("abnormal", "") if record else "",
                 "remark": record.get("remark", "") if record else "",
                 "updated_at": record.get("updated_at", "") if record else "",
+                "source": record.get("source", "") if record else "",
+                "needs_confirmation": bool(record and not submitted),
             })
         required = len(entries)
         submitted = sum(1 for item in entries if item["submitted"])

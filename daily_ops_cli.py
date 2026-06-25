@@ -153,8 +153,7 @@ def command(argv):
         payload = task_payload(read_payload())
         return ok(adapter.export_operation_tasks_payload(payload))
     if name == "store-owners":
-        require_admin(read_payload(), "读取负责人配置")
-        return ok(adapter.store_owners())
+        return ok(adapter.store_owners_payload(read_payload()))
     if name == "save-store-owners":
         payload = read_payload()
         return ok(adapter.save_store_owners_payload(payload))

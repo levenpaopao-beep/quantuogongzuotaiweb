@@ -1052,6 +1052,18 @@ def assert_owner_store_access(platform, store, owner):
     raise PermissionError("只能选择自己负责的店铺提交议价")
 
 
+def visible_store_owner_assignments(operator):
+    role = norm(operator.get("role") or "admin")
+    user = norm(operator.get("user"))
+    rows = load_store_owner_assignments()
+    if role == "admin":
+        return rows
+    return [
+        item for item in rows
+        if item.get("enabled", True) is not False and norm(item.get("owner")) == user
+    ]
+
+
 def bargain_input_files():
     uploaded = manifest_paths("temu_bargain_input")
     if uploaded:
@@ -2902,10 +2914,10 @@ def handle_owners_api(headers=None):
 def handle_store_owners_api(action, headers, payload=None):
     try:
         operator = operator_from_token(token_from_headers(headers))
+        if action == "GET":
+            return json_bytes({"ok": True, "assignments": visible_store_owner_assignments(operator), "owners": operation_owner_directory()})
         if not can_review_tasks(operator):
             return json_bytes({"ok": False, "error": "只有管理员可以维护店铺负责人"}, status=403)
-        if action == "GET":
-            return json_bytes({"ok": True, "assignments": load_store_owner_assignments(), "owners": operation_owner_directory()})
         payload = payload or {}
         if action == "POST_SAVE":
             assignments = save_store_owner_assignments(payload.get("assignments", []))
