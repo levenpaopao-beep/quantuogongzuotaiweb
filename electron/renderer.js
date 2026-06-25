@@ -4201,8 +4201,11 @@ function bindEvents() {
   $("#saveOperatorBtn")?.addEventListener("click", saveOperator);
   $("#lookupBargainBtn")?.addEventListener("click", lookupBargain);
   $("#bargainPlatform")?.addEventListener("change", renderBargainStoreOptions);
-  $("#bargainMerchantCode")?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") lookupBargain();
+  $("#bargainLookupControls")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      lookupBargain();
+    }
   });
   $("#submitBargainBtn")?.addEventListener("click", submitBargain);
   $("#approveSelectedBargainsBtn")?.addEventListener("click", () => reviewSelectedBargains("通过"));
