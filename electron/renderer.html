@@ -23,7 +23,7 @@
           <button class="nav-item" data-page="bargain"><span>议价申请</span><em>录入、审批、回追</em></button>
           <button class="nav-item" data-page="tasks"><span>商品任务</span><em>任务包处理</em></button>
           <button class="nav-item" data-page="imports"><span>数据导入</span><em>批次、体检、缺失</em></button>
-          <button class="nav-item" data-page="reports"><span>经营报表</span><em>异常、趋势、店铺</em></button>
+          <button class="nav-item" data-page="reports"><span>经营报表</span><em>平台、店铺、导出</em></button>
           <button class="nav-item" data-page="masterdata"><span>基础资料</span><em>平台、店铺、负责人</em></button>
           <button class="nav-item" data-page="rules"><span>系统设置</span><em>规则、ERP、备份</em></button>
         </nav>
@@ -57,32 +57,105 @@
         </header>
 
         <section class="page page-active" id="todayPage">
-          <section class="today-card daily-operation-panel span-3" id="dailyOperationPanel">
-            <div class="workflow-head compact-head">
-              <div>
-                <span class="pill">每日操作流程</span>
-                <h2 id="todayWorkflowTitle">管理员每日操作流程</h2>
+          <div class="hero-strip">
+            <div class="hero-copy">
+              <span class="pill">今日优先级</span>
+              <h2>先确认销量，再处理任务包。</h2>
+              <p>管理员看全部平台和店铺；店长只看自己负责的数据。每个卡片都指向下一步动作。</p>
+              <div class="hero-actions">
+                <button class="primary-button" data-page="sales">补录销量</button>
+                <button class="primary-button" data-page="bargain">填议价申请</button>
+                <button class="ghost-button" data-page="tasks">处理商品任务</button>
               </div>
-              <p id="todayWorkflowHint">每天打开先按顺序处理，异常和报表放在下面辅助判断。</p>
             </div>
-            <div class="workflow-steps daily-operation-steps" id="todayWorkflowSteps"></div>
+            <img class="hero-mascot" src="./assets/petcircle-app-icon.png" alt="" data-fallback-label="PETCIRCLE" />
+          </div>
+
+          <section class="workflow-panel" aria-label="今日工作流">
+            <div class="workflow-head">
+              <div>
+                <span class="pill">今天怎么跑</span>
+                <h2 id="todayWorkflowTitle">管理员日常流程</h2>
+              </div>
+              <p id="todayWorkflowHint">按顺序处理，异常只提醒不拦截，完成后回到今日工作台看状态。</p>
+            </div>
+            <div class="workflow-steps" id="todayWorkflowSteps"></div>
+          </section>
+
+          <section class="rhythm-panel" aria-label="操作节奏">
+            <div class="rhythm-head">
+              <div>
+                <span class="pill">每天用为主</span>
+                <h2>操作节奏</h2>
+              </div>
+              <p id="operationRhythmHint">把高频动作和每周动作分开，先处理今天必须完成的事。</p>
+            </div>
+            <div class="rhythm-lanes" id="operationRhythmList"></div>
           </section>
 
           <div class="today-grid">
             <section class="today-card span-3">
               <div class="panel-head">
                 <div>
-                  <h2>经营总览</h2>
-                  <p id="homeOverviewHint">按完整销售日统计，不含今日；默认以店长每日填写销量为准。</p>
+                  <h2>开始使用清单</h2>
+                  <p>按顺序完成初始化和每日动作，系统会自动更新状态。</p>
                 </div>
-                <button class="ghost-button" data-page="reports">查看经营报表</button>
+                <button class="ghost-button" id="todayGuideRefreshBtn">重新检查</button>
               </div>
-              <div class="home-business-grid" id="homeBusinessOverview"></div>
+              <div class="guide-steps" id="todayGuideSteps"></div>
             </section>
 
             <section class="today-card span-2">
+              <div class="panel-head">
+                <div>
+                  <h2>销售日销量填报进度</h2>
+                  <p>每天必须先确认的平台店铺销量。</p>
+                </div>
+                <button class="ghost-button" data-page="sales">进入销量管理</button>
+              </div>
+              <div class="metric-row" id="todaySalesMetrics">
+                <div class="metric-card"><span>应填店铺</span><strong>0</strong><small>等待配置</small></div>
+                <div class="metric-card ok"><span>已填写</span><strong>0</strong><small>本销售日完成</small></div>
+                <div class="metric-card warn"><span>未填写</span><strong>0</strong><small>需要提醒</small></div>
+                <div class="metric-card danger"><span>异常波动</span><strong>0</strong><small>待核对</small></div>
+              </div>
+              <div class="action-list" id="todaySalesActions"></div>
+            </section>
+
+            <section class="today-card">
               <h2>今日待我处理</h2>
               <div class="stack-list" id="todayActionList"></div>
+            </section>
+
+            <section class="today-card span-2">
+              <div class="panel-head">
+                <div>
+                  <h2>每日督办</h2>
+                  <p id="dailyFollowupHint">按负责人汇总销售日销量、导入缺口和任务待办。</p>
+                </div>
+                <button class="ghost-button" id="dailyFollowupRefreshBtn">刷新督办</button>
+              </div>
+              <div class="daily-followup-list" id="dailyFollowupList"></div>
+            </section>
+
+            <section class="today-card span-2">
+              <div class="panel-head">
+                <div>
+                  <h2>商品任务风险</h2>
+                  <p>待推送、待勾选、重复出现和超时任务。</p>
+                </div>
+                <button class="ghost-button" data-page="tasks">查看任务包</button>
+              </div>
+              <div class="task-summary compact" id="taskSummary"></div>
+            </section>
+
+            <section class="today-card">
+              <h2>经营快照</h2>
+              <div class="snapshot-list" id="todaySnapshot">
+                <div><span>销售日销量</span><strong>待填报</strong></div>
+                <div><span>平台汇总</span><strong>Temu / Shein / 速卖通 / TK / Ozon</strong></div>
+                <div><span>Excel 总表</span><strong>月结后导出</strong></div>
+              </div>
             </section>
           </div>
         </section>
@@ -97,9 +170,19 @@
             <button class="primary-button" id="loadSalesHeaderBtn">刷新销售日清单</button>
           </div>
           <div class="module-grid">
-            <section class="simple-panel soft-panel span-3">
+            <section class="simple-panel soft-panel">
               <h2>销售日填报清单</h2>
-              <p id="salesFocusHint">选择销售日期后，一张表里直接看所有店铺；已填显示数字，未填留空，点编辑后填写并确认。</p>
+              <div class="sales-focus-bar" id="salesFocusBar">
+                <div>
+                  <strong id="salesFocusTitle">先补未填销售日</strong>
+                  <span id="salesFocusHint">按店铺逐行填写，回车即可提交当前行。</span>
+                </div>
+                <div class="sales-focus-tabs" role="group" aria-label="销量填报筛选">
+                  <button class="segment active" data-sales-focus="missing" type="button">未填</button>
+                  <button class="segment" data-sales-focus="abnormal" type="button">异常</button>
+                  <button class="segment" data-sales-focus="all" type="button">全部</button>
+                </div>
+              </div>
               <div class="sales-tools">
                 <input id="salesDate" type="date" />
                 <button class="ghost-button" id="loadSalesBtn">读取日期</button>
@@ -107,6 +190,19 @@
               </div>
               <div class="sales-entry-list" id="salesEntryList"></div>
             </section>
+          </div>
+          <div class="simple-panel">
+            <div class="panel-head">
+              <div>
+                <h2>销量台账视图</h2>
+                <p id="salesStatusLine">读取平台、店铺、日期、状态、修改记录和月结口径。</p>
+              </div>
+              <button class="ghost-button" id="exportSalesBtn">导出销量明细</button>
+            </div>
+            <div class="matrix-placeholder sales-ledger">
+              <div>平台</div><div>店铺</div><div>销售日销量</div><div>状态</div><div>异常</div><div>操作</div>
+              <div id="salesLedgerRows" class="matrix-body"></div>
+            </div>
           </div>
           <div class="simple-panel">
             <div class="panel-head">
@@ -183,7 +279,7 @@
               <select id="taskType"><option value="">全部类型</option><option>价格异常</option><option>库存异常</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
               <input id="taskStore" placeholder="店铺" />
               <select id="taskNextHandler"><option value="">全部下一步</option><option>管理员</option><option>店长</option><option>无需处理</option></select>
-              <select id="taskPriority"><option value="">全部优先级</option><option>高</option><option>中</option><option>低</option></select>
+              <select id="taskPriority"><option value="">全部优先级</option><option>高</option><option>中</option><option>普通</option><option>低</option></select>
               <label><input id="taskOpenOnly" type="checkbox" /> 只看未完成</label>
               <label><input id="taskOverdue" type="checkbox" /> 只看超时</label>
               <label><input id="taskUnassigned" type="checkbox" /> 只看未分配</label>
@@ -215,7 +311,7 @@
             </div>
           </div>
 
-          <div class="workbench-grid single-column bargain-entry-panel">
+          <div class="workbench-grid single-column">
             <section class="panel source-panel">
               <div class="panel-head">
                 <div>
@@ -241,15 +337,15 @@
               </div>
             </section>
           </div>
-          <div id="bargainHistoryDialog" class="subpage-panel hidden" aria-hidden="true">
-            <section class="third-level-panel" aria-labelledby="bargainHistoryTitle">
+          <div id="bargainHistoryDialog" class="dialog-backdrop hidden" aria-hidden="true">
+            <section class="task-dialog master-module-dialog" role="dialog" aria-modal="true" aria-labelledby="bargainHistoryTitle">
               <div class="dialog-head">
                 <div>
                   <span class="pill">议价管理</span>
                   <h2 id="bargainHistoryTitle">议价历史</h2>
                   <p id="bargainHistoryHint">管理员看全部；店长只看自己提交的数据。</p>
                 </div>
-                <button class="tool-button" type="button" data-bargain-history-close>返回议价录入</button>
+                <button class="tool-button" type="button" data-bargain-history-close>关闭</button>
               </div>
               <div class="business-tabs" id="bargainTabs">
                 <button class="segment" data-bargain-tab="pending" type="button" data-admin-only="bargain-review">待审核议价</button>
@@ -358,7 +454,7 @@
               </div>
               <div class="range-shortcuts source-shortcuts" id="businessSourceShortcuts">
                 <button class="segment active" type="button" data-business-source="manual">店长填报销量</button>
-                <button class="segment" type="button" data-business-source="platform">平台导入参考</button>
+                <button class="segment" type="button" data-business-source="platform">平台导入销量</button>
               </div>
               <div class="business-filters">
                 <input id="businessDateFrom" type="hidden" />
@@ -388,21 +484,6 @@
               <div class="business-kpi"><span>本月累计</span><strong>0</strong><small>较上月同期 0</small></div>
               <div class="business-kpi"><span>本年累计</span><strong>0</strong><small>较去年同期 0</small></div>
               <div class="business-kpi"><span>店长填报完整度 <b class="info-dot" title="当前统计范围内，应填店铺销售日中已填写的比例。">?</b></span><strong>0%</strong><small>缺失 0</small></div>
-            </div>
-
-            <div class="business-first-screen">
-              <section class="business-table-card business-action-card">
-                <div class="panel-head">
-                  <div><h2>需要处理清单</h2><p>只列真正要跟进的店铺问题，优先处理缺填、未更新、明显下滑和负责人未匹配。</p></div>
-                </div>
-                <div id="businessActionList" class="business-action-list"></div>
-              </section>
-              <section class="business-table-card">
-                <div class="panel-head">
-                  <div><h2>重点变化</h2><p>按店铺展示最近30日相对上一周期的主要增长和下滑。</p></div>
-                </div>
-                <div id="businessMoverGrid" class="business-mover-grid"></div>
-              </section>
             </div>
 
             <div class="business-tabs" id="businessTabs">
@@ -664,7 +745,6 @@
             </section>
           </div>
         </section>
-
         <section class="page" id="erpSettingsPage" data-settings-panel="erp-settings" data-admin-only="erp-settings">
           <div class="page-intro compact-page-intro">
             <div>
