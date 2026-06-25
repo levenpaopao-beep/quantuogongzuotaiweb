@@ -86,6 +86,9 @@ def command(argv):
     if name == "generate-weekly":
         require_admin(read_payload(), "生成本周报表")
         return ok(adapter.generate_weekly_reports())
+    if name == "recompute-source":
+        require_admin(read_payload(), "重算数据源关联任务")
+        return ok(adapter.recompute_source(args[0]))
     if name == "open-output":
         require_admin(read_payload(), "打开全局输出文件")
         path = adapter.output_file_path(args[0])

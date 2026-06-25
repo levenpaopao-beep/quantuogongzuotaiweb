@@ -1104,6 +1104,22 @@ label { color: var(--muted); font-size: 12px; }
 .source-progress-pending { border-color: #ffe4ac; background: #fff9e8; }
 .source-progress-success { border-color: #b8f0d5; background: #effdf6; }
 .source-progress-error { border-color: #ffc8d5; background: #fff3f7; }
+.source-recompute {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #dce8ff;
+  background: #f7fbff;
+  font-size: 12px;
+}
+.source-recompute strong { color: var(--text); font-size: 13px; }
+.source-recompute span,
+.source-recompute small { color: var(--muted); line-height: 1.45; }
+.source-recompute-warn { border-color: #ffdca8; background: #fff9ec; }
+.source-recompute-warn strong { color: var(--orange); }
+.source-recompute-ok strong { color: var(--green); }
 
 .row-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .tool-button {

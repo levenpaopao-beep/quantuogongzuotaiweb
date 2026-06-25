@@ -1691,6 +1691,16 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(payload["summary"]["total"], 1)
                 self.assertEqual(payload["summary"]["by_owner"], {"小琴": 1})
 
+                summary_only = daily_ops_desktop_adapter.operation_tasks_payload({
+                    "role": "admin",
+                    "user": "管理员",
+                    "summary_only": True,
+                    "filters": {"role": "admin"},
+                })
+                self.assertEqual(summary_only["summary"]["total"], 2)
+                self.assertEqual(summary_only["tasks"], [])
+                self.assertEqual(summary_only["packages"], [])
+
     def test_electron_renderer_exposes_operation_task_center(self):
         root = Path(__file__).resolve().parent
         html = (root / "electron" / "renderer.html").read_text(encoding="utf-8")
@@ -2905,6 +2915,9 @@ class OperationTaskStoreTest(unittest.TestCase):
                 self.assertEqual(active_status["uploaded_at"], finished["uploaded_at"])
                 self.assertEqual(active_status["batch_files"], ["20260622-Temu销售.xlsx"])
                 self.assertEqual(active_status["total_rows"], 1)
+                self.assertTrue(active_status["recompute"]["needed"])
+                self.assertIn("Temu申报价异常", active_status["recompute"]["report_names"])
+                self.assertEqual(active_status["status"], "需重算任务")
 
     def test_backup_entrypoints_are_exposed(self):
         html = daily_ops_app.HTML_PAGE

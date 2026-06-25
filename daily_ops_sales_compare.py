@@ -1,12 +1,13 @@
+import html
 from pathlib import Path
 
-from openpyxl import load_workbook
+import update_shein_summary_30d_skc as raw_xlsx
 
 
 def norm(value):
     if value is None:
         return ""
-    return str(value).strip()
+    return html.unescape(str(value)).strip()
 
 
 def number(value):
@@ -27,44 +28,50 @@ def store_from_filename(path):
     return ""
 
 
-def find_header_row(ws, required_any):
-    max_row = min(ws.max_row or 0, 40)
-    max_col = min(ws.max_column or 0, 120)
-    for row_index in range(1, max_row + 1):
-        values = [norm(ws.cell(row_index, col).value) for col in range(1, max_col + 1)]
+def find_header_row(rows, required_any):
+    for row_index, row in enumerate(rows[:40]):
+        values = [norm(value) for value in row[:120]]
         if any(field in values for field in required_any):
             return row_index, values
     return None, []
 
 
+def first_header_index(header_map, *names):
+    for name in names:
+        if name in header_map:
+            return header_map[name]
+    return None
+
+
 def read_source_daily_average(path, platform):
     path = Path(path)
     try:
-        wb = load_workbook(path, read_only=True, data_only=True)
+        rows = raw_xlsx.read_xlsx_rows(path)
     except Exception:
         return {}
     result = {}
-    for ws in wb.worksheets:
-        header_row, headers = find_header_row(ws, ["7天销量", "近7天销量", "30天销量", "近30天销量"])
-        if not header_row:
+    header_row, headers = find_header_row(rows, ["7天销量", "近7天销量", "30天销量", "近30天销量"])
+    if header_row is None:
+        return {}
+    header_map = {name: index for index, name in enumerate(headers) if name}
+    store_col = first_header_index(header_map, "店铺", "店铺名称", "店铺名")
+    sales7_col = first_header_index(header_map, "7天销量", "近7天销量")
+    sales30_col = first_header_index(header_map, "30天销量", "近30天销量")
+    if sales7_col is None and sales30_col is None:
+        return {}
+    fallback_store = store_from_filename(path) if platform == "Shein" else ""
+    for row in rows[header_row + 1:]:
+        store = norm(row[store_col]) if store_col is not None and store_col < len(row) else fallback_store
+        if not store:
             continue
-        header_map = {name: index + 1 for index, name in enumerate(headers) if name}
-        store_col = header_map.get("店铺") or header_map.get("店铺名称") or header_map.get("店铺名")
-        sales7_col = header_map.get("7天销量") or header_map.get("近7天销量")
-        sales30_col = header_map.get("30天销量") or header_map.get("近30天销量")
-        if not sales7_col and not sales30_col:
-            continue
-        fallback_store = store_from_filename(path) if platform == "Shein" else ""
-        for row_index in range(header_row + 1, (ws.max_row or header_row) + 1):
-            store = norm(ws.cell(row_index, store_col).value) if store_col else fallback_store
-            if not store:
-                continue
-            if sales7_col:
-                daily = number(ws.cell(row_index, sales7_col).value) / 7
-            else:
-                daily = number(ws.cell(row_index, sales30_col).value) / 30
-            if daily:
-                result[store] = result.get(store, 0.0) + daily
+        if sales7_col is not None and sales7_col < len(row):
+            daily = number(row[sales7_col]) / 7
+        elif sales30_col is not None and sales30_col < len(row):
+            daily = number(row[sales30_col]) / 30
+        else:
+            daily = 0
+        if daily:
+            result[store] = result.get(store, 0.0) + daily
     return result
 
 

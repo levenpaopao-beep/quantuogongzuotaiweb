@@ -325,13 +325,23 @@ class DesktopAppTest(unittest.TestCase):
     def test_source_upload_state_is_visible_in_table_rows(self):
         source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
         css = (ROOT / "electron" / "renderer.css").read_text(encoding="utf-8")
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
         self.assertIn("sourceProgress", source)
         self.assertIn("renderSourceProgress", source)
+        self.assertIn("renderSourceRecompute", source)
+        self.assertIn("recomputeSource", source)
+        self.assertIn("重算关联任务", source)
+        self.assertIn("api.recomputeSource", source)
         self.assertIn("已选择", source)
         self.assertIn("上传成功", source)
         self.assertIn("上传失败", source)
         self.assertIn("待结束上传", source)
         self.assertIn("source-progress", css)
+        self.assertIn("source-recompute", css)
+        self.assertIn("经营报表仍默认使用店长填报销量", source)
+        self.assertIn("summary_only: true", source)
+        self.assertNotIn("<h2>平台与店铺</h2>", html)
+        self.assertNotIn("<h2>店铺负责人配置</h2>", html)
 
     def test_report_cards_include_direct_download_actions(self):
         source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")

@@ -171,6 +171,18 @@ REPORTS = {
     },
 }
 
+SOURCE_DEPENDENT_REPORTS = {
+    "temu_platform": ["temu_price", "temu_inventory", "temu_hot", "temu_slow", "temu_bargain", "low_score_warning"],
+    "temu_hot": ["temu_inventory", "temu_hot", "temu_bargain", "low_score_warning"],
+    "temu_bargain_input": ["temu_bargain"],
+    "low_score_input": ["low_score_warning"],
+    "shein_platform": ["shein_price", "shein_inventory", "shein_hot"],
+    "erp_base": ["temu_price", "temu_inventory", "temu_hot", "temu_bargain", "low_score_warning", "shein_price", "shein_inventory", "shein_hot"],
+    "erp_stock": ["temu_inventory", "shein_inventory"],
+    "erp_combo": ["temu_price", "temu_inventory", "temu_hot", "temu_bargain", "shein_price", "shein_inventory", "shein_hot"],
+    "owner": ["temu_price", "temu_inventory", "temu_hot", "low_score_warning", "shein_price", "shein_hot"],
+}
+
 DEFAULT_RULES = {
     "hot_item": {
         "temu_basis": "Temu爆旺款以最新上传的Temu爆旺款表为准。",
@@ -683,6 +695,56 @@ def recent_outputs(limit=20):
         }
         for p in files[:limit]
     ]
+
+
+def parse_timestamp(value):
+    text = norm(value)
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def latest_output_times_by_report(limit=300):
+    latest = {}
+    for item in recent_outputs(limit):
+        report_id = item.get("report", "")
+        timestamp = parse_timestamp(item.get("modified"))
+        if report_id and timestamp and (report_id not in latest or timestamp > latest[report_id]):
+            latest[report_id] = timestamp
+    return latest
+
+
+def source_recompute_state(category, uploaded_at):
+    reports = SOURCE_DEPENDENT_REPORTS.get(category, [])
+    report_names = [REPORTS.get(report_id, {}).get("name", report_id) for report_id in reports]
+    if not reports:
+        return {"reports": [], "report_names": [], "needed": False, "stale_reports": [], "latest_generated_at": "", "message": "该数据源不需要重算任务。"}
+    uploaded_time = parse_timestamp(uploaded_at)
+    output_times = latest_output_times_by_report()
+    latest_generated = max([output_times[report_id] for report_id in reports if report_id in output_times], default=None)
+    stale = [
+        report_id for report_id in reports
+        if report_id not in output_times or (uploaded_time and output_times[report_id] < uploaded_time)
+    ]
+    stale_names = [REPORTS.get(report_id, {}).get("name", report_id) for report_id in stale]
+    needed = bool(uploaded_time and stale)
+    message = "最新数据源已生效，建议重算关联任务。" if needed else "关联任务已按当前数据源生成。"
+    if not uploaded_time:
+        message = "当前还没有正式提交的数据源批次。"
+    return {
+        "reports": reports,
+        "report_names": report_names,
+        "needed": needed,
+        "stale_reports": stale,
+        "stale_report_names": stale_names,
+        "latest_generated_at": latest_generated.strftime("%Y-%m-%d %H:%M:%S") if latest_generated else "",
+        "message": message,
+    }
 
 
 def latest_by_date(folder, pattern):
@@ -1215,10 +1277,14 @@ def source_group_status():
             item["total_rows"] = uploaded.get("rows", "")
             item["batch_id"] = uploaded.get("batch_id", "")
             item["uploaded_at"] = uploaded.get("uploaded_at", "")
+            item["recompute"] = source_recompute_state(key, item["uploaded_at"])
             item["count"] = len(files)
             if uploaded_paths:
                 item["changed"] = bool(uploaded.get("changed"))
-                item["status"] = "已更新" if item["changed"] else "未变化"
+                if item["recompute"].get("needed"):
+                    item["status"] = "需重算任务"
+                else:
+                    item["status"] = "已更新" if item["changed"] else "未变化"
             elif latest_hash and uploaded.get("sha256") == latest_hash:
                 item["status"] = "未变化"
             else:
@@ -1674,6 +1740,46 @@ def run_weekly_reports():
     ok_count = sum(1 for item in results if item.get("status") == "ok")
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "summary": {"total": len(results), "ok": ok_count, "failed": len(results) - ok_count},
+        "task_sync": task_sync_total,
+        "results": results,
+    }
+
+
+def recompute_reports_for_source(category):
+    reports = SOURCE_DEPENDENT_REPORTS.get(category, [])
+    if category not in WEEKLY_SOURCE_GROUPS and category not in UPLOAD_TARGETS:
+        raise ValueError("未知数据源")
+    if not reports:
+        return {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "category": category,
+            "summary": {"total": 0, "ok": 0, "failed": 0},
+            "task_sync": {"created": 0, "updated": 0, "imported_rows": 0},
+            "results": [],
+        }
+    results = []
+    task_sync_total = {"created": 0, "updated": 0, "imported_rows": 0}
+    for report_id in reports:
+        try:
+            result = run_report(report_id, "V1")
+            result["status"] = "ok"
+            result["report"] = report_id
+            task_sync = result.get("task_sync") or {}
+            for key in task_sync_total:
+                task_sync_total[key] += int(task_sync.get(key) or 0)
+        except Exception as exc:
+            result = {
+                "status": "failed",
+                "report": report_id,
+                "name": REPORTS.get(report_id, {}).get("name", report_id),
+                "error": str(exc),
+            }
+        results.append(result)
+    ok_count = sum(1 for item in results if item.get("status") == "ok")
+    return {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "category": category,
         "summary": {"total": len(results), "ok": ok_count, "failed": len(results) - ok_count},
         "task_sync": task_sync_total,
         "results": results,

@@ -72,6 +72,10 @@ def generate_weekly_reports():
     return app.run_weekly_reports()
 
 
+def recompute_source(category):
+    return app.recompute_reports_for_source(category)
+
+
 def load_rules():
     return app.load_rules()
 
@@ -117,8 +121,9 @@ def desktop_task_filters(payload):
 
 
 def operation_tasks_payload(payload):
+    payload = payload or {}
     filters = desktop_task_filters(payload)
-    return operation_tasks(
+    result = operation_tasks(
         filters.get("role", "admin"),
         filters.get("user", ""),
         filters.get("status", ""),
@@ -133,6 +138,9 @@ def operation_tasks_payload(payload):
         filters.get("open_only", ""),
         filters.get("search", ""),
     )
+    if payload.get("summary_only"):
+        return {"summary": result["summary"], "packages": [], "tasks": []}
+    return result
 
 
 def submit_operation_task(task_id, actor, action, remark="", proof=""):

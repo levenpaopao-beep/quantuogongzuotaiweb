@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("dailyOps", {
   clearUpload: (category, payload) => ipcRenderer.invoke("api:clear-upload", category, payload || {}),
   generateWeekly: (payload) => ipcRenderer.invoke("api:generate-weekly", payload || {}),
   generateReport: (reportId, version, payload) => ipcRenderer.invoke("api:generate-report", reportId, version, payload || {}),
+  recomputeSource: (category, payload) => ipcRenderer.invoke("api:recompute-source", category, payload || {}),
   openOutput: (name, payload) => ipcRenderer.invoke("api:open-output", name, payload || {}),
   revealOutput: (name, payload) => ipcRenderer.invoke("api:reveal-output", name, payload || {}),
   loadRules: (payload) => ipcRenderer.invoke("api:load-rules", payload || {}),

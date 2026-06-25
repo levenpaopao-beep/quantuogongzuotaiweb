@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -48,6 +49,27 @@ class SalesCompareTest(unittest.TestCase):
         wb.save(blank)
 
         self.assertEqual(read_source_daily_average(blank, "Temu"), {})
+
+    def test_read_source_daily_average_from_dianxiaomi_dimension_a1_export(self):
+        path = Path(self.tmpdir.name) / "shein_dimension_a1.xlsx"
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["店铺", "小秘商品SKU", "7天销量", "30天销量"])
+        ws.append(["琪琪", "S001", 70, 300])
+        ws.append(["琪琪", "S002", 140, 600])
+        wb.save(path)
+
+        with zipfile.ZipFile(path, "r") as src:
+            parts = {name: src.read(name) for name in src.namelist()}
+        sheet_name = "xl/worksheets/sheet1.xml"
+        parts[sheet_name] = parts[sheet_name].replace(b'<dimension ref="A1:D3"/>', b'<dimension ref="A1"/>')
+        with zipfile.ZipFile(path, "w") as dst:
+            for name, payload in parts.items():
+                dst.writestr(name, payload)
+
+        result = read_source_daily_average(path, "Shein")
+
+        self.assertEqual(result["琪琪"], 30)
 
 
 if __name__ == "__main__":

@@ -371,7 +371,7 @@ async function submitTaskDialog(event) {
 function statusClass(status) {
   if (!status) return "";
   if (status.includes("异常") || status.includes("缺少")) return "status-danger";
-  if (status.includes("待") || status.includes("更新") || status.includes("已有")) return "status-warn";
+  if (status.includes("待") || status.includes("更新") || status.includes("已有") || status.includes("重算")) return "status-warn";
   return "";
 }
 
@@ -414,12 +414,30 @@ function renderSourceProgress(group) {
   </div>`;
 }
 
+function renderSourceRecompute(group) {
+  const recompute = group.recompute || {};
+  if (!recompute.report_names?.length) return "";
+  const tone = recompute.needed ? "source-recompute-warn" : "source-recompute-ok";
+  const staleNames = recompute.stale_report_names?.length ? recompute.stale_report_names : recompute.report_names;
+  const latest = recompute.latest_generated_at ? `最近生成 ${recompute.latest_generated_at}` : "还没有生成记录";
+  return `<div class="source-recompute ${tone}">
+    <strong>${recompute.needed ? "最新数据源待重算" : "关联任务已同步"}</strong>
+    <span>影响：${esc(staleNames.join("、"))}</span>
+    <small>${esc(latest)}。${esc(recompute.message || "")}</small>
+  </div>`;
+}
+
 function renderSources(groups) {
   const rows = $("#sourceRows");
   rows.innerHTML = "";
   const pendingGroups = groups.filter((item) => item.pending_count);
-  $("#statusSummary").textContent = `共 ${groups.length} 个数据源，${pendingGroups.length} 个有待提交文件`;
-  $("#syncHint").textContent = pendingGroups.length ? "有数据源等待结束上传，结束上传后才进入缺失矩阵。" : "所有已启用的数据源均已检查完成";
+  const recomputeGroups = groups.filter((item) => item.recompute?.needed);
+  $("#statusSummary").textContent = `共 ${groups.length} 个数据源，${pendingGroups.length} 个有待提交文件，${recomputeGroups.length} 个需要重算任务`;
+  $("#syncHint").textContent = pendingGroups.length
+    ? "有数据源等待结束上传，结束上传后才会正式生效。"
+    : recomputeGroups.length
+      ? "发现最新数据源已生效但关联任务尚未重算，请按数据源选择是否重算。经营报表仍默认使用店长填报销量。"
+      : "所有已启用的数据源和关联任务均已检查完成";
   renderImportHealth(groups);
   groups.forEach((group) => {
     const [badgeText, badgeClass] = sourceBadge(group.name);
@@ -427,7 +445,7 @@ function renderSources(groups) {
     row.className = "table-row";
     row.innerHTML = `
       <div class="table-cell source-name"><span class="source-badge ${badgeClass}">${badgeText}</span><span>${group.name}</span></div>
-      <div class="table-cell"><div class="file-name" title="${latestName(group)}">${latestName(group)}</div><div class="file-meta">${group.latest?.modified || "等待上传"}${group.batch_id ? ` · 批次 ${group.batch_id}` : ""}</div>${renderSourceProgress(group)}</div>
+      <div class="table-cell"><div class="file-name" title="${latestName(group)}">${latestName(group)}</div><div class="file-meta">${group.latest?.modified || "等待上传"}${group.batch_id ? ` · 批次 ${group.batch_id}` : ""}</div>${renderSourceProgress(group)}${renderSourceRecompute(group)}</div>
       <div class="table-cell pending">${group.pending_count || 0}</div>
       <div class="table-cell rows-count">${group.total_rows || group.latest?.rows || "-"}</div>
       <div class="table-cell"><span class="status-pill ${statusClass(group.status)}">${group.status}</span><div class="file-meta">${group.latest?.modified ? `更新于 ${group.latest.modified.slice(5, 16)}` : ""}</div></div>
@@ -435,11 +453,13 @@ function renderSources(groups) {
         <button class="tool-button" data-action="select">选择文件</button>
         <button class="tool-button" data-action="upload">上传</button>
         <button class="tool-button" data-action="finish">结束上传</button>
+        ${group.recompute?.needed ? '<button class="tool-button primary-mini" data-action="recompute">重算关联任务</button>' : ""}
       </div>
     `;
     row.querySelector('[data-action="select"]').addEventListener("click", () => selectFiles(group));
     row.querySelector('[data-action="upload"]').addEventListener("click", () => uploadSource(group));
     row.querySelector('[data-action="finish"]').addEventListener("click", () => finishUpload(group));
+    row.querySelector('[data-action="recompute"]')?.addEventListener("click", () => recomputeSource(group));
     rows.appendChild(row);
   });
 }
@@ -1189,7 +1209,7 @@ async function loadTasks(showToastOnDone = true) {
   try {
     const line = $("#taskStatusLine");
     if (line) line.textContent = "正在读取任务...";
-    const overview = await api.tasks(operatorPayload({ filters: taskOverviewFilters() }));
+    const overview = await api.tasks(operatorPayload({ filters: taskOverviewFilters(), summary_only: true }));
     state.taskOverview = overview.summary || {};
     const result = await api.tasks(operatorPayload({ filters: taskFilters() }));
     state.taskSummary = result.summary || {};
@@ -3799,6 +3819,24 @@ async function generateWeeklyReports() {
   });
   await refreshAll();
   showToast(`本周报表已生成；${taskSyncSummary(result.task_sync)}`);
+}
+
+async function recomputeSource(group) {
+  if (!api.recomputeSource || !group?.upload_target) return;
+  const names = group.recompute?.stale_report_names?.length ? group.recompute.stale_report_names : group.recompute?.report_names || [];
+  const ok = confirm(`确认根据「${group.name}」最新数据源重算关联任务？\n\n将重算：${names.join("、") || "关联任务"}`);
+  if (!ok) return;
+  try {
+    showToast(`开始重算 ${group.name} 关联任务`);
+    const result = await api.recomputeSource(group.upload_target, operatorPayload());
+    (result.results || []).forEach((item) => {
+      if (item.status === "ok") state.reportTaskSync[item.report] = item.task_sync || {};
+    });
+    await refreshAll();
+    showToast(`重算完成：成功 ${result.summary?.ok || 0} 个，失败 ${result.summary?.failed || 0} 个；${taskSyncSummary(result.task_sync)}`);
+  } catch (error) {
+    showToast(`重算失败：${userFacingError(error)}`);
+  }
 }
 
 function showPage(name) {

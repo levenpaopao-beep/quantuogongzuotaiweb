@@ -64,7 +64,7 @@ if (!tasks.summary || !Array.isArray(tasks.tasks) || !Array.isArray(tasks.packag
   fail("tasks 返回结构异常", ["需要包含 summary、tasks、packages"]);
 }
 
-const taskOverview = runCli("tasks", { ...admin, filters: { role: "admin" } });
+const taskOverview = runCli("tasks", { ...admin, summary_only: true, filters: { role: "admin" } });
 expectObject("task overview", taskOverview);
 const narrowTaskList = runCli("tasks", { ...admin, filters: { role: "admin", status: "__cli_smoke_no_status__" } });
 expectObject("narrow task list", narrowTaskList);
@@ -84,7 +84,7 @@ if (!ownerTasks.summary || !Array.isArray(ownerTasks.tasks) || !Array.isArray(ow
   fail("owner tasks 返回结构异常", ["店长口径需要包含 summary、tasks、packages"]);
 }
 
-const realOwners = Object.keys(taskOverview.summary.owner_status || {});
+const realOwners = Object.keys(taskOverview.summary.owner_status || {}).filter((owner) => owner && owner !== "未分配");
 if (realOwners.length) {
   const realOwner = realOwners[0];
   const realOwnerTasks = runCli("tasks", { role: "owner", user: realOwner, filters: { role: "owner", user: realOwner } });
@@ -92,7 +92,8 @@ if (realOwners.length) {
   if (!realOwnerTasks.summary || !Array.isArray(realOwnerTasks.tasks)) {
     fail("真实店长任务结构异常", ["需要包含 summary 和 tasks"]);
   }
-  const expectedTotal = Number(taskOverview.summary.owner_status[realOwner]?.total || 0);
+  const ownerOverview = taskOverview.summary.owner_status[realOwner] || {};
+  const expectedTotal = Number(ownerOverview.total || 0) - Number(ownerOverview.by_status?.["待推送"] || 0);
   const actualTotal = Number(realOwnerTasks.summary.total || 0);
   if (actualTotal !== expectedTotal) {
     fail("店长任务总览口径异常", [

@@ -60,10 +60,8 @@ const importMatrix = runCli("import-matrix", admin);
 expectObject("管理员导入矩阵", importMatrix);
 expectArray("管理员导入矩阵 rows", importMatrix.rows);
 
-const taskOverview = runCli("tasks", { ...admin, filters: { role: "admin", open_only: "1" } });
+const taskOverview = runCli("tasks", { ...admin, summary_only: true, filters: { role: "admin", open_only: "1" } });
 expectObject("管理员任务总览", taskOverview);
-expectArray("管理员任务 packages", taskOverview.packages);
-expectArray("管理员任务 tasks", taskOverview.tasks);
 
 [
   { status: "待推送", label: "管理员推送任务入口" },

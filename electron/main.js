@@ -520,6 +520,7 @@ ipcMain.handle("api:finish-upload", (_event, category, payload) => runPython("fi
 ipcMain.handle("api:clear-upload", (_event, category, payload) => runPython("clear-upload", [category], JSON.stringify(payload || {})));
 ipcMain.handle("api:generate-weekly", (_event, payload) => runPython("generate-weekly", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:generate-report", (_event, reportId, version, payload) => runPython("generate-report", [reportId, version || "V1"], JSON.stringify(payload || {})));
+ipcMain.handle("api:recompute-source", (_event, category, payload) => runPython("recompute-source", [category], JSON.stringify(payload || {})));
 ipcMain.handle("api:open-output", (_event, name, payload) => runPython("open-output", [name], JSON.stringify(payload || {})));
 ipcMain.handle("api:reveal-output", (_event, name, payload) => runPython("reveal-output", [name], JSON.stringify(payload || {})));
 ipcMain.handle("api:load-rules", (_event, payload) => runPython("load-rules", [], JSON.stringify(payload || {})));
