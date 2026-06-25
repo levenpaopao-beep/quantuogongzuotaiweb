@@ -304,6 +304,7 @@
               <p>选择店铺后输入一个商家编码，系统按货品编码拉出全部尺码；管理员只审批通过或不通过。</p>
             </div>
             <div class="download-actions">
+              <button class="ghost-button" id="openBargainPendingBtn" data-admin-only="bargain-review">待审核议价</button>
               <button class="ghost-button" id="openBargainHistoryBtn">议价历史</button>
               <button class="ghost-button" id="openBargainLowPriceBtn" data-admin-only="bargain-lowprice">低价回追</button>
               <button class="ghost-button" id="rebuildClearanceBtn" data-admin-only="bargain-clearance">重建清仓款式</button>
@@ -327,7 +328,7 @@
               </div>
               <div class="report-table-wrap bargain-table-wrap">
                 <table class="report-data-table bargain-table">
-                  <thead><tr><th>货品名称</th><th>申请店铺</th><th>卖得最好店铺</th><th>尺码</th><th>商家编码</th><th>本次议价</th><th>成本价</th><th>批发价占比</th><th>链接</th><th>最低申报价</th><th>风险</th><th>操作</th></tr></thead>
+                  <thead><tr><th>货品名称</th><th>申请店铺</th><th>卖得最好店铺</th><th>最好店30天销量</th><th>尺码</th><th>商家编码</th><th>本次议价</th><th>成本价</th><th>批发价占比</th><th>同款链接</th><th>本码链接</th><th>最低申报价</th><th>Temu 30天</th><th>Shein 30天</th><th>风险</th><th>操作</th></tr></thead>
                   <tbody id="bargainDraftRows"></tbody>
                 </table>
               </div>
@@ -347,11 +348,18 @@
                 <button class="tool-button" type="button" data-bargain-history-close>关闭</button>
               </div>
               <div class="business-tabs" id="bargainTabs">
+                <button class="segment" data-bargain-tab="pending" type="button" data-admin-only="bargain-review">待审核议价</button>
                 <button class="segment active" data-bargain-tab="history" type="button">审批记录</button>
                 <button class="segment" data-bargain-tab="clearance" type="button" data-admin-only="bargain-clearance">清仓款式</button>
                 <button class="segment" data-bargain-tab="lowprice" type="button" data-admin-only="bargain-lowprice">低价回追</button>
               </div>
               <div class="task-filters">
+                <select id="bargainFilterPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option></select>
+                <input id="bargainFilterStore" placeholder="申请店铺" />
+                <input id="bargainFilterOwner" placeholder="申请人/店长" data-admin-only="bargain-review" />
+                <select id="bargainFilterRisk"><option value="">全部风险</option><option>低于成本</option><option>低于批发价80%</option><option>ERP成本缺失</option><option>ERP批发价缺失</option></select>
+                <input id="bargainFilterDateFrom" type="date" aria-label="提交开始日期" />
+                <input id="bargainFilterDateTo" type="date" aria-label="提交结束日期" />
                 <input id="bargainHistorySearch" placeholder="商家编码 / 货品编码" />
                 <button class="ghost-button" id="searchBargainHistoryBtn">查询</button>
                 <button class="ghost-button" id="loadBargainHistoryBtn">刷新历史</button>
@@ -727,9 +735,18 @@
                 <label>库存最多拉取<input data-erp-field="stock_limit" type="number" min="100" max="10000" placeholder="10000" /></label>
                 <label>商品接口<input data-erp-field="product_endpoint" placeholder="goods_query.php" /></label>
                 <label>库存接口<input data-erp-field="stock_endpoint" placeholder="api_goods_stock_change_query.php" /></label>
-                <label class="check-line"><input data-erp-field="sync_product_archive" type="checkbox" /> 拉取货品档案（goods_query.php，全量 ERP 基础资料）</label>
-                <label class="check-line"><input data-erp-field="sync_stock_snapshot" type="checkbox" /> 拉取库存快照（stock_query.php，可销/实际/占用库存）</label>
-                <div class="erp-readonly-option span-2"><strong>销售出库单</strong><span>不拉取。本系统不调用销售出库单接口；库存+销量导出文件仍可作为本地数据源保留。</span></div>
+                <label>可用库存接口<input data-erp-field="available_stock_endpoint" placeholder="api_goods_stock_change_query.php" /></label>
+                <label>店铺接口<input data-erp-field="shop_endpoint" placeholder="shop_query.php" /></label>
+                <label>平台货品接口<input data-erp-field="platform_goods_endpoint" placeholder="vip_api_goods_query.php" /></label>
+                <label>销售出库单接口<input data-erp-field="sales_outbound_endpoint" placeholder="sales_trade_query.php" /></label>
+                <div class="erp-readonly-option span-2"><strong>主数据同步</strong><span>参与系统业务匹配；货品档案是 ERP 商品基础信息唯一来源。</span></div>
+                <label class="check-line"><input data-erp-field="sync_product_archive" type="checkbox" /> 查询货品档案（goods_query.php，全量 ERP 基础资料）</label>
+                <label class="check-line"><input data-erp-field="sync_stock_snapshot" type="checkbox" /> 查询库存同步（stock_query.php，可销/实际/占用库存）</label>
+                <label class="check-line"><input data-erp-field="sync_available_stock" type="checkbox" /> 查询可用库存（补充库存口径）</label>
+                <label class="check-line"><input data-erp-field="sync_shop_query" type="checkbox" /> 查询店铺（校验店铺/仓库配置）</label>
+                <div class="erp-readonly-option span-2"><strong>排查/可选同步</strong><span>单独落文件，不参与 ERP 商品基础信息匹配。</span></div>
+                <label class="check-line"><input data-erp-field="sync_platform_goods" type="checkbox" /> 平台货品查询（只做接口差异排查）</label>
+                <label class="check-line"><input data-erp-field="sync_sales_outbound" type="checkbox" /> 销售出库单（默认不拉，勾选后单独保存）</label>
                 <label class="check-line"><input data-erp-field="enabled" type="checkbox" /> 启用 ERP 接口</label>
                 <label class="check-line"><input data-erp-field="auto_sync" type="checkbox" /> 自动同步</label>
                 <label class="check-line"><input data-erp-field="manual_sync_first" type="checkbox" /> 手动同步为主</label>

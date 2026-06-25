@@ -228,8 +228,15 @@ DEFAULT_RULES = {
         "base_url": "https://openapi.ali.huice.cc/openapi",
         "product_endpoint": "goods_query.php",
         "stock_endpoint": "stock_query.php",
+        "available_stock_endpoint": "api_goods_stock_change_query.php",
+        "shop_endpoint": "shop_query.php",
+        "platform_goods_endpoint": "vip_api_goods_query.php",
+        "sales_outbound_endpoint": "sales_trade_query.php",
         "sync_product_archive": True,
         "sync_stock_snapshot": True,
+        "sync_available_stock": False,
+        "sync_shop_query": False,
+        "sync_platform_goods": False,
         "sync_sales_outbound": False,
         "shop_id": "",
         "shop_no": "",
@@ -1029,6 +1036,20 @@ def owner_from_assignments(assignments, platform, store):
         if any(key in assignment_keys for key in keys):
             return norm(assignment.get("owner"))
     return ""
+
+
+def assert_owner_store_access(platform, store, owner):
+    platform = norm(platform)
+    store = norm(store)
+    owner = norm(owner)
+    if not owner:
+        raise PermissionError("店长身份缺失，不能提交议价")
+    for assignment in load_store_owner_assignments():
+        if assignment.get("enabled", True) is False:
+            continue
+        if norm(assignment.get("platform")) == platform and norm(assignment.get("store")) == store and norm(assignment.get("owner")) == owner:
+            return True
+    raise PermissionError("只能选择自己负责的店铺提交议价")
 
 
 def bargain_input_files():
@@ -2299,6 +2320,8 @@ def bargain_platform_rows(payload=None):
 
 
 def lookup_bargain_staging(payload):
+    if payload.get("role") == "owner":
+        assert_owner_store_access(payload.get("platform", ""), payload.get("store", ""), payload.get("owner", ""))
     rows = bargain_store().lookup_staging_rows(
         merchant_code=payload.get("merchant_code", ""),
         request_store=payload.get("store", ""),
@@ -2313,6 +2336,8 @@ def lookup_bargain_staging(payload):
 
 
 def submit_bargain_batch(payload):
+    if payload.get("role") == "owner":
+        assert_owner_store_access(payload.get("platform", ""), payload.get("store", ""), payload.get("owner", ""))
     return bargain_store().submit_batch(
         payload.get("store", ""),
         payload.get("platform", ""),
@@ -2373,10 +2398,12 @@ def handle_bargain_api(action, headers, payload=None):
         if action == "POST_LOOKUP":
             if role == "owner":
                 payload["owner"] = user
+                payload["role"] = "owner"
             return json_bytes({"ok": True, **lookup_bargain_staging(payload)})
         if action == "POST_SUBMIT":
             if role == "owner":
                 payload["owner"] = user
+                payload["role"] = "owner"
             return json_bytes({"ok": True, "batch": submit_bargain_batch(payload)})
         if action == "POST_REVIEW":
             if not can_review_tasks(operator):

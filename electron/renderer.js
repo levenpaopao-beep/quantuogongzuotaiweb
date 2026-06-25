@@ -1264,6 +1264,7 @@ function applyRouteIntent(route = {}) {
   if (route.taskOpenOnly && $("#taskOpenOnly")) $("#taskOpenOnly").checked = route.taskOpenOnly === "true";
   if (route.salesFocus) setSalesFocus(route.salesFocus, { scroll: route.emptyPage === "sales" });
   if (route.importFocus) setImportFocus(route.importFocus, { scroll: route.emptyPage === "imports" || route.focus === "import-matrix" });
+  if (route.bargainTab) openBargainHistoryDialog(route.bargainTab);
   if (route.emptyPage === "tasks" && (route.taskUser || route.taskStatus || route.taskNextHandler || route.taskOpenOnly)) {
     loadTasks();
   }
@@ -2119,7 +2120,7 @@ function renderTodayDashboard() {
       ["第 3 步：处理任务包", "已推送到你名下的任务按整包提交。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
     ] : [
       ["销量缺口", "查看未填销售日期和异常波动。", "sales", "看销量", 'data-sales-focus="missing"'],
-      ["议价审批", "看店长提交的议价，逐行通过或不通过。", "bargain", "去审批", ""],
+      ["议价审批", "看店长提交的议价，逐行通过或不通过。", "bargain", "去审批", 'data-bargain-tab="pending"'],
       ["任务确认", "店长整包处理后管理员确认归档。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
     ];
     salesActions.innerHTML = actions.map(([title, text, page, label, attrs]) => `
@@ -2139,7 +2140,7 @@ function renderTodayDashboard() {
       ["我的待处理任务包", status["待店长处理"] || 0, "按任务包整包处理，备注或凭证至少填一个。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
       ["我的导入待提交", pendingSources + missingSources, "每周导入自己店铺需要补的数据。", "imports", "去导入", 'data-focus="import-matrix" data-import-focus="blocked"'],
     ] : [
-      ["议价待审批", state.bargainHistory.filter((row) => row.status === "待管理员审核").length, "逐行通过或不通过，管理员不改价。", "bargain", "去审批", ""],
+      ["议价待审批", state.bargainHistory.filter((row) => row.status === "待管理员审核").length, "逐行通过或不通过，管理员不改价。", "bargain", "去审批", 'data-bargain-tab="pending"'],
       ["导入缺口", importBlocked, "按平台、店铺、数据类型看缺失矩阵。", "imports", "看矩阵", 'data-focus="import-matrix" data-import-focus="blocked"'],
       [adminQueueLabel, adminQueueCount, "管理员按当前队列处理，完成后任务从待办消失。", "tasks", "去处理", adminQueueAttrs],
       ["待店长处理", status["待店长处理"] || 0, "店长按任务包整包处理。", "tasks", "看进度", 'data-task-status="待店长处理" data-task-open-only="true"'],
@@ -3356,6 +3357,10 @@ function testErpSettings() {
   const scope = [
     settings.sync_product_archive !== false ? "货品档案" : "",
     settings.sync_stock_snapshot !== false ? "库存快照" : "",
+    settings.sync_available_stock ? "可用库存" : "",
+    settings.sync_shop_query ? "店铺" : "",
+    settings.sync_platform_goods ? "平台货品" : "",
+    settings.sync_sales_outbound ? "销售出库单" : "",
   ].filter(Boolean).join("、") || "未选择同步内容";
   const warehouse = settings.warehouse_name || settings.warehouse_no || "未指定仓库";
   const environment = settings.environment === "prod" ? "正式环境" : "测试环境";
@@ -3379,6 +3384,10 @@ async function manualErpSync() {
     const scopes = [
       next.erp_api.sync_product_archive !== false ? "货品档案" : "",
       next.erp_api.sync_stock_snapshot !== false ? "库存快照" : "",
+      next.erp_api.sync_available_stock ? "可用库存" : "",
+      next.erp_api.sync_shop_query ? "店铺" : "",
+      next.erp_api.sync_platform_goods ? "平台货品" : "",
+      next.erp_api.sync_sales_outbound ? "销售出库单" : "",
     ].filter(Boolean).join("、");
     if (!scopes) {
       const message = "请至少选择一个 ERP 拉取内容";
@@ -3632,7 +3641,7 @@ function renderBargainDraft() {
   if (!body) return;
   const rows = state.bargainDraft || [];
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="12" class="empty-table-cell">输入商家编码后，系统会把同一货品编码下所有尺码放到这里。</td></tr>';
+    body.innerHTML = '<tr><td colspan="16" class="empty-table-cell">输入商家编码后，系统会把同一货品编码下所有尺码放到这里。</td></tr>';
     return;
   }
   body.innerHTML = rows.map((row, index) => {
@@ -3642,13 +3651,17 @@ function renderBargainDraft() {
       <td>${esc(row["货品名称"] || "")}</td>
       <td>${esc(row["议价申请店铺"] || "")}</td>
       <td>${esc(row["卖得最好的店铺"] || "")}</td>
+      <td>${esc(row["卖得最好店铺30天销量"] || 0)}</td>
       <td>${esc(row["尺码"] || "")}</td>
       <td>${esc(row["商家编码"] || "")}</td>
       <td><input class="inline-price" data-bargain-price="${index}" value="${esc(row["本次议价"] || "")}" /></td>
       <td>${esc(row["成本价"] || "")}</td>
       <td data-bargain-ratio="${index}">${esc(bargainPriceRatio(row))}</td>
+      <td>${esc(row["同款在售链接数"] || row["在线销售链接数"] || 0)}</td>
       <td>${esc(row["在线销售链接数"] || 0)}</td>
       <td>${esc(row["在售最低申报价"] || "")}</td>
+      <td>${esc(row["Temu 30天最高销量"] || 0)}</td>
+      <td>${esc(row["Shein 30天最高销量"] || 0)}</td>
       <td data-bargain-risk="${index}"><span class="status-pill ${bargainRiskClass(risk.level)}">${esc(risk.text)}</span></td>
       <td><button class="tool-button" data-sync-bargain-price="${index}">同步到本款全部尺码</button></td>
     </tr>
@@ -3677,6 +3690,7 @@ function openBargainHistoryDialog(tab = "history") {
   renderBargainTabs();
   renderBargainHistory();
   if (tab === "history") loadBargainHistory(false);
+  if (tab === "pending") loadBargainHistory(false);
   if (tab === "clearance") loadBargainClearance(false);
 }
 
@@ -3690,6 +3704,10 @@ function closeBargainHistoryDialog() {
 function renderBargainHistory() {
   const wrap = $("#bargainHistoryRows");
   if (!wrap) return;
+  const title = $("#bargainHistoryTitle");
+  const hint = $("#bargainHistoryHint");
+  if (title) title.textContent = state.bargainTab === "pending" ? "待审核议价" : "议价历史";
+  if (hint) hint.textContent = state.bargainTab === "pending" ? "只显示待管理员审核的议价，支持筛选和批量处理。" : "管理员看全部；店长只看自己提交的数据。";
   if (state.bargainTab === "lowprice") {
     renderBargainLowPriceTrace();
     return;
@@ -3703,6 +3721,10 @@ function renderBargainHistory() {
     wrap.innerHTML = rows.slice(0, 120).map((row) => `
       <div class="output-row"><div><strong>${esc(row["货品编码"] || "")} · ${esc(row["货品名称"] || "")}</strong><p>${esc(row["商家编码"] || "")}　${esc(row["尺码"] || "")}　${esc(row["清仓分类"] || "")}</p></div></div>
     `).join("");
+    return;
+  }
+  if (state.bargainTab === "pending") {
+    renderBargainPendingTable(wrap);
     return;
   }
   const rows = state.bargainHistory || [];
@@ -3724,6 +3746,59 @@ function renderBargainHistory() {
       </div>
     `;
   }).join("");
+  wrap.querySelectorAll("[data-bargain-review]").forEach((button) => {
+    button.addEventListener("click", () => reviewBargainLine(button.dataset.batch, button.dataset.line, button.dataset.bargainReview));
+  });
+}
+
+function bargainRiskLabel(row) {
+  return row["风险标签"] || (row["风险等级"] === "red" ? "高风险" : "正常");
+}
+
+function renderBargainPendingTable(wrap) {
+  const rows = (state.bargainHistory || []).filter((row) => row.status === "待管理员审核");
+  if (!rows.length) {
+    wrap.innerHTML = `<div class="action-empty"><div><strong>暂无待审核议价</strong><span>当前筛选下没有需要管理员处理的议价。</span></div></div>`;
+    return;
+  }
+  wrap.innerHTML = `
+    <div class="report-table-wrap bargain-review-wrap">
+      <table class="report-data-table bargain-review-table">
+        <thead><tr>
+          <th><input type="checkbox" id="bargainSelectAllTable" /></th><th>申请人</th><th>平台</th><th>申请店铺</th><th>货品名称</th><th>尺码</th><th>商家编码</th><th>本次议价</th><th>成本价</th><th>批发价占比</th><th>风险</th><th>卖得最好店铺</th><th>最好店30天销量</th><th>同款链接</th><th>最低申报价</th><th>Temu 30天</th><th>Shein 30天</th><th>提交时间</th><th>拒绝理由/备注</th><th>操作</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td><input type="checkbox" class="bargain-review-check" data-bargain-line="${esc(row.id)}" data-bargain-batch="${esc(row.batch_id)}" /></td>
+              <td>${esc(row.owner || "")}</td>
+              <td>${esc(row.platform || row["平台"] || "")}</td>
+              <td>${esc(row.store || row["议价申请店铺"] || "")}</td>
+              <td>${esc(row["货品名称"] || "")}</td>
+              <td>${esc(row["尺码"] || "")}</td>
+              <td>${esc(row["商家编码"] || "")}</td>
+              <td>${esc(row.submitted_price || row["本次议价"] || "")}</td>
+              <td>${esc(row["成本价"] || "")}</td>
+              <td>${esc(row["建议申报价/批发价占比"] || "")}${row["建议申报价/批发价占比"] ? "%" : ""}</td>
+              <td><span class="status-pill ${bargainRiskClass(row["风险等级"] || "green")}">${esc(bargainRiskLabel(row))}</span></td>
+              <td>${esc(row["卖得最好的店铺"] || "")}</td>
+              <td>${esc(row["卖得最好店铺30天销量"] || 0)}</td>
+              <td>${esc(row["同款在售链接数"] || row["在线销售链接数"] || 0)}</td>
+              <td>${esc(row["在售最低申报价"] || row["同款最低申报价"] || "")}</td>
+              <td>${esc(row["Temu 30天最高销量"] || 0)}</td>
+              <td>${esc(row["Shein 30天最高销量"] || 0)}</td>
+              <td>${esc(row.submitted_at || "")}</td>
+              <td><input class="inline-remark" data-bargain-remark="${esc(row.id)}" placeholder="可空" /></td>
+              <td><button class="tool-button primary-mini" data-bargain-review="通过" data-line="${esc(row.id)}" data-batch="${esc(row.batch_id)}">通过</button><button class="tool-button danger-mini" data-bargain-review="不通过" data-line="${esc(row.id)}" data-batch="${esc(row.batch_id)}">拒绝</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+  $("#bargainSelectAllTable")?.addEventListener("change", (event) => {
+    wrap.querySelectorAll(".bargain-review-check").forEach((item) => { item.checked = event.target.checked; });
+  });
   wrap.querySelectorAll("[data-bargain-review]").forEach((button) => {
     button.addEventListener("click", () => reviewBargainLine(button.dataset.batch, button.dataset.line, button.dataset.bargainReview));
   });
@@ -3824,7 +3899,20 @@ async function ignoreBargainLowPrice(riskId) {
 async function loadBargainHistory(showToastOnDone = false) {
   if (!api.bargainHistory) return;
   const query = $("#bargainHistorySearch")?.value.trim() || "";
-  const payload = operatorPayload({ merchant_code: query, goods_code: query });
+  const merchantQuery = query.includes("-") ? query : "";
+  const goodsQuery = query && !query.includes("-") ? query : "";
+  const payload = operatorPayload({
+    merchant_code: merchantQuery,
+    goods_code: goodsQuery,
+    status: state.bargainTab === "pending" ? "待管理员审核" : "",
+    exclude_status: state.bargainTab === "history" ? "待管理员审核" : "",
+    platform: $("#bargainFilterPlatform")?.value || "",
+    store: $("#bargainFilterStore")?.value.trim() || "",
+    owner: $("#bargainFilterOwner")?.value.trim() || "",
+    risk: $("#bargainFilterRisk")?.value || "",
+    date_from: $("#bargainFilterDateFrom")?.value || "",
+    date_to: $("#bargainFilterDateTo")?.value || "",
+  });
   try {
     const result = await api.bargainHistory(payload);
     state.bargainHistory = result.rows || [];
@@ -3913,10 +4001,6 @@ async function submitBargain() {
 
 async function reviewBargainLine(batchId, lineId, decision) {
   const remark = $(`[data-bargain-remark="${CSS.escape(lineId)}"]`)?.value.trim() || "";
-  if (decision !== "通过" && !remark) {
-    showToast("拒绝原因必填");
-    return;
-  }
   try {
     await api.bargainReview(operatorPayload({ batch_id: batchId, line_ids: [lineId], decision, remark }));
     await loadBargainHistory(false);
@@ -3934,10 +4018,6 @@ async function reviewSelectedBargains(decision) {
     return;
   }
   const remark = decision === "通过" ? "" : (prompt("拒绝原因") || "").trim();
-  if (decision !== "通过" && !remark) {
-    showToast("拒绝原因必填");
-    return;
-  }
   try {
     for (const [batchId, lineIds] of byBatch.entries()) {
       await api.bargainReview(operatorPayload({ batch_id: batchId, line_ids: lineIds, decision, remark }));
@@ -4221,6 +4301,7 @@ function bindEvents() {
     showToast("议价暂存区已清空");
   });
   $("#openBargainHistoryBtn")?.addEventListener("click", () => openBargainHistoryDialog("history"));
+  $("#openBargainPendingBtn")?.addEventListener("click", () => openBargainHistoryDialog("pending"));
   $("#openBargainLowPriceBtn")?.addEventListener("click", () => openBargainHistoryDialog("lowprice"));
   document.querySelectorAll("[data-bargain-history-close]").forEach((button) => {
     button.addEventListener("click", closeBargainHistoryDialog);
@@ -4233,8 +4314,14 @@ function bindEvents() {
       state.bargainTab = button.dataset.bargainTab || "history";
       renderBargainTabs();
       renderBargainHistory();
-      if (state.bargainTab === "history") loadBargainHistory(false);
+      if (state.bargainTab === "history" || state.bargainTab === "pending") loadBargainHistory(false);
       if (state.bargainTab === "clearance") loadBargainClearance(false);
+    });
+  });
+  ["#bargainFilterPlatform", "#bargainFilterStore", "#bargainFilterOwner", "#bargainFilterRisk", "#bargainFilterDateFrom", "#bargainFilterDateTo"].forEach((selector) => {
+    $(selector)?.addEventListener("change", () => loadBargainHistory(false));
+    $(selector)?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") loadBargainHistory(true);
     });
   });
   $("#operatorRole")?.addEventListener("change", () => {

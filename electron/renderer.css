@@ -1390,6 +1390,21 @@ label { color: var(--muted); font-size: 12px; }
 .status-pill.danger { background: #fff0f5; color: var(--red); }
 .primary-mini { border-color: #c7dcff; color: #275bd8; background: #f0f6ff; }
 .danger-mini { border-color: #ffd2dd; color: var(--red); background: #fff5f8; }
+.bargain-review-wrap {
+  max-height: 58vh;
+  overflow: auto;
+}
+.bargain-review-table {
+  min-width: 1900px;
+}
+.bargain-review-table th,
+.bargain-review-table td {
+  padding: 9px 10px;
+  white-space: nowrap;
+}
+.bargain-review-table .inline-remark {
+  width: 150px;
+}
 
 .dialog-backdrop {
   position: fixed;

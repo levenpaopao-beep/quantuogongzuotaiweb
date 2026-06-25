@@ -276,7 +276,7 @@ class DailyOpsBargainAppTest(unittest.TestCase):
                     ],
                 })
 
-    def test_bargain_reject_requires_review_remark(self):
+    def test_bargain_reject_allows_empty_review_remark(self):
         bargain_file = self.root / "bargain_requests.json"
         with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file):
             batch = daily_ops_app.submit_bargain_batch({
@@ -285,13 +285,36 @@ class DailyOpsBargainAppTest(unittest.TestCase):
                 "owner": "小琴",
                 "lines": [{"货品编码": "330318682", "商家编码": "330318682-XS", "本次议价": 8}],
             })
-            with self.assertRaisesRegex(ValueError, "拒绝议价必须填写原因"):
-                daily_ops_app.review_bargain_lines({
-                    "batch_id": batch["id"],
-                    "line_ids": [batch["lines"][0]["id"]],
-                    "decision": "不通过",
-                    "admin": "管理员",
-                    "remark": "",
+            result = daily_ops_app.review_bargain_lines({
+                "batch_id": batch["id"],
+                "line_ids": [batch["lines"][0]["id"]],
+                "decision": "不通过",
+                "admin": "管理员",
+                "remark": "",
+            })
+            history = daily_ops_app.bargain_history({"merchant_code": "330318682-XS"})
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(history["rows"][0]["review_remark"], "管理员未填写理由")
+
+    def test_owner_bargain_submit_rejects_unowned_store(self):
+        bargain_file = self.root / "bargain_requests.json"
+        owner_map = self.root / "store_owner_map.json"
+        owner_map.write_text(json.dumps({
+            "assignments": [
+                {"platform": "Temu", "store": "一弟", "owner": "胡娟", "enabled": True},
+                {"platform": "Temu", "store": "五弟", "owner": "别人", "enabled": True},
+            ]
+        }, ensure_ascii=False), encoding="utf-8")
+        with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file), \
+             patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_map):
+            with self.assertRaisesRegex(PermissionError, "只能选择自己负责的店铺"):
+                daily_ops_app.submit_bargain_batch({
+                    "role": "owner",
+                    "store": "五弟",
+                    "platform": "Temu",
+                    "owner": "胡娟",
+                    "lines": [{"货品编码": "330318682", "商家编码": "330318682-XS", "本次议价": 8}],
                 })
 
 

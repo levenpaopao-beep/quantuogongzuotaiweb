@@ -257,6 +257,47 @@ class ErpSyncTest(unittest.TestCase):
             self.assertEqual(result["product_file"], "")
             self.assertEqual(calls, [daily_ops_erp.STOCK_ENDPOINT])
 
+    def test_manual_sync_can_pull_optional_authorized_interfaces_separately(self):
+        settings = {
+            "base_url": "https://api.wangdian.cn/openapi2",
+            "app_key": "app",
+            "app_secret": "secret",
+            "sid": "sid",
+            "shop_id": "1314",
+            "warehouse_name": "",
+            "sync_product_archive": False,
+            "sync_stock_snapshot": False,
+            "sync_available_stock": True,
+            "sync_shop_query": True,
+            "sync_platform_goods": True,
+            "sync_sales_outbound": True,
+            "latest_file_only": True,
+        }
+        calls = []
+
+        def fake_post(_settings, endpoint, params):
+            calls.append(endpoint)
+            if endpoint == daily_ops_erp.SHOP_ENDPOINT:
+                return {"shop_list": [{"shop_no": "1314", "shop_name": "测试店铺"}], "total_count": 1}
+            if endpoint == daily_ops_erp.PLATFORM_GOODS_ENDPOINT:
+                return {"goods_list": [{"api_goods_no": "P-1", "spec_no": "SKU-1"}], "total_count": 1}
+            if endpoint == daily_ops_erp.SALES_OUTBOUND_ENDPOINT:
+                return {"trade_list": [{"trade_no": "T-1"}], "total_count": 1}
+            return {"stock_change_list": [{"spec_no": "S-1", "stock_num": 11}], "current_count": 1}
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(daily_ops_erp, "post_api", side_effect=fake_post):
+            result = daily_ops_erp.manual_sync(settings, Path(tmp))
+
+        self.assertEqual(result["status"], "synced")
+        self.assertEqual(calls, [
+            daily_ops_erp.STOCK_CHANGE_ENDPOINT,
+            daily_ops_erp.SHOP_ENDPOINT,
+            daily_ops_erp.PLATFORM_GOODS_ENDPOINT,
+            daily_ops_erp.SALES_OUTBOUND_ENDPOINT,
+        ])
+        self.assertEqual(Path(result["extra_files"]["platform_goods"]).name, "erp平台货品查询_接口同步_最新.xlsx")
+        self.assertFalse(result["product_file"])
+
     def test_stock_change_sync_uses_documented_limit_without_pagination_or_time_window(self):
         settings = {
             "base_url": "https://api.wangdian.cn/openapi2",

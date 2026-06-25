@@ -12,6 +12,9 @@ from openpyxl import Workbook
 PRODUCT_ENDPOINT = "goods_query.php"
 STOCK_ENDPOINT = "stock_query.php"
 STOCK_CHANGE_ENDPOINT = "api_goods_stock_change_query.php"
+SHOP_ENDPOINT = "shop_query.php"
+PLATFORM_GOODS_ENDPOINT = "vip_api_goods_query.php"
+SALES_OUTBOUND_ENDPOINT = "sales_trade_query.php"
 QYB_TEST_BASE_URL = "https://sandbox.wangdian.cn/openapi2"
 QYB_PROD_BASE_URL = "https://api.wangdian.cn/openapi2"
 Y_TEST_BASE_URL = "https://openapi.ali.huice.cc/openapi"
@@ -330,6 +333,33 @@ def normalize_stock_rows(items, warehouse_no="", warehouse_name=""):
     return rows
 
 
+def normalize_generic_rows(items, endpoint):
+    rows = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        row = {key: _text(value) for key, value in item.items() if not isinstance(value, (dict, list))}
+        row["来源接口"] = endpoint
+        rows.append(row)
+    return rows
+
+
+def generic_headers(rows):
+    headers = []
+    seen = set()
+    preferred = ["来源接口", "shop_no", "shop_name", "warehouse_no", "warehouse_name", "goods_no", "spec_no", "api_goods_no", "api_spec_no", "trade_no", "modified"]
+    for key in preferred:
+        if any(key in row for row in rows) and key not in seen:
+            headers.append(key)
+            seen.add(key)
+    for row in rows:
+        for key in row:
+            if key not in seen:
+                headers.append(key)
+                seen.add(key)
+    return headers or ["来源接口"]
+
+
 def manual_sync(settings, erp_dir, now=None):
     missing = required_missing(settings)
     if missing:
@@ -350,13 +380,25 @@ def manual_sync(settings, erp_dir, now=None):
 
     product_endpoint = _text(settings.get("product_endpoint")) or PRODUCT_ENDPOINT
     stock_endpoint = _text(settings.get("stock_endpoint")) or STOCK_ENDPOINT
+    available_stock_endpoint = _text(settings.get("available_stock_endpoint")) or STOCK_CHANGE_ENDPOINT
+    shop_endpoint = _text(settings.get("shop_endpoint")) or SHOP_ENDPOINT
+    platform_goods_endpoint = _text(settings.get("platform_goods_endpoint")) or PLATFORM_GOODS_ENDPOINT
+    sales_outbound_endpoint = _text(settings.get("sales_outbound_endpoint")) or SALES_OUTBOUND_ENDPOINT
     sync_product_archive = settings.get("sync_product_archive", True) is not False
     sync_stock_snapshot = settings.get("sync_stock_snapshot", True) is not False
-    if not sync_product_archive and not sync_stock_snapshot:
-        return {"status": "blocked", "message": "请至少选择一个 ERP 拉取内容：货品档案或库存快照", "missing": ["同步内容"]}
+    sync_available_stock = settings.get("sync_available_stock", False) is True
+    sync_shop_query = settings.get("sync_shop_query", False) is True
+    sync_platform_goods = settings.get("sync_platform_goods", False) is True
+    sync_sales_outbound = settings.get("sync_sales_outbound", False) is True
+    if not any([sync_product_archive, sync_stock_snapshot, sync_available_stock, sync_shop_query, sync_platform_goods, sync_sales_outbound]):
+        return {"status": "blocked", "message": "请至少选择一个 ERP 拉取内容", "missing": ["同步内容"]}
 
     product_sync = {"rows": [], "pages": 0, "total": None, "messages": []}
     stock_sync = {"rows": [], "pages": 0, "total": None, "messages": []}
+    available_sync = {"rows": [], "pages": 0, "total": None, "messages": []}
+    shop_sync = {"rows": [], "pages": 0, "total": None, "messages": []}
+    platform_goods_sync = {"rows": [], "pages": 0, "total": None, "messages": []}
+    sales_outbound_sync = {"rows": [], "pages": 0, "total": None, "messages": []}
     if sync_product_archive:
         product_params = {}
         if product_endpoint != PRODUCT_ENDPOINT:
@@ -372,6 +414,17 @@ def manual_sync(settings, erp_dir, now=None):
             stock_sync = fetch_stock_change_rows(settings, stock_endpoint, shop_id, shop_no, stock_limit)
         else:
             stock_sync = fetch_available_stock_rows(settings, stock_endpoint, start_time, end_time, page_size, stock_limit, max_pages=max_pages)
+    if sync_available_stock:
+        available_sync = fetch_stock_change_rows(settings, available_stock_endpoint, shop_id, shop_no, stock_limit)
+    if sync_shop_query:
+        shop_sync = fetch_paged_rows(settings, shop_endpoint, {}, ["shop_list", "shops", "data"], page_size, max_pages=max_pages, row_limit=stock_limit)
+    if sync_platform_goods:
+        platform_params = {}
+        if shop_id:
+            platform_params["shop_id"] = shop_id
+        platform_goods_sync = fetch_paged_rows(settings, platform_goods_endpoint, platform_params, ["goods_list", "data"], page_size, max_pages=max_pages, row_limit=stock_limit)
+    if sync_sales_outbound:
+        sales_outbound_sync = fetch_paged_rows(settings, sales_outbound_endpoint, {"start_time": start_time, "end_time": end_time}, ["trade_list", "trades", "data"], page_size, max_pages=max_pages, row_limit=stock_limit)
 
     product_rows = normalize_product_rows(product_sync["rows"])
     stock_rows = normalize_stock_rows(stock_sync["rows"], warehouse_no, warehouse_name)
@@ -385,6 +438,7 @@ def manual_sync(settings, erp_dir, now=None):
         stock_name = f"erp库存同步_{stamp}.xlsx"
     product_file = ""
     stock_file = ""
+    extra_files = {}
     if sync_product_archive:
         product_file = _write_rows(
             erp_dir / product_name,
@@ -397,11 +451,30 @@ def manual_sync(settings, erp_dir, now=None):
             ["店铺编号", "店铺", "仓库编号", "仓库", "平台货品编码", "平台规格编码", "商家编码（新）", "商家编码", "货品名称", "规格名称", "可销库存", "实际库存", "占用库存", "修改时间", "来源接口"],
             stock_rows,
         )
+    extra_syncs = [
+        ("available_stock", "erp可用库存_接口同步", available_stock_endpoint, sync_available_stock, normalize_stock_rows(available_sync["rows"], warehouse_no, warehouse_name)),
+        ("shop_query", "erp店铺查询_接口同步", shop_endpoint, sync_shop_query, normalize_generic_rows(shop_sync["rows"], shop_endpoint)),
+        ("platform_goods", "erp平台货品查询_接口同步", platform_goods_endpoint, sync_platform_goods, normalize_generic_rows(platform_goods_sync["rows"], platform_goods_endpoint)),
+        ("sales_outbound", "erp销售出库单_接口同步", sales_outbound_endpoint, sync_sales_outbound, normalize_generic_rows(sales_outbound_sync["rows"], sales_outbound_endpoint)),
+    ]
+    for key, prefix, endpoint, enabled, rows in extra_syncs:
+        if not enabled:
+            continue
+        filename = f"{prefix}_最新.xlsx" if settings.get("latest_file_only") else f"{prefix}_{now.strftime('%Y%m%d_%H%M%S')}.xlsx"
+        extra_files[key] = str(_write_rows(erp_dir / filename, generic_headers(rows), rows))
     message_parts = []
     if sync_product_archive:
         message_parts.append(f"货品档案 {len(product_rows)} 条")
     if sync_stock_snapshot:
         message_parts.append(f"库存快照 {len(stock_rows)} 条")
+    if sync_available_stock:
+        message_parts.append(f"可用库存 {len(available_sync['rows'])} 条")
+    if sync_shop_query:
+        message_parts.append(f"店铺 {len(shop_sync['rows'])} 条")
+    if sync_platform_goods:
+        message_parts.append(f"平台货品 {len(platform_goods_sync['rows'])} 条")
+    if sync_sales_outbound:
+        message_parts.append(f"销售出库单 {len(sales_outbound_sync['rows'])} 条")
     return {
         "status": "synced",
         "message": f"已同步{'、'.join(message_parts)}",
@@ -411,8 +484,9 @@ def manual_sync(settings, erp_dir, now=None):
         "stock_pages": stock_sync["pages"],
         "product_total": product_sync["total"],
         "stock_total": stock_sync["total"],
-        "warnings": product_sync["messages"] + stock_sync["messages"],
+        "warnings": product_sync["messages"] + stock_sync["messages"] + available_sync["messages"] + shop_sync["messages"] + platform_goods_sync["messages"] + sales_outbound_sync["messages"],
         "product_file": str(product_file) if product_file else "",
         "stock_file": str(stock_file) if stock_file else "",
-        "api": {"product": product_endpoint, "stock": stock_endpoint},
+        "extra_files": extra_files,
+        "api": {"product": product_endpoint, "stock": stock_endpoint, "available_stock": available_stock_endpoint, "shop": shop_endpoint, "platform_goods": platform_goods_endpoint, "sales_outbound": sales_outbound_endpoint},
     }

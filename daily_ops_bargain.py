@@ -278,6 +278,8 @@ class BargainStore:
         clearance_catalog = clearance_catalog or build_clearance_catalog(erp_files)
         variant_codes = {item["商家编码"] for item in variants if item.get("商家编码")}
         best_store = best_store_for_goods(goods_code, platform_rows, variant_codes)
+        best_store_sales = best_store_sales_for_goods(goods_code, platform_rows, variant_codes)
+        goods_metrics = platform_metrics_for_goods(variant_codes, platform_rows)
         result = []
         for item in variants:
             metrics = platform_metrics_for_merchant(item["商家编码"], platform_rows)
@@ -302,6 +304,7 @@ class BargainStore:
                 "议价申请店铺": text(request_store),
                 "平台": text(platform),
                 "卖得最好的店铺": best_store,
+                "卖得最好店铺30天销量": best_store_sales,
                 "尺码": item["尺码"],
                 "商家编码": item["商家编码"],
                 "本次议价": suggest_price,
@@ -309,7 +312,9 @@ class BargainStore:
                 "批发价": wholesale,
                 "建议申报价/批发价占比": round(suggest_price / wholesale * 100, 2) if suggest_price and wholesale else "",
                 "在线销售链接数": metrics["在线链接数"],
+                "同款在售链接数": goods_metrics["同款在售链接数"],
                 "在售最低申报价": metrics["最低申报价"],
+                "同款最低申报价": goods_metrics["同款最低申报价"],
                 "Temu 30天最高销量": metrics["Temu 30天最高销量"],
                 "Shein 30天最高销量": metrics["Shein 30天最高销量"],
                 "平台仓库备货库存": metrics["平台仓库备货库存"],
@@ -371,8 +376,6 @@ class BargainStore:
         raise ValueError("议价记录不存在")
 
     def review_lines(self, batch_id, line_ids, decision, admin, remark=""):
-        if decision != "通过" and not text(remark):
-            raise ValueError("拒绝议价必须填写原因")
         data = self.load()
         wanted = set(line_ids or [])
         count = 0
@@ -386,7 +389,7 @@ class BargainStore:
                 line["status"] = STATUS_APPROVED if decision == "通过" else STATUS_REJECTED
                 line["reviewed_by"] = text(admin)
                 line["reviewed_at"] = timestamp
-                line["review_remark"] = text(remark)
+                line["review_remark"] = text(remark) or ("管理员未填写理由" if decision != "通过" else "")
                 count += 1
             batch["updated_at"] = timestamp
             statuses = {line.get("status") for line in batch.get("lines", [])}
@@ -428,8 +431,36 @@ class BargainStore:
             for line in batch.get("lines", []):
                 if filters.get("merchant_code") and line.get("商家编码") != filters["merchant_code"]:
                     continue
+                if filters.get("goods_code") and line.get("货品编码") != filters["goods_code"]:
+                    continue
+                if filters.get("status") and line.get("status") != filters["status"]:
+                    continue
+                if filters.get("exclude_status") and line.get("status") == filters["exclude_status"]:
+                    continue
+                if filters.get("platform") and line.get("platform") != filters["platform"]:
+                    continue
+                if filters.get("store") and line.get("store") != filters["store"]:
+                    continue
+                if filters.get("owner") and line.get("owner") != filters["owner"]:
+                    continue
+                if filters.get("risk") and filters["risk"] not in text(line.get("风险标签")):
+                    continue
+                submitted_date = text(line.get("submitted_at"))[:10]
+                if filters.get("date_from") and submitted_date < filters["date_from"]:
+                    continue
+                if filters.get("date_to") and submitted_date > filters["date_to"]:
+                    continue
                 rows.append(line)
-        return sorted(rows, key=lambda row: (row.get("商家编码", ""), int(row.get("version") or 0), row.get("submitted_at", "")))
+        def risk_rank(row):
+            tags = text(row.get("风险标签"))
+            if "低于成本" in tags:
+                return 0
+            if "低于批发价80%" in tags:
+                return 1
+            if "缺失" in tags:
+                return 2
+            return 3
+        return sorted(rows, key=lambda row: (risk_rank(row), row.get("submitted_at", ""), row.get("商家编码", "")))
 
     def approved_lines(self):
         return [line for line in self.history() if line.get("status") == STATUS_APPROVED]
@@ -521,6 +552,38 @@ def best_store_for_goods(goods_code, platform_rows, merchant_codes=None):
     top = max(totals.values())
     stores = sorted(store for store, value in totals.items() if value == top)
     return " / ".join(stores) + (" 并列" if len(stores) > 1 else "")
+
+
+def best_store_sales_for_goods(goods_code, platform_rows, merchant_codes=None):
+    totals = {}
+    prefix = text(goods_code)
+    allowed_codes = {canonical_merchant_code(code) for code in (merchant_codes or []) if text(code)}
+    for row in platform_rows or []:
+        merchant_code = text(row.get("商家编码") or row.get("merchant_code"))
+        compare_code = canonical_merchant_code(merchant_code)
+        if allowed_codes:
+            if compare_code not in allowed_codes:
+                continue
+        elif prefix and not standard_size_merchant_code(merchant_code, prefix):
+            continue
+        store = text(row.get("店铺") or row.get("store"))
+        if not store:
+            continue
+        totals[store] = totals.get(store, 0) + number(row.get("30天销量") or row.get("sales30"))
+    return max(totals.values()) if totals else 0
+
+
+def platform_metrics_for_goods(merchant_codes, platform_rows):
+    allowed_codes = {canonical_merchant_code(code) for code in (merchant_codes or []) if text(code)}
+    rows = [
+        row for row in platform_rows or []
+        if canonical_merchant_code(row.get("商家编码") or row.get("merchant_code")) in allowed_codes
+    ]
+    prices = [number(row.get("申报价") or row.get("price")) for row in rows if number(row.get("申报价") or row.get("price")) > 0]
+    return {
+        "同款在售链接数": sum(int(number(row.get("在线链接数"), 1) or 1) for row in rows),
+        "同款最低申报价": min(prices) if prices else 0,
+    }
 
 
 def platform_metrics_for_merchant(merchant_code, platform_rows):
