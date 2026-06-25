@@ -107,6 +107,28 @@ class DailyOpsBargainAppTest(unittest.TestCase):
         self.assertEqual(rows["rows"][0]["货品名称"], "自动源商品")
         self.assertEqual(rows["rows"][0]["Temu 30天最高销量"], 45)
 
+    def test_lookup_bargain_staging_does_not_flag_missing_cost_when_goods_archive_has_wholesale(self):
+        bargain_file = self.root / "bargain_requests.json"
+        erp_goods_archive = self.root / "erp_goods_archive.xlsx"
+        write_rows(erp_goods_archive, ["货品编码", "货品名称", "商家编码", "规格名称", "成本价", "批发报价", "来源接口"], [
+            {"货品编码": "330318390", "货品名称": "么么牛仔衣", "商家编码": "330318390-L", "规格名称": "蓝色/L", "成本价": "", "批发报价": 22, "来源接口": "goods_query.php"},
+        ])
+
+        with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file), \
+             patch.object(daily_ops_app, "erp_base_files", return_value=[erp_goods_archive]):
+            rows = daily_ops_app.lookup_bargain_staging({
+                "merchant_code": "330318390-L",
+                "store": "二弟",
+                "platform": "Temu",
+                "owner": "洁琳",
+                "platform_rows": [
+                    {"平台": "Temu", "店铺": "二弟", "商家编码": "330318390-L", "申报价": 16.62, "30天销量": 2},
+                ],
+            })
+
+        self.assertEqual(rows["rows"][0]["批发价"], 22)
+        self.assertEqual(rows["rows"][0]["风险标签"], "")
+
     def test_submit_and_review_bargain_batch(self):
         bargain_file = self.root / "bargain_requests.json"
         with patch.object(daily_ops_app, "BARGAIN_DB_FILE", bargain_file):

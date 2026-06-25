@@ -226,7 +226,7 @@ DEFAULT_RULES = {
         "manual_sync_first": True,
         "environment": "test",
         "base_url": "https://openapi.ali.huice.cc/openapi",
-        "product_endpoint": "vip_api_goods_query.php",
+        "product_endpoint": "goods_query.php",
         "stock_endpoint": "stock_query.php",
         "shop_id": "",
         "shop_no": "",
@@ -255,7 +255,7 @@ DEFAULT_RULES = {
     },
 }
 
-LEGACY_ERP_PRODUCT_ENDPOINT = "goods_query.php"
+LEGACY_ERP_PRODUCT_ENDPOINT = "vip_api_goods_query.php"
 LEGACY_ERP_STOCK_ENDPOINT = ""
 ERP_LOCAL_CREDENTIAL_FIELDS = {"app_key", "app_secret", "sid", "token"}
 

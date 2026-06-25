@@ -224,7 +224,7 @@ class BargainStore:
             cost = item["成本价"]
             clearance = is_clearance_goods(clearance_catalog, goods_code)
             risk_tags = []
-            if missing_erp or item.get("missing_erp") or not cost:
+            if missing_erp or item.get("missing_erp") or (not cost and not wholesale):
                 risk_tags.append("ERP成本缺失")
             if missing_erp or item.get("missing_erp") or not wholesale:
                 risk_tags.append("ERP批发价缺失")

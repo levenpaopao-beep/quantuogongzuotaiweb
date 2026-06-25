@@ -9,7 +9,7 @@ from pathlib import Path
 from openpyxl import Workbook
 
 
-PRODUCT_ENDPOINT = "vip_api_goods_query.php"
+PRODUCT_ENDPOINT = "goods_query.php"
 STOCK_ENDPOINT = "stock_query.php"
 STOCK_CHANGE_ENDPOINT = "api_goods_stock_change_query.php"
 QYB_TEST_BASE_URL = "https://sandbox.wangdian.cn/openapi2"

@@ -40,19 +40,19 @@ class ErpSyncTest(unittest.TestCase):
             "https://openapi.huice.com/openapi",
         )
 
-    def test_load_rules_migrates_legacy_erp_product_endpoint(self):
+    def test_load_rules_migrates_platform_goods_endpoint_to_goods_archive_endpoint(self):
         with tempfile.TemporaryDirectory() as tmp:
             rules_file = Path(tmp) / "report_rules.json"
             rules_file.write_text("""{
               "erp_api": {
-                "product_endpoint": "goods_query.php",
+                "product_endpoint": "vip_api_goods_query.php",
                 "stock_endpoint": "stock_query.php"
               }
             }""", encoding="utf-8")
             with patch.object(daily_ops_app, "RULES_FILE", rules_file):
                 rules = daily_ops_app.load_rules()
 
-        self.assertEqual(rules["erp_api"]["product_endpoint"], daily_ops_erp.PRODUCT_ENDPOINT)
+        self.assertEqual(rules["erp_api"]["product_endpoint"], "goods_query.php")
         self.assertEqual(rules["erp_api"]["stock_endpoint"], daily_ops_erp.STOCK_ENDPOINT)
         self.assertEqual(rules["erp_api"]["warehouse_name"], "宠物圈仓库")
 
