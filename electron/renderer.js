@@ -27,6 +27,10 @@ const state = {
   customPlatforms: [],
   ownerOptions: [],
   operatorAccounts: [],
+  bargainDraft: [],
+  bargainHistory: [],
+  bargainClearance: null,
+  bargainTab: "history",
 };
 
 const BUILT_IN_PLATFORMS = ["Temu", "Shein", "速卖通", "TK", "Ozon"];
@@ -1880,6 +1884,8 @@ function renderTodayDashboard() {
   const sourceGroups = state.status?.source_groups || [];
   const pendingSources = sourceGroups.reduce((sum, item) => sum + Number(item.pending_count || 0), 0);
   const missingSources = sourceGroups.filter((item) => String(item.status || "").includes("缺") || String(item.status || "").includes("待")).length;
+  const importSummary = state.importMatrix?.summary || {};
+  const importBlocked = Number(importSummary.blocked_stores || 0) || missingSources;
 
   const metrics = $("#todaySalesMetrics");
   if (metrics) {
@@ -1894,12 +1900,13 @@ function renderTodayDashboard() {
   const salesActions = $("#todaySalesActions");
   if (salesActions) {
     const actions = ownerMode ? [
-      ["第 1 步：填销量", "打开“销量管理”，把自己负责店铺的今日销量填完。", "sales", "去填写", 'data-sales-focus="missing"'],
-      ["第 2 步：看异常", "如果波动很大，补一句原因，系统只提醒不拦截。", "reports", "看提醒", ""],
-      ["第 3 步：处理任务包", "销量完成后进入“商品任务”，按整包提交处理结果。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
+      ["第 1 步：补销量", "按销售日期补录，通常处理 T-1 / T-2 的缺口。", "sales", "去补录", 'data-sales-focus="missing"'],
+      ["第 2 步：填议价", "输入商家编码，系统拉同货品编码下全部尺码。", "bargain", "去填议价", ""],
+      ["第 3 步：处理任务包", "已推送到你名下的任务按整包提交。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
     ] : [
-      ["管理员今日动作", "查看未填、异常波动、补填申请，并在月结前锁定口径。", "sales", "看销量", 'data-sales-focus="missing"'],
-      ["提醒店长", "未填或异常店铺会集中显示，方便按负责人跟进。", "sales", "去跟进", 'data-sales-focus="missing"'],
+      ["销量缺口", "查看未填销售日期和异常波动。", "sales", "看销量", 'data-sales-focus="missing"'],
+      ["议价审批", "看店长提交的议价，逐行通过或不通过。", "bargain", "去审批", ""],
+      ["任务确认", "店长整包处理后管理员确认归档。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
     ];
     salesActions.innerHTML = actions.map(([title, text, page, label, attrs]) => `
       <div class="action-route">
@@ -1913,15 +1920,16 @@ function renderTodayDashboard() {
   const actionList = $("#todayActionList");
   if (actionList) {
     const rows = ownerMode ? [
-      ["我的待填销量", salesSummary.missing ?? 0, "当天销量是每天第一优先级。", "sales", "去填写", 'data-sales-focus="missing"'],
+      ["我的待填销售日", salesSummary.missing ?? 0, "按销售日期补齐，不再按今日口径误导。", "sales", "去补录", 'data-sales-focus="missing"'],
+      ["我要提议价", state.bargainDraft.length, "输入商家编码后先进入暂存区。", "bargain", "去填写", ""],
       ["我的待处理任务包", status["待店长处理"] || 0, "按任务包整包处理，备注或凭证至少填一个。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
       ["我的导入待提交", pendingSources + missingSources, "每周导入自己店铺需要补的数据。", "imports", "去导入", 'data-focus="import-matrix" data-import-focus="blocked"'],
-      ["等待管理员确认", status["待管理员审核"] || 0, "提交后由管理员打勾，完成后从待办消失。", "tasks", "查看", 'data-task-status="待管理员审核" data-task-open-only="true"'],
     ] : [
+      ["议价待审批", state.bargainHistory.filter((row) => row.status === "待管理员审核").length, "逐行通过或不通过，管理员不改价。", "bargain", "去审批", ""],
+      ["导入缺口", importBlocked, "按平台、店铺、数据类型看缺失矩阵。", "imports", "看矩阵", 'data-focus="import-matrix" data-import-focus="blocked"'],
       [adminQueueLabel, adminQueueCount, "管理员按当前队列处理，完成后任务从待办消失。", "tasks", "去处理", adminQueueAttrs],
       ["待店长处理", status["待店长处理"] || 0, "店长按任务包整包处理。", "tasks", "看进度", 'data-task-status="待店长处理" data-task-open-only="true"'],
       ["待管理员确认", status["待管理员审核"] || 0, "店长处理后管理员打勾完成。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
-      ["导入缺失/待提交", pendingSources + missingSources, "查看本周两批次导入矩阵。", "imports", "去检查", 'data-focus="import-matrix" data-import-focus="blocked"'],
     ];
     actionList.innerHTML = rows.map(([label, value, hint, page, action, attrs]) => `
       <div class="action-route">
@@ -2126,19 +2134,21 @@ function renderTodayWorkflow() {
   if (title) title.textContent = ownerMode ? "店长每日流程" : "管理员日常流程";
   if (hint) {
     hint.textContent = ownerMode
-      ? "每天以销量填报为主；每周补齐导入和任务包，提交后等管理员确认。"
-      : "每天盯销量和异常；每周看导入缺口、推送任务包，最后确认归档。";
+      ? "每天先补销售日期；有议价就在线提交；任务包按整包处理。"
+      : "每天看销量缺口和议价审批；每周看导入缺口和任务确认。";
   }
   const steps = ownerMode ? [
-    ["01", "填写今日销量", "进入销量管理，只填写自己负责店铺；波动大时补原因。", "sales", "去填销量", 'data-sales-focus="missing"'],
-    ["02", "处理我的任务包", "商品任务按整包提交，备注或凭证至少填一个。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
-    ["03", "补齐每周导入", "数据导入页只看自己店铺缺什么，补完后管理员能看到。", "imports", "看缺口", 'data-focus="import-matrix" data-import-focus="blocked"'],
-    ["04", "看经营结果", "回到经营报表查看自己店铺趋势和销量差异提醒。", "reports", "看报表", ""],
+    ["01", "补录销售日期", "进入销量管理，只补自己负责店铺缺的销售日。", "sales", "去补录", 'data-sales-focus="missing"'],
+    ["02", "填写议价申请", "输入商家编码，确认同货品编码下全部尺码的议价。", "bargain", "去议价", ""],
+    ["03", "处理我的任务包", "商品任务按整包提交，备注或凭证至少填一个。", "tasks", "去处理", 'data-task-status="待店长处理" data-task-open-only="true"'],
+    ["04", "补导入缺口", "每周只补自己店铺缺的数据源。", "imports", "看缺口", 'data-focus="import-matrix" data-import-focus="blocked"'],
+    ["05", "看经营结果", "回到经营报表查看自己店铺趋势和销量差异提醒。", "reports", "看报表", ""],
   ] : [
     ["01", "检查销量进度", "先看未填店铺和异常波动，提醒负责人补齐原因。", "sales", "看销量", 'data-sales-focus="missing"'],
-    ["02", "检查导入缺口", "按平台、店铺、数据类型看缺失矩阵，缺哪个店铺一眼定位。", "imports", "看矩阵", 'data-focus="import-matrix" data-import-focus="blocked"'],
-    ["03", "推送商品任务", "按任务包推送给店长；任务多时可下载表格给店长处理。", "tasks", "推送任务", 'data-task-status="待推送" data-task-open-only="true"'],
-    ["04", "确认并归档", "店长整包处理后，管理员只需确认打勾，任务从待办消失。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
+    ["02", "审批议价", "店长提交后逐行通过或不通过，管理员不改价。", "bargain", "去审批", ""],
+    ["03", "检查导入缺口", "按平台、店铺、数据类型看缺失矩阵，缺哪个店铺一眼定位。", "imports", "看矩阵", 'data-focus="import-matrix" data-import-focus="blocked"'],
+    ["04", "推送商品任务", "把待推送任务包确认后推送给店长处理。", "tasks", "去推送", 'data-task-status="待推送" data-task-open-only="true"'],
+    ["05", "确认任务归档", "店长整包处理后，管理员确认完成。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
   ];
   wrap.innerHTML = steps.map(([number, titleText, body, page, action, attrs]) => `
     <div class="workflow-step">
@@ -2635,15 +2645,18 @@ function renderErpSettings() {
   if (status) {
     const enabled = settings.enabled ? "已启用" : "未启用";
     const auto = settings.auto_sync ? "自动同步开启" : "手动同步为主";
+    const failed = settings.last_manual_sync_status === "failed";
     const counts = settings.last_manual_sync_at
       ? ` · 商品 ${settings.last_product_count || 0} 条/${settings.last_product_pages || 0} 页，库存 ${settings.last_stock_count || 0} 条/${settings.last_stock_pages || 0} 页`
       : "";
     const last = settings.last_manual_sync_at
       ? ` · 上次同步：${settings.last_manual_sync_at} ${settings.last_manual_sync_message || ""}`
       : "";
+    const success = failed && settings.last_success_sync_at ? ` · 当前使用上次成功数据：${settings.last_success_sync_at}` : "";
     const warehouse = settings.warehouse_name || settings.warehouse_no || "未指定仓库";
     const environment = settings.environment === "prod" ? "正式环境" : "测试环境";
-    status.textContent = `${settings.provider || "旺店通"} · ${environment} · ${enabled} · ${auto} · 仓库 ${warehouse}${last}${counts}`;
+    status.textContent = `${failed ? "ERP今日同步失败 · " : ""}${settings.provider || "旺店通"} · ${environment} · ${enabled} · ${auto} · 仓库 ${warehouse}${last}${success}${counts}`;
+    status.className = failed ? "status danger" : "status";
   }
 }
 
@@ -3197,6 +3210,180 @@ function reportTaskBadges(reportId) {
   return `<div class="queue-task-badges">${badges.map(([label, value]) => `<span class="queue-task-badge">${label} ${value}</span>`).join("")}</div>`;
 }
 
+function bargainRiskText(row) {
+  if (row["清仓款"] && row["风险等级"] === "orange") return "清仓低于成本";
+  if (row["风险等级"] === "red") return "低于成本";
+  return row["清仓款"] ? "清仓款" : "正常";
+}
+
+function renderBargainDraft() {
+  const body = $("#bargainDraftRows");
+  if (!body) return;
+  const rows = state.bargainDraft || [];
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="11" class="empty-table-cell">输入商家编码后，系统会把同一货品编码下所有尺码放到这里。</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map((row, index) => `
+    <tr>
+      <td>${esc(row["货品名称"] || "")}</td>
+      <td>${esc(row["议价申请店铺"] || "")}</td>
+      <td>${esc(row["卖得最好的店铺"] || "")}</td>
+      <td>${esc(row["尺码"] || "")}</td>
+      <td>${esc(row["商家编码"] || "")}</td>
+      <td><input class="inline-price" data-bargain-price="${index}" value="${esc(row["本次议价"] || "")}" /></td>
+      <td>${esc(row["成本价"] || "")}</td>
+      <td>${esc(row["建议申报价/批发价占比"] || "")}${row["建议申报价/批发价占比"] ? "%" : ""}</td>
+      <td>${esc(row["在线销售链接数"] || 0)}</td>
+      <td>${esc(row["在售最低申报价"] || "")}</td>
+      <td><span class="status-pill ${row["风险等级"] === "red" ? "status-danger" : row["风险等级"] === "orange" ? "status-warn" : "status-ok"}">${esc(bargainRiskText(row))}</span></td>
+    </tr>
+  `).join("");
+  body.querySelectorAll("[data-bargain-price]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const index = Number(input.dataset.bargainPrice);
+      if (state.bargainDraft[index]) state.bargainDraft[index]["本次议价"] = input.value.trim();
+    });
+  });
+}
+
+function renderBargainHistory() {
+  const wrap = $("#bargainHistoryRows");
+  if (!wrap) return;
+  if (state.bargainTab === "clearance") {
+    const rows = state.bargainClearance?.rows || [];
+    if (!rows.length) {
+      wrap.innerHTML = actionEmpty({ title: "暂无清仓款式", body: "点击重建清仓款式，从 ERP 商品基础表中识别货品分类包含清仓的款式。", primary: "重建清仓款式", page: "bargain" });
+      return;
+    }
+    wrap.innerHTML = rows.slice(0, 120).map((row) => `
+      <div class="output-row"><div><strong>${esc(row["货品编码"] || "")} · ${esc(row["货品名称"] || "")}</strong><p>${esc(row["商家编码"] || "")}　${esc(row["尺码"] || "")}　${esc(row["清仓分类"] || "")}</p></div></div>
+    `).join("");
+    return;
+  }
+  const rows = state.bargainHistory || [];
+  if (!rows.length) {
+    wrap.innerHTML = actionEmpty({ title: "暂无议价记录", body: "店长提交议价后，审批记录会显示在这里。", primary: "新增议价", page: "bargain" });
+    bindEmptyActions(wrap);
+    return;
+  }
+  wrap.innerHTML = rows.slice(0, 120).map((row) => {
+    const canReview = currentOperator().role !== "owner" && row.status === "待管理员审核";
+    return `
+      <div class="output-row bargain-history-row">
+        <div>
+          <strong>${esc(row["货品名称"] || row["货品编码"] || "")} · ${esc(row["商家编码"] || "")}</strong>
+          <p>${esc(row.platform || row["平台"] || "")} / ${esc(row.store || row["店铺"] || "")}　提交价：${esc(row.submitted_price || row["本次议价"] || "")}　版本：${esc(row.version || 1)}</p>
+          <p>状态：${esc(row.status || "")}　备注：${esc(row.review_remark || "-")}</p>
+        </div>
+        ${canReview ? `<div class="task-actions"><input class="inline-remark" data-bargain-remark="${esc(row.id)}" placeholder="备注可选" /><button class="tool-button primary-mini" data-bargain-review="通过" data-line="${esc(row.id)}" data-batch="${esc(row.batch_id)}">通过</button><button class="tool-button danger-mini" data-bargain-review="不通过" data-line="${esc(row.id)}" data-batch="${esc(row.batch_id)}">不通过</button></div>` : ""}
+      </div>
+    `;
+  }).join("");
+  wrap.querySelectorAll("[data-bargain-review]").forEach((button) => {
+    button.addEventListener("click", () => reviewBargainLine(button.dataset.batch, button.dataset.line, button.dataset.bargainReview));
+  });
+}
+
+async function loadBargainHistory(showToastOnDone = false) {
+  if (!api.bargainHistory) return;
+  const query = $("#bargainHistorySearch")?.value.trim() || "";
+  const payload = operatorPayload({ merchant_code: query, goods_code: query });
+  try {
+    const result = await api.bargainHistory(payload);
+    state.bargainHistory = result.rows || [];
+    renderBargainHistory();
+    if (showToastOnDone) showToast("议价历史已刷新");
+  } catch (error) {
+    showToast(error.message || "读取议价历史失败");
+  }
+}
+
+async function loadBargainClearance(showToastOnDone = false) {
+  if (!api.bargainClearance || currentOperator().role === "owner") return;
+  try {
+    state.bargainClearance = await api.bargainClearance(operatorPayload());
+    if (state.bargainTab === "clearance") renderBargainHistory();
+    if (showToastOnDone) showToast("清仓款式已刷新");
+  } catch (_error) {
+    state.bargainClearance = { rows: [], summary: {} };
+  }
+}
+
+async function rebuildBargainClearance() {
+  if (!api.rebuildBargainClearance) return;
+  try {
+    state.bargainClearance = await api.rebuildBargainClearance(operatorPayload());
+    state.bargainTab = "clearance";
+    renderBargainTabs();
+    renderBargainHistory();
+    showToast(`已重建清仓款式：${state.bargainClearance?.summary?.goods_count || 0} 个款式`);
+  } catch (error) {
+    showToast(error.message || "重建清仓款式失败");
+  }
+}
+
+function renderBargainTabs() {
+  document.querySelectorAll("[data-bargain-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.bargainTab === state.bargainTab);
+  });
+}
+
+async function lookupBargain() {
+  const merchantCode = $("#bargainMerchantCode")?.value.trim() || "";
+  const store = $("#bargainStore")?.value.trim() || "";
+  const platform = $("#bargainPlatform")?.value || "Temu";
+  if (!merchantCode) {
+    showToast("请先输入商家编码");
+    return;
+  }
+  if (!store) {
+    showToast("请填写议价申请店铺");
+    return;
+  }
+  try {
+    const result = await api.bargainLookup(operatorPayload({ merchant_code: merchantCode, store, platform }));
+    const existing = new Set(state.bargainDraft.map((row) => row["商家编码"]));
+    (result.rows || []).forEach((row) => {
+      if (!existing.has(row["商家编码"])) state.bargainDraft.push(row);
+    });
+    renderBargainDraft();
+    if ($("#bargainStatusLine")) $("#bargainStatusLine").textContent = `暂存区 ${state.bargainDraft.length} 条尺码议价`;
+    showToast("已拉取同货品全尺码");
+  } catch (error) {
+    showToast(error.message || "拉取议价数据失败");
+  }
+}
+
+async function submitBargain() {
+  if (!state.bargainDraft.length) {
+    showToast("暂存区为空");
+    return;
+  }
+  const store = $("#bargainStore")?.value.trim() || state.bargainDraft[0]["议价申请店铺"] || "";
+  const platform = $("#bargainPlatform")?.value || state.bargainDraft[0]["平台"] || "Temu";
+  try {
+    await api.bargainSubmit(operatorPayload({ store, platform, lines: state.bargainDraft }));
+    state.bargainDraft = [];
+    renderBargainDraft();
+    await loadBargainHistory(false);
+    showToast("议价申请已提交给管理员");
+  } catch (error) {
+    showToast(error.message || "提交议价失败");
+  }
+}
+
+async function reviewBargainLine(batchId, lineId, decision) {
+  const remark = $(`[data-bargain-remark="${CSS.escape(lineId)}"]`)?.value.trim() || "";
+  try {
+    await api.bargainReview(operatorPayload({ batch_id: batchId, line_ids: [lineId], decision, remark }));
+    await loadBargainHistory(false);
+    showToast(`议价已${decision}`);
+  } catch (error) {
+    showToast(error.message || "审批议价失败");
+  }
+}
+
 async function refreshAll() {
   try {
     applyOperatorToTasks();
@@ -3217,11 +3404,15 @@ async function refreshAll() {
     await loadSalesCompare(false);
     await loadImportMatrix(false);
     await loadTaskSuppressions();
+    await loadBargainHistory(false);
+    await loadBargainClearance(false);
     await loadTasks(false);
     renderTodayDashboard();
     renderBackupReminder();
     showToast("状态已刷新");
   } catch (error) {
+    renderTodayDashboard();
+    renderBackupReminder();
     showToast(error.message);
   }
 }
@@ -3317,6 +3508,7 @@ function showPage(name) {
   const pageMap = {
     today: "todayPage",
     sales: "salesPage",
+    bargain: "bargainPage",
     tasks: "tasksPage",
     imports: "importPage",
     reports: "reportsPage",
@@ -3411,6 +3603,26 @@ function bindEvents() {
   $("#batchApproveTasksBtn")?.addEventListener("click", () => confirmTasks());
   $("#suppressTasksBtn")?.addEventListener("click", () => suppressTasks());
   $("#saveOperatorBtn")?.addEventListener("click", saveOperator);
+  $("#lookupBargainBtn")?.addEventListener("click", lookupBargain);
+  $("#bargainMerchantCode")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") lookupBargain();
+  });
+  $("#submitBargainBtn")?.addEventListener("click", submitBargain);
+  $("#clearBargainDraftBtn")?.addEventListener("click", () => {
+    state.bargainDraft = [];
+    renderBargainDraft();
+    showToast("议价暂存区已清空");
+  });
+  $("#loadBargainHistoryBtn")?.addEventListener("click", () => loadBargainHistory(true));
+  $("#searchBargainHistoryBtn")?.addEventListener("click", () => loadBargainHistory(true));
+  $("#rebuildClearanceBtn")?.addEventListener("click", rebuildBargainClearance);
+  document.querySelectorAll("[data-bargain-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.bargainTab = button.dataset.bargainTab || "history";
+      renderBargainTabs();
+      renderBargainHistory();
+    });
+  });
   $("#operatorRole")?.addEventListener("change", () => {
     if (!validateOperatorDraft(true)) $("#operatorUser")?.focus();
   });

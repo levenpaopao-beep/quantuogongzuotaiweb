@@ -362,15 +362,21 @@ def manual_sync(settings, erp_dir, now=None):
 
     product_rows = normalize_product_rows(product_sync["rows"])
     stock_rows = normalize_stock_rows(stock_sync["rows"], warehouse_no, warehouse_name)
-    stamp = now.strftime("%Y%m%d_%H%M%S")
     erp_dir = Path(erp_dir)
+    if settings.get("latest_file_only"):
+        product_name = "erp产品基础信息表_接口同步_最新.xlsx"
+        stock_name = "erp库存同步_最新.xlsx"
+    else:
+        stamp = now.strftime("%Y%m%d_%H%M%S")
+        product_name = f"erp产品基础信息表_接口同步_{stamp}.xlsx"
+        stock_name = f"erp库存同步_{stamp}.xlsx"
     product_file = _write_rows(
-        erp_dir / f"erp产品基础信息表_接口同步_{stamp}.xlsx",
+        erp_dir / product_name,
         ["店铺编号", "店铺", "平台ID", "平台货品编码", "平台规格编码", "商家编码（新）", "货品编码", "货品名称", "规格名称", "条码", "平台库存", "成本价", "批发报价", "批发价", "零售价", "修改时间", "来源接口"],
         product_rows,
     )
     stock_file = _write_rows(
-        erp_dir / f"erp库存同步_{stamp}.xlsx",
+        erp_dir / stock_name,
         ["店铺编号", "店铺", "仓库编号", "仓库", "平台货品编码", "平台规格编码", "商家编码（新）", "商家编码", "货品名称", "规格名称", "可销库存", "实际库存", "占用库存", "修改时间", "来源接口"],
         stock_rows,
     )

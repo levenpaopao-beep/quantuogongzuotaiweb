@@ -39,7 +39,7 @@
   "erp_api": {
     "provider": "旺店通",
     "enabled": true,
-    "auto_sync": false,
+    "auto_sync": true,
     "manual_sync_first": true,
     "environment": "prod",
     "base_url": "https://openapi.huice.com/openapi",
@@ -56,6 +56,10 @@
     "request_interval_seconds": 1.1,
     "rate_limit_retry_seconds": 300,
     "rate_limit_retries": 2,
+    "latest_file_only": true,
+    "schedule_enabled": true,
+    "schedule_time": "05:00",
+    "timezone": "Asia/Shanghai",
     "app_key": "",
     "app_secret": "",
     "sid": "",
@@ -67,7 +71,7 @@
       "尺码规格"
     ],
     "last_tested_at": "",
-    "last_manual_sync_at": "2026-06-24 17:11:04",
+    "last_manual_sync_at": "2026-06-24 19:06:31",
     "last_manual_sync_status": "blocked",
     "last_manual_sync_message": "缺少接口凭证：AppKey、AppSecret、SID",
     "last_product_count": 0,

@@ -382,5 +382,98 @@ class ErpSyncTest(unittest.TestCase):
         self.assertEqual(result["messages"], [])
         sleep.assert_called_once_with(0)
 
+    def test_manual_sync_can_overwrite_latest_erp_files(self):
+        settings = {
+            "base_url": "https://api.wangdian.cn/openapi2",
+            "app_key": "app",
+            "app_secret": "secret",
+            "sid": "sid",
+            "warehouse_name": "",
+            "page_size": 1,
+            "latest_file_only": True,
+        }
+
+        def fake_post(_settings, endpoint, _params):
+            if endpoint == daily_ops_erp.PRODUCT_ENDPOINT:
+                return {"goods_list": [{"spec_no": "P-1"}], "total_count": 1}
+            return {"stock_list": [{"spec_no": "S-1", "stock_num": 8}], "total_count": 1}
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(daily_ops_erp, "post_api", side_effect=fake_post):
+            result = daily_ops_erp.manual_sync(settings, Path(tmp))
+
+        self.assertEqual(Path(result["product_file"]).name, "erp产品基础信息表_接口同步_最新.xlsx")
+        self.assertEqual(Path(result["stock_file"]).name, "erp库存同步_最新.xlsx")
+
+    def test_sync_erp_base_data_blocks_when_lock_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rules_file = root / "report_rules.json"
+            local_file = root / "erp_api.local.json"
+            lock_file = root / "erp_sync.lock"
+            rules_file.write_text(json.dumps({"erp_api": {"enabled": True}}, ensure_ascii=False), encoding="utf-8")
+            lock_file.write_text("running", encoding="utf-8")
+            with patch.object(daily_ops_app, "RULES_FILE", rules_file), \
+                patch.object(daily_ops_app, "ERP_API_LOCAL_FILE", local_file), \
+                patch.object(daily_ops_app, "ERP_SYNC_LOCK_FILE", lock_file):
+                result = daily_ops_app.sync_erp_base_data()
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("正在同步", result["message"])
+
+    def test_sync_erp_base_data_records_failure_without_clearing_last_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rules_file = root / "report_rules.json"
+            local_file = root / "erp_api.local.json"
+            lock_file = root / "erp_sync.lock"
+            erp_dir = root / "erp数据源"
+            rules_file.write_text(json.dumps({
+                "erp_api": {
+                    "enabled": True,
+                    "last_manual_sync_at": "2026-06-23 05:00:00",
+                    "last_manual_sync_status": "synced",
+                    "last_manual_sync_message": "已同步商品 10 条、库存 8 条",
+                    "last_product_count": 10,
+                    "last_stock_count": 8,
+                }
+            }, ensure_ascii=False), encoding="utf-8")
+
+            def fail_sync(_settings, _erp_dir):
+                raise RuntimeError("接口超时")
+
+            with patch.object(daily_ops_app, "RULES_FILE", rules_file), \
+                patch.object(daily_ops_app, "ERP_API_LOCAL_FILE", local_file), \
+                patch.object(daily_ops_app, "ERP_SYNC_LOCK_FILE", lock_file), \
+                patch.object(daily_ops_app, "ERP_DIR", erp_dir), \
+                patch("daily_ops_erp.manual_sync", side_effect=fail_sync):
+                result = daily_ops_app.sync_erp_base_data()
+                saved = json.loads(rules_file.read_text(encoding="utf-8"))["erp_api"]
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(saved["last_manual_sync_status"], "failed")
+        self.assertEqual(saved["last_product_count"], 10)
+        self.assertEqual(saved["last_stock_count"], 8)
+        self.assertIn("接口超时", saved["last_manual_sync_message"])
+
+    def test_erp_base_files_prefers_latest_sync_file_without_deleting_history_or_uploaded_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            erp_dir = Path(tmp)
+            latest = erp_dir / "erp产品基础信息表_接口同步_最新.xlsx"
+            old = erp_dir / "erp产品基础信息表_接口同步_20260624_161745.xlsx"
+            manual = erp_dir / "erp产品基础信息表_人工.xlsx"
+            uploaded = erp_dir / "erp产品基础信息表_上传.xlsx"
+            latest.write_text("latest", encoding="utf-8")
+            old.write_text("old", encoding="utf-8")
+            manual.write_text("manual", encoding="utf-8")
+            uploaded.write_text("uploaded", encoding="utf-8")
+
+            with patch.object(daily_ops_app, "ERP_DIR", erp_dir), patch.object(daily_ops_app, "manifest_paths", return_value=[uploaded]):
+                files = daily_ops_app.erp_base_files()
+
+            self.assertEqual(files, [latest])
+            self.assertTrue(old.exists())
+            self.assertTrue(manual.exists())
+            self.assertTrue(uploaded.exists())
+
 if __name__ == "__main__":
     unittest.main()

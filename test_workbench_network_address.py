@@ -147,11 +147,19 @@ class WorkbenchNetworkAddressTest(unittest.TestCase):
         self.assertFalse(daily_ops_app.is_shein_active_listing("正常供货", ""))
 
     def test_shein_price_summary_counts_listed_skc_even_when_supply_stopped(self):
-        path = ROOT / "shein数据源表" / "加加.xlsx"
-        if not path.exists():
-            self.skipTest("需要本地 Shein 加加数据源")
-        summary = generate_shein_price_abnormal.summarize_source_files([path])
-        self.assertEqual(summary["加加"]["active_skc_count"], 100)
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "加加.xlsx"
+            wb = daily_ops_app.Workbook()
+            ws = wb.active
+            ws.append(["SKC", "供应状态", "上架状态"])
+            ws.append(["skc-listed", "停产", "已上架"])
+            ws.append(["skc-listed", "正常供货", "已上架"])
+            ws.append(["skc-hidden", "正常供货", "已下架"])
+            wb.save(path)
+
+            summary = generate_shein_price_abnormal.summarize_source_files([path])
+
+        self.assertEqual(summary["加加"]["active_skc_count"], 1)
 
     def test_shein_inventory_summary_counts_listed_skc_even_when_supply_stopped(self):
         path = ROOT / "shein数据源表" / "加加.xlsx"

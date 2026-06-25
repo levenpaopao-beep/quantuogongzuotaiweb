@@ -169,7 +169,11 @@ function renderSmokeScript() {
         }
       };
       const openPage = async (page, selector, label) => {
-        document.querySelector('[data-page="' + page + '"]')?.click();
+        if (typeof showPage === "function") {
+          showPage(page);
+        } else {
+          document.querySelector('[data-page="' + page + '"]')?.click();
+        }
         await new Promise((resolve) => setTimeout(resolve, 100));
         requireVisible(selector, label);
         checkNoHorizontalOverflow(label);
@@ -199,6 +203,7 @@ function renderSmokeScript() {
         document.querySelectorAll("#todayGuideSteps .guide-step").length >= 6 &&
         document.querySelectorAll("#todayActionList .action-route").length >= 4
       );
+      await openPage("today", "#todayPage.page-active", "管理员进入今日工作台");
       requireText("title", "PETCIRCLE跨境工作台", "窗口标题");
       requireVisible(".sidebar", "侧边导航");
       requireVisible("#todayPage.page-active", "今日工作台首屏");
@@ -527,6 +532,15 @@ ipcMain.handle("api:business-report", (_event, payload) => runPython("business-r
 ipcMain.handle("api:backup-reminder", (_event, payload) => runPython("backup-reminder", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:import-matrix", (_event, payload) => runPython("import-matrix", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:erp-sync", (_event, payload) => runPython("erp-sync", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:bargain-clearance", (_event, payload) => runPython("bargain-clearance", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:bargain-rebuild-clearance", (_event, payload) => runPython("bargain-rebuild-clearance", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:bargain-lookup", (_event, payload) => runPython("bargain-lookup", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:bargain-submit", (_event, payload) => runPython("bargain-submit", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:bargain-review", (_event, payload) => runPython("bargain-review", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:bargain-resubmit", (_event, payload) => runPython("bargain-resubmit", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:bargain-history", (_event, payload) => runPython("bargain-history", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:bargain-low-price-trace", (_event, payload) => runPython("bargain-low-price-trace", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:bargain-ignore-low-price", (_event, payload) => runPython("bargain-ignore-low-price", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:create-backup", (_event, payload) => runPython("create-backup", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:restore-backup", (_event, payload) => runPython("restore-backup", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:run-doctor", (_event, payload) => {

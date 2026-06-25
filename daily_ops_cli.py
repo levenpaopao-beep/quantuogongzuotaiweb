@@ -183,6 +183,24 @@ def command(argv):
         return ok(adapter.import_matrix_payload(read_payload()))
     if name == "erp-sync":
         return ok(adapter.erp_sync_payload(read_payload()))
+    if name == "bargain-clearance":
+        return ok(adapter.bargain_clearance_payload(read_payload()))
+    if name == "bargain-rebuild-clearance":
+        return ok(adapter.rebuild_bargain_clearance_payload(read_payload()))
+    if name == "bargain-lookup":
+        return ok(adapter.bargain_lookup_payload(read_payload()))
+    if name == "bargain-submit":
+        return ok(adapter.bargain_submit_payload(read_payload()))
+    if name == "bargain-review":
+        return ok(adapter.bargain_review_payload(read_payload()))
+    if name == "bargain-resubmit":
+        return ok(adapter.bargain_resubmit_payload(read_payload()))
+    if name == "bargain-history":
+        return ok(adapter.bargain_history_payload(read_payload()))
+    if name == "bargain-low-price-trace":
+        return ok(adapter.bargain_low_price_trace_payload(read_payload()))
+    if name == "bargain-ignore-low-price":
+        return ok(adapter.bargain_ignore_low_price_payload(read_payload()))
     if name == "create-backup":
         require_admin(read_payload(), "生成备份")
         return ok(adapter.create_backup())

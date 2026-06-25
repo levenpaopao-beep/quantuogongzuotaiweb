@@ -25,6 +25,7 @@ from openpyxl.utils import get_column_letter
 import daily_ops_tasks
 import daily_ops_task_suppression
 import daily_ops_master_data
+import daily_ops_bargain
 import update_shein_summary_30d_skc as raw_xlsx
 
 
@@ -40,11 +41,14 @@ DB_PATH = ROOT / "基础数据库" / "project_base_data.sqlite"
 DATA_SOURCE_MANIFEST = ROOT / "基础数据库" / "data_source_manifest.json"
 RULES_FILE = ROOT / "基础数据库" / "report_rules.json"
 ERP_API_LOCAL_FILE = ROOT / "基础数据库" / "erp_api.local.json"
+ERP_SYNC_LOCK_FILE = ROOT / "基础数据库" / "erp_sync.lock"
 TASK_DB_PATH = ROOT / "基础数据库" / "operation_tasks.json"
 TASK_SUPPRESSION_FILE = ROOT / "基础数据库" / "operation_task_suppressions.json"
 STORE_OWNER_MAP_FILE = ROOT / "基础数据库" / "store_owner_map.json"
 OPERATOR_ACCOUNTS_FILE = ROOT / "基础数据库" / "operator_accounts.json"
 DAILY_SALES_FILE = ROOT / "基础数据库" / "daily_sales.json"
+BARGAIN_DB_FILE = ROOT / "基础数据库" / "bargain_requests.json"
+CLEARANCE_CATALOG_FILE = ROOT / "基础数据库" / "clearance_catalog.json"
 MASTER_IMPORT_REVIEW_FILE = Path.home() / "Downloads" / "基础信息导入整理表.xlsx"
 OWNER_FILE = ROOT / "店铺负责人对应表.xlsx"
 
@@ -191,7 +195,7 @@ DEFAULT_RULES = {
     "erp_api": {
         "provider": "旺店通",
         "enabled": False,
-        "auto_sync": False,
+        "auto_sync": True,
         "manual_sync_first": True,
         "environment": "test",
         "base_url": "https://openapi.ali.huice.cc/openapi",
@@ -208,6 +212,10 @@ DEFAULT_RULES = {
         "request_interval_seconds": 1.1,
         "rate_limit_retry_seconds": 300,
         "rate_limit_retries": 2,
+        "latest_file_only": True,
+        "schedule_enabled": True,
+        "schedule_time": "05:00",
+        "timezone": "Asia/Shanghai",
         "app_key": "",
         "app_secret": "",
         "sid": "",
@@ -462,6 +470,8 @@ def backup_source_paths():
         RULES_FILE,
         DATA_SOURCE_MANIFEST,
         STORE_OWNER_MAP_FILE,
+        BARGAIN_DB_FILE,
+        CLEARANCE_CATALOG_FILE,
         DB_PATH,
         OWNER_FILE,
         TEMU_DIR,
@@ -677,6 +687,9 @@ def source_files_for_category(category):
 
 
 def erp_base_files():
+    latest_sync = ERP_DIR / "erp产品基础信息表_接口同步_最新.xlsx"
+    if latest_sync.exists():
+        return [latest_sync]
     uploaded = manifest_paths("erp_base")
     if uploaded:
         return uploaded
@@ -991,17 +1004,38 @@ def sync_erp_base_data():
 
     rules = load_rules()
     settings = rules.get("erp_api", {})
-    result = daily_ops_erp.manual_sync(settings, ERP_DIR)
-    settings["last_manual_sync_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    settings["last_manual_sync_status"] = result.get("status", "")
-    settings["last_manual_sync_message"] = result.get("message", "")
-    settings["last_product_count"] = result.get("product_count", 0)
-    settings["last_stock_count"] = result.get("stock_count", 0)
-    settings["last_product_pages"] = result.get("product_pages", 0)
-    settings["last_stock_pages"] = result.get("stock_pages", 0)
-    rules["erp_api"] = settings
-    save_rules(rules)
-    return result
+    ERP_SYNC_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lock_fd = os.open(ERP_SYNC_LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return {"status": "blocked", "message": "ERP正在同步中，请稍后再试"}
+    try:
+        with os.fdopen(lock_fd, "w", encoding="utf-8") as lock:
+            lock.write(json.dumps({"pid": os.getpid(), "started_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, ensure_ascii=False))
+        try:
+            result = daily_ops_erp.manual_sync(settings, ERP_DIR)
+        except Exception as exc:
+            result = {"status": "failed", "message": f"ERP同步失败：{exc}"}
+        now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        settings["last_manual_sync_at"] = now_text
+        settings["last_manual_sync_status"] = result.get("status", "")
+        settings["last_manual_sync_message"] = result.get("message", "")
+        if result.get("status") == "synced":
+            settings["last_success_sync_at"] = now_text
+            settings["last_product_count"] = result.get("product_count", 0)
+            settings["last_stock_count"] = result.get("stock_count", 0)
+            settings["last_product_pages"] = result.get("product_pages", 0)
+            settings["last_stock_pages"] = result.get("stock_pages", 0)
+            settings["last_product_file"] = result.get("product_file", "")
+            settings["last_stock_file"] = result.get("stock_file", "")
+        rules["erp_api"] = settings
+        save_rules(rules)
+        return result
+    finally:
+        try:
+            ERP_SYNC_LOCK_FILE.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def readable_row_count(path):
@@ -1944,6 +1978,141 @@ def handle_rules_api(action, headers, payload=None):
         return json_bytes({"ok": False, "error": str(exc)}, status=500)
 
 
+def bargain_store():
+    return daily_ops_bargain.BargainStore(BARGAIN_DB_FILE)
+
+
+def save_clearance_catalog(catalog):
+    CLEARANCE_CATALOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CLEARANCE_CATALOG_FILE.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
+    return catalog
+
+
+def load_clearance_catalog():
+    if CLEARANCE_CATALOG_FILE.exists():
+        try:
+            return json.loads(CLEARANCE_CATALOG_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    catalog = daily_ops_bargain.build_clearance_catalog(erp_base_files())
+    return save_clearance_catalog(catalog)
+
+
+def rebuild_clearance_catalog():
+    return save_clearance_catalog(daily_ops_bargain.build_clearance_catalog(erp_base_files()))
+
+
+def bargain_platform_rows(payload=None):
+    rows = []
+    for row in (payload or {}).get("platform_rows") or []:
+        rows.append(row)
+    return rows
+
+
+def lookup_bargain_staging(payload):
+    rows = bargain_store().lookup_staging_rows(
+        merchant_code=payload.get("merchant_code", ""),
+        request_store=payload.get("store", ""),
+        platform=payload.get("platform", ""),
+        owner=payload.get("owner", ""),
+        erp_files=erp_base_files(),
+        clearance_catalog=load_clearance_catalog(),
+        platform_rows=bargain_platform_rows(payload),
+    )
+    return {"rows": rows, "clearance": load_clearance_catalog().get("summary", {})}
+
+
+def submit_bargain_batch(payload):
+    return bargain_store().submit_batch(
+        payload.get("store", ""),
+        payload.get("platform", ""),
+        payload.get("owner", ""),
+        payload.get("lines", []),
+    )
+
+
+def review_bargain_lines(payload):
+    return bargain_store().review_lines(
+        payload.get("batch_id", ""),
+        payload.get("line_ids", []),
+        payload.get("decision", ""),
+        payload.get("admin", "管理员"),
+        payload.get("remark", ""),
+    )
+
+
+def resubmit_bargain_line(payload):
+    return bargain_store().resubmit_line(
+        payload.get("line_id", ""),
+        payload.get("price", ""),
+        payload.get("owner", ""),
+    )
+
+
+def bargain_history(filters=None):
+    return {"rows": bargain_store().history(filters or {})}
+
+
+def low_price_trace(payload=None):
+    payload = payload or {}
+    return {"rows": bargain_store().low_price_trace(payload.get("platform_rows", []), payload.get("tolerance", 0.05))}
+
+
+def ignore_low_price(payload):
+    return bargain_store().ignore_low_price(payload.get("risk_ids", []), payload.get("actor", "管理员"), payload.get("remark", ""))
+
+
+def handle_bargain_api(action, headers, payload=None):
+    payload = payload or {}
+    try:
+        operator = operator_from_token(token_from_headers(headers))
+        role = operator.get("role") or "admin"
+        user = operator.get("user") or "管理员"
+        if action == "GET_HISTORY":
+            if not can_review_tasks(operator):
+                payload["owner"] = user
+            return json_bytes({"ok": True, **bargain_history(payload)})
+        if action == "GET_CLEARANCE":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以查看清仓款式表"}, status=403)
+            return json_bytes({"ok": True, **load_clearance_catalog()})
+        if action == "POST_REBUILD_CLEARANCE":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以重建清仓款式表"}, status=403)
+            return json_bytes({"ok": True, **rebuild_clearance_catalog()})
+        if action == "POST_LOOKUP":
+            if role == "owner":
+                payload["owner"] = user
+            return json_bytes({"ok": True, **lookup_bargain_staging(payload)})
+        if action == "POST_SUBMIT":
+            if role == "owner":
+                payload["owner"] = user
+            return json_bytes({"ok": True, "batch": submit_bargain_batch(payload)})
+        if action == "POST_REVIEW":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以审批议价"}, status=403)
+            payload["admin"] = user
+            return json_bytes({"ok": True, **review_bargain_lines(payload)})
+        if action == "POST_RESUBMIT":
+            if role == "owner":
+                payload["owner"] = user
+            return json_bytes({"ok": True, "batch": resubmit_bargain_line(payload)})
+        if action == "POST_LOW_PRICE_TRACE":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以低价回追"}, status=403)
+            return json_bytes({"ok": True, **low_price_trace(payload)})
+        if action == "POST_IGNORE_LOW_PRICE":
+            if not can_review_tasks(operator):
+                return json_bytes({"ok": False, "error": "只有管理员可以忽略低价风险"}, status=403)
+            payload["actor"] = user
+            return json_bytes({"ok": True, **ignore_low_price(payload)})
+        return json_bytes({"ok": False, "error": "议价接口不存在"}, status=404)
+    except PermissionError as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=401)
+    except Exception as exc:
+        return json_bytes({"ok": False, "error": str(exc)}, status=500)
+
+
 def operation_task_store():
     return daily_ops_tasks.OperationTaskStore(TASK_DB_PATH)
 
@@ -2772,6 +2941,9 @@ HTML_PAGE = r"""<!doctype html>
         <div class="overview-side">
           <div class="panel">
             <h2>负责人待办</h2>
+            <div class="task-dashboard-actions">
+              <button class="secondary" onclick="switchTab('tasks')">进入任务包中心</button>
+            </div>
             <div class="overview-table-wrap">
               <table>
                 <thead><tr><th>负责人</th><th>店铺</th><th>待办</th><th>待审核</th><th>超时</th></tr></thead>
@@ -4174,6 +4346,18 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
                 params = parse_qs(parsed.query)
                 status, content_type, body = handle_tasks_api("GET", self.headers, task_query_payload(params))
                 self.send_payload(status, content_type, body)
+            elif parsed.path == "/api/bargain/history":
+                params = parse_qs(parsed.query)
+                self.send_payload(*handle_bargain_api("GET_HISTORY", self.headers, {
+                    "merchant_code": params.get("merchant_code", [""])[0],
+                    "goods_code": params.get("goods_code", [""])[0],
+                    "store": params.get("store", [""])[0],
+                    "platform": params.get("platform", [""])[0],
+                    "owner": params.get("owner", [""])[0],
+                    "status": params.get("status", [""])[0],
+                }))
+            elif parsed.path == "/api/bargain/clearance":
+                self.send_payload(*handle_bargain_api("GET_CLEARANCE", self.headers))
             elif parsed.path == "/api/owners":
                 self.send_payload(*handle_owners_api(self.headers))
             elif parsed.path == "/api/store-owners":
@@ -4277,6 +4461,27 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/tasks/export":
                 cancel_scheduled_shutdown()
                 self.send_payload(*handle_tasks_api("POST_EXPORT", self.headers, self.read_json()))
+            elif parsed.path == "/api/bargain/clearance/rebuild":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_bargain_api("POST_REBUILD_CLEARANCE", self.headers, self.read_json()))
+            elif parsed.path == "/api/bargain/lookup":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_bargain_api("POST_LOOKUP", self.headers, self.read_json()))
+            elif parsed.path == "/api/bargain/submit":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_bargain_api("POST_SUBMIT", self.headers, self.read_json()))
+            elif parsed.path == "/api/bargain/review":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_bargain_api("POST_REVIEW", self.headers, self.read_json()))
+            elif parsed.path == "/api/bargain/resubmit":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_bargain_api("POST_RESUBMIT", self.headers, self.read_json()))
+            elif parsed.path == "/api/bargain/low-price-trace":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_bargain_api("POST_LOW_PRICE_TRACE", self.headers, self.read_json()))
+            elif parsed.path == "/api/bargain/low-price-ignore":
+                cancel_scheduled_shutdown()
+                self.send_payload(*handle_bargain_api("POST_IGNORE_LOW_PRICE", self.headers, self.read_json()))
             elif parsed.path == "/api/backup/create":
                 cancel_scheduled_shutdown()
                 self.send_payload(*handle_backup_api("CREATE", self.headers, self.read_json()))

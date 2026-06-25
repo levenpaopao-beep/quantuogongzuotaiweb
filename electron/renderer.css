@@ -1718,6 +1718,24 @@ label { color: var(--muted); font-size: 12px; }
   color: var(--muted);
   text-align: center;
 }
+
+.bargain-table th,
+.bargain-table td {
+  min-width: 88px;
+}
+
+.inline-price,
+.inline-remark {
+  width: 96px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: #fff;
+}
+
+.inline-remark {
+  width: 140px;
+}
 .report-data-table .sticky-col {
   position: sticky;
   left: 0;

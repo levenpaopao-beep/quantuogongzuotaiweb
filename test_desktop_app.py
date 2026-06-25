@@ -253,8 +253,8 @@ class DesktopAppTest(unittest.TestCase):
         for platform in ["Temu", "Shein", "速卖通", "TK", "Ozon"]:
             self.assertIn(platform, html)
             self.assertIn(platform, js)
-        self.assertIn('data-erp-field="page_size" type="number" min="1" max="100"', html)
-        self.assertIn('data-erp-field="stock_limit" type="number" min="1" max="2000"', html)
+        self.assertIn('data-erp-field="page_size" type="number" min="1" max="1000"', html)
+        self.assertIn('data-erp-field="stock_limit" type="number" min="100" max="10000"', html)
 
     def test_weekly_workflow_uses_table_workbench_layout(self):
         source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")

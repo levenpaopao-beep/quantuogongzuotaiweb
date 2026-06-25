@@ -412,6 +412,63 @@ def erp_sync_payload(payload):
     return app.sync_erp_base_data()
 
 
+def bargain_clearance_payload(payload):
+    require_admin_payload(payload or {}, "查看清仓款式")
+    return app.load_clearance_catalog()
+
+
+def rebuild_bargain_clearance_payload(payload):
+    require_admin_payload(payload or {}, "重建清仓款式")
+    return app.rebuild_clearance_catalog()
+
+
+def bargain_lookup_payload(payload):
+    payload = dict(payload or {})
+    if operator_role(payload) == "owner":
+        payload["owner"] = operator_user(payload, "")
+    return app.lookup_bargain_staging(payload)
+
+
+def bargain_submit_payload(payload):
+    payload = dict(payload or {})
+    if operator_role(payload) == "owner":
+        payload["owner"] = operator_user(payload, "")
+    return app.submit_bargain_batch(payload)
+
+
+def bargain_review_payload(payload):
+    require_admin_payload(payload or {}, "审批议价")
+    payload = dict(payload or {})
+    payload["admin"] = operator_user(payload)
+    return app.review_bargain_lines(payload)
+
+
+def bargain_resubmit_payload(payload):
+    payload = dict(payload or {})
+    if operator_role(payload) == "owner":
+        payload["owner"] = operator_user(payload, "")
+    return app.resubmit_bargain_line(payload)
+
+
+def bargain_history_payload(payload):
+    payload = dict(payload or {})
+    if operator_role(payload) == "owner":
+        payload["owner"] = operator_user(payload, "")
+    return app.bargain_history(payload)
+
+
+def bargain_low_price_trace_payload(payload):
+    require_admin_payload(payload or {}, "低价回追")
+    return app.low_price_trace(payload or {})
+
+
+def bargain_ignore_low_price_payload(payload):
+    require_admin_payload(payload or {}, "忽略低价风险")
+    payload = dict(payload or {})
+    payload["actor"] = operator_user(payload)
+    return app.ignore_low_price(payload)
+
+
 def create_backup():
     return app.create_operational_backup()
 
