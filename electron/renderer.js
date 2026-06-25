@@ -3589,6 +3589,19 @@ async function manualErpSync() {
     const result = await api.erpSync(operatorPayload());
     state.rules = await api.loadRules(operatorPayload());
     renderRules();
+    if (result.status === "blocked") {
+      const message = result.message || "ERP 正在同步中，请稍后再试";
+      setErpStatus("running", "ERP 同步未开始", message);
+      showToast(message);
+      return;
+    }
+    if (result.status && result.status !== "synced") {
+      const detail = result.message || `ERP 返回状态：${result.status}`;
+      const message = erpHumanMessage(detail);
+      setErpStatus("failed", "ERP 同步未完成", message, detail);
+      showToast(message);
+      return;
+    }
     const pages = `商品 ${result.product_pages || 0} 页、库存 ${result.stock_pages || 0} 页`;
     const warnings = (result.warnings || []).length ? `；提醒：${result.warnings.join("；")}` : "";
     const message = `${result.message || "ERP 同步完成"}；${pages}${warnings}`;

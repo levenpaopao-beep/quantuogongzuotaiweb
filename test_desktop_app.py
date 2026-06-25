@@ -486,6 +486,15 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("按选择同步 ERP", html)
         self.assertIn("sync_product_archive", source)
 
+    def test_erp_manual_sync_blocked_status_does_not_show_success_pages(self):
+        source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        start = source.index("async function manualErpSync()")
+        end = source.index("\nasync function createBackup()", start)
+        body = source[start:end]
+        self.assertIn('result.status === "blocked"', body)
+        self.assertIn('setErpStatus("running", "ERP 同步未开始"', body)
+        self.assertLess(body.index('result.status === "blocked"'), body.index("const pages ="))
+
     def test_bargain_draft_table_has_horizontal_scroll_boundary(self):
         html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
         css = (ROOT / "electron" / "renderer.css").read_text(encoding="utf-8")
