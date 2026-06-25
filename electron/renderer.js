@@ -2498,7 +2498,7 @@ function renderTodayWorkflow() {
     ["05", "看经营结果", "回到经营报表查看自己店铺趋势和销量差异提醒。", "reports", "看报表", ""],
   ] : [
     ["01", "查销量缺口", "先看未填店铺和异常波动，提醒负责人补齐原因。", "sales", "看销量", 'data-sales-focus="missing"'],
-    ["02", "审批议价", "店长提交后逐行通过或不通过，管理员不改价。", "bargain", "去审批", ""],
+    ["02", "审批议价", "店长提交后逐行通过或不通过，管理员不改价。", "bargain", "去审批", 'data-bargain-tab="pending"'],
     ["03", "查导入缺口", "按平台、店铺、数据类型看缺失矩阵，缺哪个店铺一眼定位。", "imports", "看矩阵", 'data-focus="import-matrix" data-import-focus="blocked"'],
     ["04", "推送任务包", "把待推送任务包确认后推送给店长处理。", "tasks", "去推送", 'data-task-status="待推送" data-task-open-only="true"'],
     ["05", "确认任务归档", "店长整包处理后，管理员确认完成。", "tasks", "去确认", 'data-task-status="待管理员审核" data-task-open-only="true"'],
@@ -4441,6 +4441,9 @@ function showPage(name) {
   setText("#pageTitle", next === "erpSettings" ? "ERP 接口设置" : (active?.textContent || "今日工作台"));
   if (next === "masterdata") loadProductInfo();
   if (next === "erpSettings") renderErpSettings();
+  if (next === "bargain" && currentOperator().role !== "owner") {
+    openBargainHistoryDialog("pending");
+  }
 }
 
 function bindEvents() {

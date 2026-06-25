@@ -85,6 +85,19 @@ class BargainWorkflowTest(unittest.TestCase):
         history = store.history({"merchant_code": "330319001-XS"})
         self.assertEqual([row["version"] for row in history], [1, 2])
 
+    def test_review_accepts_reject_word_and_reports_missing_line(self):
+        store = bargain.BargainStore(self.root / "bargain_requests.json")
+        batch = store.submit_batch("一弟", "Temu", "小琴", [
+            {"货品编码": "330319001", "货品名称": "正常外套", "商家编码": "330319001-XS", "尺码": "XS", "本次议价": 8},
+        ])
+
+        result = store.review_lines(batch["id"], [batch["lines"][0]["id"]], "拒绝", "管理员", "")
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(store.history({"merchant_code": "330319001-XS"})[0]["status"], "不通过")
+
+        with self.assertRaisesRegex(ValueError, "未找到可审批的议价记录"):
+            store.review_lines(batch["id"], ["missing-line"], "拒绝", "管理员", "")
+
     def test_low_price_trace_uses_single_merchant_ignore_floor(self):
         store = bargain.BargainStore(self.root / "bargain_requests.json")
         store.submit_batch("一弟", "Temu", "小琴", [

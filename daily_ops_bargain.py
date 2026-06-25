@@ -11,6 +11,9 @@ STATUS_APPROVED = "已通过"
 STATUS_REJECTED = "不通过"
 STATUS_REWORK = "需调整"
 
+APPROVE_DECISIONS = {"通过", "同意", "同意议价", "已通过"}
+REJECT_DECISIONS = {"不通过", "拒绝", "拒绝议价", "驳回", "已驳回"}
+
 
 def now_text():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -25,6 +28,15 @@ def number(value, default=0.0):
         return float(str(value).replace(",", "").strip())
     except (TypeError, ValueError):
         return default
+
+
+def review_status(decision):
+    value = text(decision)
+    if value in APPROVE_DECISIONS:
+        return STATUS_APPROVED
+    if value in REJECT_DECISIONS:
+        return STATUS_REJECTED
+    raise ValueError("议价审批结果只能是通过或拒绝")
 
 
 def read_workbook_rows(path):
@@ -378,6 +390,7 @@ class BargainStore:
     def review_lines(self, batch_id, line_ids, decision, admin, remark=""):
         data = self.load()
         wanted = set(line_ids or [])
+        status = review_status(decision)
         count = 0
         timestamp = now_text()
         for batch in data["batches"]:
@@ -386,15 +399,17 @@ class BargainStore:
             for line in batch.get("lines", []):
                 if line.get("id") not in wanted:
                     continue
-                line["status"] = STATUS_APPROVED if decision == "通过" else STATUS_REJECTED
+                line["status"] = status
                 line["reviewed_by"] = text(admin)
                 line["reviewed_at"] = timestamp
-                line["review_remark"] = text(remark) or ("管理员未填写理由" if decision != "通过" else "")
+                line["review_remark"] = text(remark) or ("管理员未填写理由" if status == STATUS_REJECTED else "")
                 count += 1
             batch["updated_at"] = timestamp
             statuses = {line.get("status") for line in batch.get("lines", [])}
             if statuses and statuses.issubset({STATUS_APPROVED, STATUS_REJECTED}):
                 batch["status"] = "已审批"
+        if wanted and count == 0:
+            raise ValueError("未找到可审批的议价记录，请刷新待审核议价后再试")
         self.save(data)
         return {"count": count}
 

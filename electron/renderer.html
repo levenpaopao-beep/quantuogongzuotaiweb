@@ -57,17 +57,6 @@
         </header>
 
         <section class="page page-active" id="todayPage">
-          <section class="today-card daily-operation-panel span-3" id="dailyOperationPanel">
-            <div class="workflow-head compact-head">
-              <div>
-                <span class="pill">每日操作流程</span>
-                <h2 id="todayWorkflowTitle">管理员每日操作流程</h2>
-              </div>
-              <p id="todayWorkflowHint">每天打开先按顺序处理，异常和报表放在下面辅助判断。</p>
-            </div>
-            <div class="workflow-steps daily-operation-steps" id="todayWorkflowSteps"></div>
-          </section>
-
           <div class="today-grid">
             <section class="today-card span-3">
               <div class="panel-head">
@@ -83,6 +72,17 @@
             <section class="today-card span-2">
               <h2>今日待我处理</h2>
               <div class="stack-list" id="todayActionList"></div>
+            </section>
+
+            <section class="today-card daily-operation-panel span-3" id="dailyOperationPanel">
+              <div class="workflow-head compact-head">
+                <div>
+                  <span class="pill">今日流程</span>
+                  <h2 id="todayWorkflowTitle">管理员今日流程</h2>
+                </div>
+                <p id="todayWorkflowHint">只保留今天真正需要处理的顺序提醒，避免和待办重复。</p>
+              </div>
+              <div class="workflow-steps daily-operation-steps" id="todayWorkflowSteps"></div>
             </section>
           </div>
         </section>

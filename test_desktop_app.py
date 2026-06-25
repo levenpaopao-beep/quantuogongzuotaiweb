@@ -339,9 +339,9 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("homeBusinessOverview", html)
         self.assertIn("todayActionList", html)
         self.assertIn("todayWorkflowSteps", html)
-        self.assertIn("每日操作流程", html + js)
-        self.assertLess(html.index("todayWorkflowSteps"), html.index("homeBusinessOverview"))
+        self.assertIn("今日流程", html + js)
         self.assertLess(html.index("homeBusinessOverview"), html.index("todayActionList"))
+        self.assertLess(html.index("todayActionList"), html.index("todayWorkflowSteps"))
         for phrase in ["先填销售日销量", "先确认销量，再处理任务包", "再整包处理任务"]:
             self.assertNotIn(phrase, html + js)
 
@@ -431,6 +431,9 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("subpage-panel", html)
         self.assertIn("third-level-panel", html)
         self.assertIn("openBargainHistoryDialog", source)
+        self.assertIn('currentOperator().role !== "owner"', source)
+        self.assertIn('openBargainHistoryDialog("pending")', source)
+        self.assertIn('data-bargain-tab="pending"', source)
         self.assertIn("openBargainPendingBtn", html)
         self.assertIn("bargainFilterDateFrom", html)
         self.assertIn("bargainFilterDateTo", html)
