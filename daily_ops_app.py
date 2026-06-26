@@ -2024,7 +2024,7 @@ def run_weekly_reports():
         ("shein_hot", "V2"),
     ]
     results = []
-    task_sync_total = {"created": 0, "updated": 0, "imported_rows": 0}
+    task_sync_total = {"created": 0, "updated": 0, "archived": 0, "imported_rows": 0}
     for report_id, version in weekly:
         try:
             result = run_report(report_id, version)
@@ -2059,11 +2059,11 @@ def recompute_reports_for_source(category):
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "category": category,
             "summary": {"total": 0, "ok": 0, "failed": 0},
-            "task_sync": {"created": 0, "updated": 0, "imported_rows": 0},
+            "task_sync": {"created": 0, "updated": 0, "archived": 0, "imported_rows": 0},
             "results": [],
         }
     results = []
-    task_sync_total = {"created": 0, "updated": 0, "imported_rows": 0}
+    task_sync_total = {"created": 0, "updated": 0, "archived": 0, "imported_rows": 0}
     for report_id in reports:
         try:
             result = run_report(report_id, "V1")
@@ -2744,7 +2744,11 @@ def sync_report_tasks(report_id, workbook_path):
     rows = [{**row, "source_batch_id": batch_id} for row in rows]
     rows = apply_store_owner_mapping(rows)
     rows, suppressed = task_suppression_store().filter_rows(rows)
-    result = operation_task_store().upsert_generated_tasks(rows, default_status=daily_ops_tasks.STATUS_PENDING_PUSH)
+    result = operation_task_store().upsert_generated_tasks(
+        rows,
+        default_status=daily_ops_tasks.STATUS_PENDING_PUSH,
+        replace_source_report=report.get("name", report_id),
+    )
     result["imported_rows"] = len(rows)
     result["suppressed_rows"] = len(suppressed)
     return result
@@ -4391,7 +4395,7 @@ function updateReportOutputCapacity(){
 }
 function taskSyncSummary(sync){
   sync = sync || {};
-  return `新增任务 ${sync.created || 0} 条，更新任务 ${sync.updated || 0} 条，导入明细 ${sync.imported_rows || 0} 行`;
+  return `新增任务 ${sync.created || 0} 条，更新任务 ${sync.updated || 0} 条，自动归档 ${sync.archived || 0} 条，导入明细 ${sync.imported_rows || 0} 行`;
 }
 async function runReport(id){
   const st = document.getElementById('st_'+id); st.textContent='正在生成...';

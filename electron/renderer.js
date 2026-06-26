@@ -4075,7 +4075,7 @@ function formatSize(value) {
 
 function taskSyncSummary(sync) {
   const summary = sync || {};
-  return `新增任务 ${summary.created || 0} 条，更新任务 ${summary.updated || 0} 条，导入明细 ${summary.imported_rows || 0} 行`;
+  return `新增任务 ${summary.created || 0} 条，更新任务 ${summary.updated || 0} 条，自动归档 ${summary.archived || 0} 条，导入明细 ${summary.imported_rows || 0} 行`;
 }
 
 function reportTaskSummary(reportId) {

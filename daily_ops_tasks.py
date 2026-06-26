@@ -630,16 +630,20 @@ class OperationTaskStore:
             })
         return sorted(result, key=lambda row: (-row["task_count"], row["owner"]))
 
-    def upsert_generated_tasks(self, rows, default_status=STATUS_PENDING_OWNER):
+    def upsert_generated_tasks(self, rows, default_status=STATUS_PENDING_OWNER, replace_source_report=""):
         payload = self.load()
         tasks = payload["tasks"]
         existing = {row.get("id"): row for row in tasks}
         created = 0
         updated = 0
+        archived = 0
         timestamp = now_text()
+        current_ids = set()
+        reset_source_ids = set()
         for source in rows:
             row = {key: norm(value) for key, value in dict(source).items()}
             row_id = task_identity(row)
+            current_ids.add(row_id)
             if row_id in existing:
                 task = existing[row_id]
                 if norm(task.get("status")) == STATUS_DONE:
@@ -663,10 +667,13 @@ class OperationTaskStore:
                 ]:
                     next_value = row.get(key, task.get(key, ""))
                     if key in {"merchant_code", "source_file", "source_row", "source_batch_id"}:
+                        if replace_source_report and row_id not in reset_source_ids:
+                            task[key] = ""
                         next_value = merge_unique_text(task.get(key, ""), next_value)
                     if norm(task.get(key)) != norm(next_value):
                         changed_labels.append(TASK_UPDATE_LABELS.get(key, key))
                     task[key] = next_value
+                reset_source_ids.add(row_id)
                 if row.get("owner") and can_update_generated_owner(task):
                     if norm(task.get("owner")) != row.get("owner", ""):
                         changed_labels.append(TASK_UPDATE_LABELS.get("owner", "负责人"))
@@ -711,8 +718,31 @@ class OperationTaskStore:
                 tasks.append(task)
                 existing[row_id] = task
                 created += 1
+        replace_source_report = norm(replace_source_report)
+        if replace_source_report:
+            for task in tasks:
+                if norm(task.get("source_report")) != replace_source_report:
+                    continue
+                if norm(task.get("id")) in current_ids:
+                    continue
+                if norm(task.get("status")) == STATUS_DONE:
+                    continue
+                task["status"] = STATUS_DONE
+                task["completed_by"] = "系统"
+                task["completed_at"] = timestamp
+                task["completed_remark"] = "最新报表重算后未再出现，自动归档"
+                task["updated_at"] = timestamp
+                task.setdefault("history", []).append(history_entry(
+                    task,
+                    "系统",
+                    "最新报表重算",
+                    "自动归档",
+                    "最新报表重算后未再出现，退出当前待处理区",
+                    time=timestamp,
+                ))
+                archived += 1
         self.save(payload)
-        return {"created": created, "updated": updated, "total": len(tasks)}
+        return {"created": created, "updated": updated, "archived": archived, "total": len(tasks)}
 
     def push_tasks(self, task_ids, actor="管理员", remark=""):
         ids = []

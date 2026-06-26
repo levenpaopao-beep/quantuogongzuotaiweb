@@ -1100,6 +1100,96 @@ class OperationTaskStoreTest(unittest.TestCase):
             self.assertEqual(archived["system_action"], "低分仍在售，需处理")
             self.assertEqual(len(archived["history"]), history_count)
 
+    def test_latest_report_recalculation_archives_tasks_missing_from_current_snapshot(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            report_name = "Temu申报价异常"
+            store.upsert_generated_tasks([
+                {
+                    "platform": "Temu",
+                    "task_type": "价格异常",
+                    "store": "七弟",
+                    "owner": "胡娟",
+                    "merchant_code": "A-XS",
+                    "product_name": "下午茶圆领衫",
+                    "skc": "SKC-A",
+                    "system_action": "低于成本价",
+                    "source_report": report_name,
+                    "source_file": "yesterday.xlsx",
+                    "source_row": 2,
+                },
+                {
+                    "platform": "Temu",
+                    "task_type": "价格异常",
+                    "store": "七弟",
+                    "owner": "胡娟",
+                    "merchant_code": "B-XS",
+                    "product_name": "彩虹背心",
+                    "skc": "SKC-B",
+                    "system_action": "低于成本价",
+                    "source_report": report_name,
+                    "source_file": "yesterday.xlsx",
+                    "source_row": 3,
+                },
+            ], default_status=daily_ops_tasks.STATUS_PENDING_PUSH)
+
+            result = store.upsert_generated_tasks([
+                {
+                    "platform": "Temu",
+                    "task_type": "价格异常",
+                    "store": "七弟",
+                    "owner": "胡娟",
+                    "merchant_code": "A-S",
+                    "product_name": "下午茶圆领衫",
+                    "skc": "SKC-A",
+                    "system_action": "低于成本价",
+                    "source_report": report_name,
+                    "source_file": "today.xlsx",
+                    "source_row": 8,
+                },
+            ], default_status=daily_ops_tasks.STATUS_PENDING_PUSH, replace_source_report=report_name)
+
+            self.assertEqual(result["archived"], 1)
+            by_skc = {row["skc"]: row for row in store.list_tasks()}
+            self.assertEqual(by_skc["SKC-A"]["status"], daily_ops_tasks.STATUS_PENDING_PUSH)
+            self.assertEqual(by_skc["SKC-B"]["status"], daily_ops_tasks.STATUS_DONE)
+            self.assertEqual(by_skc["SKC-B"]["completed_by"], "系统")
+            self.assertIn("最新报表重算", by_skc["SKC-B"]["history"][-1]["event"])
+
+    def test_latest_report_recalculation_keeps_only_current_source_files_for_price_tasks(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = daily_ops_tasks.OperationTaskStore(root / "tasks.json")
+            report_name = "Temu申报价异常"
+            source = {
+                "platform": "Temu",
+                "task_type": "价格异常",
+                "store": "七弟",
+                "owner": "胡娟",
+                "merchant_code": "3303186721-XS",
+                "product_name": "下午茶圆领衫-白咖啡",
+                "skc": "90607490616",
+                "system_action": "低于成本价",
+                "source_report": report_name,
+                "source_file": "yesterday.xlsx",
+                "source_row": 12,
+                "source_batch_id": "yesterday",
+            }
+            store.upsert_generated_tasks([source], default_status=daily_ops_tasks.STATUS_PENDING_PUSH)
+
+            result = store.upsert_generated_tasks([
+                {**source, "merchant_code": "3303186721-S", "source_file": "today-a.xlsx", "source_row": 21, "source_batch_id": "today"},
+                {**source, "merchant_code": "3303186721-M", "source_file": "today-b.xlsx", "source_row": 22, "source_batch_id": "today"},
+            ], default_status=daily_ops_tasks.STATUS_PENDING_PUSH, replace_source_report=report_name)
+
+            self.assertEqual(result["updated"], 2)
+            task = store.list_tasks()[0]
+            self.assertEqual(task["source_file"], "today-a.xlsx、today-b.xlsx")
+            self.assertEqual(task["source_row"], "21、22")
+            self.assertEqual(task["source_batch_id"], "today")
+            self.assertEqual(task["merchant_code"], "3303186721-S、3303186721-M")
+
     def test_unassigned_task_must_be_assigned_before_owner_submit(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -3202,6 +3292,7 @@ class OperationTaskStoreTest(unittest.TestCase):
                 "task_sync": {
                     "created": 2 if report_id == "temu_hot" else 0,
                     "updated": 1 if report_id == "temu_slow" else 0,
+                    "archived": 4 if report_id == "temu_slow" else 0,
                     "imported_rows": 3 if report_id in {"temu_hot", "temu_slow"} else 0,
                 },
             }
@@ -3213,7 +3304,7 @@ class OperationTaskStoreTest(unittest.TestCase):
         self.assertEqual(result["summary"]["total"], 9)
         self.assertEqual(result["summary"]["ok"], 8)
         self.assertEqual(result["summary"]["failed"], 1)
-        self.assertEqual(result["task_sync"], {"created": 2, "updated": 1, "imported_rows": 6})
+        self.assertEqual(result["task_sync"], {"created": 2, "updated": 1, "archived": 4, "imported_rows": 6})
 
     def test_status_summarizes_existing_tasks_by_report(self):
         with TemporaryDirectory() as tmp:
