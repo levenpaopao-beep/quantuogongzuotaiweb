@@ -367,6 +367,32 @@ class ErpSyncTest(unittest.TestCase):
         self.assertNotIn("limit", stock_calls[0])
         self.assertEqual(stock_calls[1]["page_no"], 1)
 
+    def test_manual_sync_filters_stock_by_warehouse_no_without_default_name(self):
+        settings = {
+            "base_url": "https://api.wangdian.cn/openapi2",
+            "app_key": "app",
+            "app_secret": "secret",
+            "sid": "sid",
+            "shop_id": "",
+            "warehouse_no": "3",
+            "warehouse_name": "",
+            "sync_product_archive": False,
+            "sync_stock_snapshot": True,
+            "stock_endpoint": "stock_query.php",
+        }
+
+        def fake_post(_settings, _endpoint, _params):
+            return {"stocks": [
+                {"warehouse_no": "3", "warehouse_name": "宠物圈仓", "spec_no": "S-1", "stock_num": 11},
+                {"warehouse_no": "9", "warehouse_name": "其他仓", "spec_no": "S-2", "stock_num": 12},
+            ], "total_count": 2}
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(daily_ops_erp, "post_api", side_effect=fake_post):
+            result = daily_ops_erp.manual_sync(settings, Path(tmp))
+
+        self.assertEqual(result["status"], "synced")
+        self.assertEqual(result["stock_count"], 1)
+
     def test_goods_archive_sync_does_not_limit_product_rows_by_time_window(self):
         settings = {
             "base_url": "https://api.wangdian.cn/openapi2",

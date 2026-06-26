@@ -373,7 +373,7 @@ def manual_sync(settings, erp_dir, now=None):
     shop_id = _text(settings.get("shop_id") or settings.get("shop_no"))
     shop_no = _text(settings.get("shop_no"))
     warehouse_no = _text(settings.get("warehouse_no"))
-    warehouse_name = _text(settings.get("warehouse_name") or "宠物圈仓库")
+    warehouse_name = _text(settings.get("warehouse_name"))
     page_size = _int(settings.get("page_size") or 100, 100, minimum=PRODUCT_PAGE_SIZE_MIN, maximum=PRODUCT_PAGE_SIZE_MAX)
     stock_limit = _int(settings.get("stock_limit") or 1000, 1000, minimum=STOCK_LIMIT_MIN, maximum=STOCK_LIMIT_MAX)
     max_pages = _int(settings.get("max_pages") or SYNC_MAX_PAGES_DEFAULT, SYNC_MAX_PAGES_DEFAULT, minimum=1, maximum=SYNC_MAX_PAGES_DEFAULT)
