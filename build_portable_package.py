@@ -21,10 +21,7 @@ APP_FILES = [
     "temu_hot_warning_v13.py",
     "update_shein_summary_30d_skc.py",
     "update_base_database_index.py",
-    "全局输出设置和命名设置.md",
-    "预警表生成需求_最新版.md",
     "Temu申报价异常V1.md",
-    "爆旺款预警表格式.md",
 ]
 
 
