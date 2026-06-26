@@ -3496,6 +3496,23 @@ function collectRules() {
 
 function collectErpSettings(current = {}) {
   const next = { ...current };
+  const erpDefaults = {
+    provider: "旺店通",
+    environment: "prod",
+    base_url: "https://openapi.huice.com/openapi",
+    warehouse_no: "3",
+    warehouse_name: "宠物圈仓",
+    sync_days: 30,
+    page_size: 500,
+    stock_limit: 10000,
+    max_pages: 1000,
+    product_endpoint: "goods_query.php",
+    stock_endpoint: "stock_query.php",
+    available_stock_endpoint: "api_goods_stock_change_query.php",
+    shop_endpoint: "shop_query.php",
+    platform_goods_endpoint: "vip_api_goods_query.php",
+    sales_outbound_endpoint: "sales_trade_query.php",
+  };
   document.querySelectorAll("[data-erp-field]").forEach((input) => {
     const key = input.dataset.erpField;
     if (input.type === "checkbox") {
@@ -3503,9 +3520,9 @@ function collectErpSettings(current = {}) {
     } else if (key === "sync_scope") {
       next[key] = input.value.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
     } else if (input.type === "number") {
-      next[key] = input.value.trim() ? Number(input.value) : "";
+      next[key] = input.value.trim() ? Number(input.value) : (erpDefaults[key] ?? "");
     } else {
-      next[key] = input.value.trim();
+      next[key] = input.value.trim() || erpDefaults[key] || "";
     }
   });
   return next;

@@ -54,7 +54,45 @@ class ErpSyncTest(unittest.TestCase):
 
         self.assertEqual(rules["erp_api"]["product_endpoint"], "goods_query.php")
         self.assertEqual(rules["erp_api"]["stock_endpoint"], daily_ops_erp.STOCK_ENDPOINT)
-        self.assertEqual(rules["erp_api"]["warehouse_name"], "宠物圈仓库")
+        self.assertEqual(rules["erp_api"]["warehouse_no"], "3")
+        self.assertEqual(rules["erp_api"]["warehouse_name"], "宠物圈仓")
+        self.assertEqual(rules["erp_api"]["sync_days"], 30)
+        self.assertEqual(rules["erp_api"]["page_size"], 500)
+        self.assertEqual(rules["erp_api"]["stock_limit"], 10000)
+
+    def test_load_rules_fills_blank_erp_business_defaults_without_touching_credentials(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rules_file = Path(tmp) / "report_rules.json"
+            local_file = Path(tmp) / "erp_api.local.json"
+            local_file.write_text(json.dumps({
+                "app_key": "local-app",
+                "app_secret": "local-secret",
+                "sid": "local-sid",
+            }), encoding="utf-8")
+            rules_file.write_text(json.dumps({
+                "erp_api": {
+                    "sync_days": "",
+                    "page_size": "",
+                    "stock_limit": "",
+                    "warehouse_no": "",
+                    "warehouse_name": "",
+                    "app_key": "",
+                    "app_secret": "",
+                    "sid": "",
+                }
+            }, ensure_ascii=False), encoding="utf-8")
+            with patch.object(daily_ops_app, "RULES_FILE", rules_file), patch.object(daily_ops_app, "ERP_API_LOCAL_FILE", local_file):
+                rules = daily_ops_app.load_rules()
+
+        erp = rules["erp_api"]
+        self.assertEqual(erp["sync_days"], 30)
+        self.assertEqual(erp["page_size"], 500)
+        self.assertEqual(erp["stock_limit"], 10000)
+        self.assertEqual(erp["warehouse_no"], "3")
+        self.assertEqual(erp["warehouse_name"], "宠物圈仓")
+        self.assertEqual(erp["app_key"], "local-app")
+        self.assertEqual(erp["app_secret"], "local-secret")
+        self.assertEqual(erp["sid"], "local-sid")
 
     def test_load_rules_keeps_custom_erp_endpoints(self):
         with tempfile.TemporaryDirectory() as tmp:

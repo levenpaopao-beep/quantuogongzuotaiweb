@@ -221,11 +221,11 @@ DEFAULT_RULES = {
     },
     "erp_api": {
         "provider": "旺店通",
-        "enabled": False,
-        "auto_sync": True,
+        "enabled": True,
+        "auto_sync": False,
         "manual_sync_first": True,
-        "environment": "test",
-        "base_url": "https://openapi.ali.huice.cc/openapi",
+        "environment": "prod",
+        "base_url": "https://openapi.huice.com/openapi",
         "product_endpoint": "goods_query.php",
         "stock_endpoint": "stock_query.php",
         "available_stock_endpoint": "api_goods_stock_change_query.php",
@@ -240,9 +240,9 @@ DEFAULT_RULES = {
         "sync_sales_outbound": False,
         "shop_id": "",
         "shop_no": "",
-        "warehouse_no": "",
-        "warehouse_name": "宠物圈仓库",
-        "sync_days": 7,
+        "warehouse_no": "3",
+        "warehouse_name": "宠物圈仓",
+        "sync_days": 30,
         "page_size": 500,
         "stock_limit": 10000,
         "max_pages": 1000,
@@ -1161,6 +1161,9 @@ def migrate_rules(rules):
             erp_api["product_endpoint"] = DEFAULT_RULES["erp_api"]["product_endpoint"]
         if LEGACY_ERP_STOCK_ENDPOINT and erp_api.get("stock_endpoint") == LEGACY_ERP_STOCK_ENDPOINT:
             erp_api["stock_endpoint"] = DEFAULT_RULES["erp_api"]["stock_endpoint"]
+        for key in ["provider", "environment", "base_url", "warehouse_no", "warehouse_name", "sync_days", "page_size", "stock_limit", "max_pages"]:
+            if erp_api.get(key) in ("", None):
+                erp_api[key] = DEFAULT_RULES["erp_api"][key]
     return rules
 
 
