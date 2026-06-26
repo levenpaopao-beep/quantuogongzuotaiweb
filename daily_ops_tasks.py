@@ -148,20 +148,52 @@ def task_age_days(row, now=None):
 
 
 def task_identity(row):
-    parts = [
-        norm(row.get("platform")),
-        norm(row.get("task_type")),
-        norm(row.get("store")),
-        norm(row.get("merchant_code")),
-        norm(row.get("skc")),
-        norm(row.get("spu")),
-        norm(row.get("source_report")),
-        norm(row.get("source_file")),
-        norm(row.get("source_sheet")),
-        norm(row.get("source_row")),
-    ]
+    task_type = norm(row.get("task_type"))
+    if task_type == "价格异常":
+        parts = [
+            norm(row.get("platform")),
+            task_type,
+            norm(row.get("store")),
+            norm(row.get("skc")) or norm(row.get("product_name")) or norm(row.get("merchant_code")),
+            norm(row.get("product_name")),
+            price_action_bucket(row.get("system_action") or row.get("source_sheet")),
+        ]
+    else:
+        parts = [
+            norm(row.get("platform")),
+            task_type,
+            norm(row.get("store")),
+            norm(row.get("merchant_code")),
+            norm(row.get("skc")),
+            norm(row.get("spu")),
+            norm(row.get("source_report")),
+            norm(row.get("source_file")),
+            norm(row.get("source_sheet")),
+            norm(row.get("source_row")),
+        ]
     raw = "|".join(parts)
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def merge_unique_text(*values, separator="、"):
+    result = []
+    seen = set()
+    for value in values:
+        for part in str(value or "").replace(",", separator).split(separator):
+            item = norm(part)
+            if item and item not in seen:
+                seen.add(item)
+                result.append(item)
+    return separator.join(result)
+
+
+def price_action_bucket(value):
+    text = norm(value)
+    if "低于成本" in text or "亏损" in text:
+        return "低于成本价"
+    if "低于批发价80" in text or "批发价80%" in text:
+        return "低于批发价80%"
+    return text
 
 
 def task_next_step(row, now=None):
@@ -217,7 +249,16 @@ def task_sort_key(row):
     priority_order = {"高": 0, "中": 1, "低": 2}
     updated_at = parse_time(row.get("updated_at")) or parse_time(row.get("created_at"))
     timestamp = updated_at.timestamp() if updated_at else 0
-    return (priority_order.get(norm(row.get("priority")), 9), -timestamp, norm(row.get("id")))
+    product_name = norm(row.get("product_name")) or norm(row.get("merchant_code")) or norm(row.get("skc")) or norm(row.get("spu"))
+    return (
+        priority_order.get(norm(row.get("priority")), 9),
+        product_name,
+        norm(row.get("platform")),
+        norm(row.get("store")),
+        norm(row.get("task_type")),
+        -timestamp,
+        norm(row.get("id")),
+    )
 
 
 def task_package_id(row):
@@ -621,6 +662,8 @@ class OperationTaskStore:
                     "source_batch_id",
                 ]:
                     next_value = row.get(key, task.get(key, ""))
+                    if key in {"merchant_code", "source_file", "source_row", "source_batch_id"}:
+                        next_value = merge_unique_text(task.get(key, ""), next_value)
                     if norm(task.get(key)) != norm(next_value):
                         changed_labels.append(TASK_UPDATE_LABELS.get(key, key))
                     task[key] = next_value

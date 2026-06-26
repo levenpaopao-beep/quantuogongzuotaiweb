@@ -92,51 +92,61 @@
             <div>
               <span class="pill">每日主流程</span>
               <h2>销量管理</h2>
-              <p>店长每天手动填写平台店铺销量；管理员负责异常核对、锁定、月结和总表导出。</p>
+              <p id="salesPendingNotice">正在检查还有哪些店铺销量没有填写。</p>
             </div>
-            <button class="primary-button" id="loadSalesHeaderBtn">刷新销售日清单</button>
+            <button class="primary-button" id="loadSalesHeaderBtn">刷新</button>
           </div>
           <div class="module-grid">
             <section class="simple-panel soft-panel span-3">
-              <h2>销售日填报清单</h2>
-              <p id="salesFocusHint">选择销售日期后，一张表里直接看所有店铺；已填显示数字，未填留空，点编辑后填写并确认。</p>
+              <div class="panel-head">
+                <div>
+                  <h2>销量查询与填报</h2>
+                  <p id="salesFocusHint">选日期后直接在表格里填写或编辑销量。</p>
+                </div>
+                <button class="ghost-button" id="exportSalesReportBtn" data-admin-only="sales-report-export">导出查询结果</button>
+              </div>
               <div class="sales-tools">
                 <input id="salesDate" type="date" />
                 <button class="ghost-button" id="loadSalesBtn">读取日期</button>
                 <button class="primary-button" id="saveSalesBatchBtn">保存当前列表</button>
               </div>
-              <div class="sales-entry-list" id="salesEntryList"></div>
-            </section>
-          </div>
-          <div class="simple-panel">
-            <div class="panel-head">
-              <div>
-                <h2>销量报表查询</h2>
-                <p>按平台、店铺、时间范围查询历史销量和每天填报后的累计台账。</p>
+              <div class="sales-focus-bar">
+                <div>
+                  <strong id="salesFocusTitle">待填销量</strong>
+                  <span>店长当天填写的数据当天可改；过了当天只能管理员修改。</span>
+                </div>
+                <div class="sales-focus-tabs">
+                  <button class="segment active" type="button" data-sales-focus="missing">未填</button>
+                  <button class="segment" type="button" data-sales-focus="abnormal">异常</button>
+                  <button class="segment" type="button" data-sales-focus="all">全部</button>
+                </div>
               </div>
-              <button class="ghost-button" id="exportSalesReportBtn" data-admin-only="sales-report-export">导出查询结果</button>
-            </div>
-            <div class="range-shortcuts" id="salesReportRangeShortcuts">
-              <button class="segment" type="button" data-sales-range="7d">最近7天</button>
-              <button class="segment" type="button" data-sales-range="30d">最近30天</button>
-              <button class="segment" type="button" data-sales-range="90d">最近90天</button>
-              <button class="segment" type="button" data-sales-range="half-year">半年</button>
-              <button class="segment" type="button" data-sales-range="1y">一年</button>
-              <button class="segment" type="button" data-sales-range="month">自然月</button>
-              <button class="segment" type="button" data-sales-range="year">自然年</button>
-            </div>
-            <div class="task-filters sales-report-filters">
-              <input id="salesReportDateFrom" type="date" />
-              <input id="salesReportDateTo" type="date" />
-              <select id="salesReportPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option><option>速卖通</option><option>TK</option><option>Ozon</option></select>
-              <input id="salesReportStore" placeholder="店铺" />
-              <button class="primary-button" id="loadSalesReportBtn">查询销量报表</button>
-            </div>
-            <div class="report-summary-strip" id="salesReportSummary"></div>
-            <div class="report-table-wrap">
-              <table class="report-data-table" id="salesReportTable"></table>
-            </div>
-            <p id="salesReportHint">选择日期、平台、店铺后，结果会集中显示在一张表格里。</p>
+              <div class="sales-entry-list" id="salesEntryList"></div>
+              <div class="sales-history-query">
+                <h3>历史销量查询</h3>
+                <div class="range-shortcuts" id="salesReportRangeShortcuts">
+                  <button class="segment" type="button" data-sales-range="7d">最近7天</button>
+                  <button class="segment" type="button" data-sales-range="30d">最近30天</button>
+                  <button class="segment" type="button" data-sales-range="90d">最近90天</button>
+                  <button class="segment" type="button" data-sales-range="half-year">半年</button>
+                  <button class="segment" type="button" data-sales-range="1y">一年</button>
+                  <button class="segment" type="button" data-sales-range="month">自然月</button>
+                  <button class="segment" type="button" data-sales-range="year">自然年</button>
+                </div>
+                <div class="task-filters sales-report-filters">
+                  <input id="salesReportDateFrom" type="date" />
+                  <input id="salesReportDateTo" type="date" />
+                  <select id="salesReportPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option><option>速卖通</option><option>TK</option><option>Ozon</option></select>
+                  <input id="salesReportStore" placeholder="店铺" />
+                  <button class="primary-button" id="loadSalesReportBtn">查询</button>
+                </div>
+                <div class="report-summary-strip" id="salesReportSummary"></div>
+                <div class="report-table-wrap">
+                  <table class="report-data-table" id="salesReportTable"></table>
+                </div>
+                <p id="salesReportHint">选择日期、平台、店铺后，结果会集中显示在一张表格里。</p>
+              </div>
+            </section>
           </div>
         </section>
 
@@ -191,6 +201,7 @@
               <button class="ghost-button" id="loadTasksBtn">查询</button>
             </div>
             <div class="task-package-list" id="taskPackageRows"></div>
+            <div class="task-pagebar" id="taskPagebar"></div>
             <div class="task-table">
               <div class="task-row task-head">
                 <span><input type="checkbox" id="taskSelectAll" /></span><span>状态</span><span>优先级</span><span>平台</span><span>店铺</span><span>负责人</span><span>任务类型</span><span>商品名称</span><span>商家编码</span><span>SKC ID</span><span>SPU ID</span><span>系统建议</span><span>异常明细</span><span>来源</span><span>店长处理</span><span>管理员确认</span><span>操作</span>
@@ -483,27 +494,15 @@
               <strong>店铺信息管理</strong>
               <span>维护平台、店铺、负责人和每日填报开关。</span>
             </button>
-            <button class="master-module-card" data-action="focus-product-info" data-admin-only="product-info">
+            <button class="master-module-card" data-page="productInfo" data-admin-only="product-info">
               <strong>商品信息查询</strong>
-              <span>默认展示 ERP 接口同步的商品基础信息和价格字段。</span>
+              <span>高密度查询 ERP 货品、价格和库存字段。</span>
             </button>
             <button class="master-module-card" data-action="open-master-module" data-master-module="task-suppressions" data-admin-only="task-suppressions">
               <strong>任务屏蔽清单</strong>
               <span>查看已屏蔽的重复商品任务和处理原因。</span>
             </button>
           </div>
-          <section class="simple-panel erp-product-panel" id="erpProductPanel" data-admin-only="product-info">
-            <div class="panel-head">
-              <div>
-                <h2>ERP 商品信息</h2>
-                <p>只读展示最新 ERP 接口同步数据；旧手工基础表不参与业务判断。</p>
-              </div>
-              <button class="ghost-button" id="reloadProductInfoBtn">刷新商品信息</button>
-            </div>
-            <div class="search-bar"><input id="productSearchInput" placeholder="商家编码、货品名称、规格或 SKU" /><button id="productSearchBtn">查询商品</button></div>
-            <p id="productSearchStatus">正在读取最新 ERP 商品信息。</p>
-            <div id="productSearchRows" class="output-list product-info-list"></div>
-          </section>
           <div id="masterModuleDialog" class="dialog-backdrop hidden" aria-hidden="true">
             <section class="task-dialog master-module-dialog" role="dialog" aria-modal="true" aria-labelledby="masterModuleTitle">
               <div class="dialog-head">
@@ -569,11 +568,46 @@
                 <section class="master-module-panel" data-master-panel="task-suppressions" data-admin-only="task-suppressions">
             <h2>任务屏蔽清单</h2>
             <p>用于处理每周反复出现但管理员判断暂不需要再提示的 SKC/SPU/商家编码。</p>
-            <div id="taskSuppressionRows" class="output-list"></div>
+            <div class="suppression-filter-grid">
+              <label>店铺<input id="suppressionStoreFilter" placeholder="店铺" /></label>
+              <label>店长<input id="suppressionOwnerFilter" placeholder="店长/负责人" /></label>
+              <label>SKC<input id="suppressionSkcFilter" placeholder="SKC" /></label>
+              <label>商家编码<input id="suppressionMerchantFilter" placeholder="商家编码" /></label>
+            </div>
+            <p id="taskSuppressionStatus">等待读取屏蔽清单。</p>
+            <div class="report-table-wrap suppression-table-wrap">
+              <table class="report-data-table suppression-table" id="taskSuppressionTable"></table>
+            </div>
           </section>
               </div>
             </section>
           </div>
+        </section>
+
+        <section class="page" id="productInfoPage" data-admin-only="product-info">
+          <div class="page-intro compact-intro">
+            <div>
+              <span class="pill">ERP 只读</span>
+              <h2>商品信息查询</h2>
+              <p>按货品编码、商家编码和商品名查询 ERP 已同步的货品、价格和库存。</p>
+            </div>
+            <div class="download-actions">
+              <button class="ghost-button" type="button" data-page="masterdata">返回基础资料</button>
+              <button class="ghost-button" id="reloadProductInfoBtn">刷新</button>
+            </div>
+          </div>
+          <section class="simple-panel product-query-panel">
+            <div class="product-filter-grid">
+              <label>货品编码<input id="productCodeFilter" placeholder="例如 3303177721" /></label>
+              <label>商家编码<input id="merchantCodeFilter" placeholder="例如 3303177721-XS" /></label>
+              <label>商品名<input id="productNameFilter" placeholder="模糊搜索，例如 冲锋衣" /></label>
+              <button class="primary-button" id="productSearchBtn">查询</button>
+            </div>
+            <p id="productSearchStatus">正在读取最新 ERP 商品信息。</p>
+            <div class="report-table-wrap product-info-table-wrap">
+              <table class="report-data-table product-info-table" id="productSearchTable"></table>
+            </div>
+          </section>
         </section>
 
         <section class="page" id="rulesPage">
@@ -645,6 +679,14 @@
                 <button class="ghost-button danger-action" id="restoreBackupBtn">恢复备份</button>
               </div>
               <p id="backupStatus">建议在每周大批量导入前、规则调整前、管理员确认大量任务前先生成备份。</p>
+              <h2>重要资产库</h2>
+              <p>保存每日 Temu 爆旺款 SKC、Shein 爆款 SKC 等长期指标；首页总览优先读取这里，支持导出资产存档和初始化导入。</p>
+              <div class="backup-actions important_asset">
+                <button class="primary-button" id="exportAssetArchiveBtn">导出资产存档</button>
+                <input id="assetArchivePath" placeholder="粘贴要初始化导入的 .xlsx 资产存档路径" />
+                <button class="ghost-button" id="importAssetArchiveBtn">初始化导入</button>
+              </div>
+              <p id="assetArchiveStatus">生成或重算爆旺/爆款报表后，系统会把当天指标写入重要资产库。</p>
               <h2>检查系统是否可正常运行</h2>
               <p>检查软件启动、界面按钮、权限、核心业务流程和提交范围是否正常；遇到异常或更新版本后使用。</p>
               <div class="download-actions">

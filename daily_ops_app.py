@@ -26,6 +26,7 @@ import daily_ops_tasks
 import daily_ops_task_suppression
 import daily_ops_master_data
 import daily_ops_bargain
+import daily_ops_assets
 from daily_ops_sales_compare import aggregate_source_sales
 import update_shein_summary_30d_skc as raw_xlsx
 
@@ -50,6 +51,7 @@ OPERATOR_ACCOUNTS_FILE = ROOT / "基础数据库" / "operator_accounts.json"
 DAILY_SALES_FILE = ROOT / "基础数据库" / "daily_sales.json"
 BARGAIN_DB_FILE = ROOT / "基础数据库" / "bargain_requests.json"
 CLEARANCE_CATALOG_FILE = ROOT / "基础数据库" / "clearance_catalog.json"
+IMPORTANT_ASSETS_DB = ROOT / "基础数据库" / "important_assets.sqlite"
 MASTER_IMPORT_REVIEW_FILE = Path.home() / "Downloads" / "基础信息导入整理表.xlsx"
 OWNER_FILE = ROOT / "店铺负责人对应表.xlsx"
 
@@ -72,6 +74,29 @@ UPLOAD_TARGETS = {
     "owner": ("店铺负责人表", ROOT),
     "temu_bargain_input": ("Temu核价输入表", BARGAIN_DIR),
     "low_score_input": ("低分预警输入表", LOW_SCORE_DIR),
+}
+
+SOURCE_RETENTION_POLICIES = {
+    "latest_replace": {
+        "label": "只保留最新",
+        "description": "这是生成任务的当前原料，新批次生效后旧批次不再参与计算。",
+    },
+    "daily_keep": {
+        "label": "日日留存",
+        "description": "这是经营结果或处理证据，需要保留历史方便回看。",
+    },
+}
+
+SOURCE_RETENTION_BY_CATEGORY = {
+    "temu_platform": "latest_replace",
+    "shein_platform": "latest_replace",
+    "temu_hot": "latest_replace",
+    "temu_bargain_input": "latest_replace",
+    "low_score_input": "latest_replace",
+    "erp_base": "latest_replace",
+    "erp_stock": "latest_replace",
+    "erp_combo": "latest_replace",
+    "owner": "daily_keep",
 }
 
 WEEKLY_SOURCE_GROUPS = {
@@ -509,6 +534,7 @@ def backup_source_paths():
         STORE_OWNER_MAP_FILE,
         BARGAIN_DB_FILE,
         CLEARANCE_CATALOG_FILE,
+        IMPORTANT_ASSETS_DB,
         DB_PATH,
         OWNER_FILE,
         TEMU_DIR,
@@ -582,6 +608,83 @@ def restore_operational_backup(backup_path):
                 shutil.copyfileobj(src, dst)
             restored.append(name)
     return {"file": backup_path.name, "restored": restored, "count": len(restored)}
+
+
+def asset_store():
+    return daily_ops_assets.AssetSnapshotStore(IMPORTANT_ASSETS_DB)
+
+
+def record_asset_metric(metric_date, metric_key, value, source_file=""):
+    return asset_store().upsert_metric(metric_date, metric_key, value, source_file)
+
+
+def count_temu_hot_skc():
+    hot_files = temu_hot_files()
+    if not hot_files:
+        return {"value": None, "source_file": "", "source": "missing"}
+    module = load_module(ROOT / "temu_hot_warning_v13.py", "_daily_temu_hot_assets")
+    module.ROOT = ROOT
+    module.TEMU_DIR = TEMU_DIR
+    module.HOT_FILES = hot_files
+    rows = module.read_hot_rows()
+    groups = module.aggregate_groups(rows)
+    return {"value": len({(group["shop"], group["skc"]) for group in groups.values() if group.get("skc")}), "source_file": hot_files[-1].name, "source": "latest_file"}
+
+
+def count_shein_hot_skc():
+    try:
+        module = load_module(ROOT / "shein_hot_warning_v11_analysis.py", "_daily_shein_hot_assets")
+        module.ROOT = ROOT
+        module.ERP_FILES = erp_base_files()
+        module.COMBO_FILES = erp_combo_files()
+        module.SOURCE_FILES = shein_source_map()
+        module.RULES = load_rules()
+        module.STORE_OWNER = {**module.STORE_OWNER, **load_owners()}
+        records, _checks = module.load_sales_records()
+        _skc, hot, _style_combos, _combo_rows = module.aggregate(records)
+        source_names = []
+        for paths in module.source_files().values():
+            source_names.extend(path.name for path in paths)
+        return {"value": len(hot), "source_file": "、".join(sorted(set(source_names))), "source": "latest_file"}
+    except Exception:
+        return {"value": None, "source_file": "", "source": "missing"}
+
+
+def asset_overview(anchor_date=""):
+    metric_date = anchor_date or datetime.now().date().isoformat()
+    metrics = asset_store().overview(["temu_hot_skc", "shein_hot_skc"], metric_date)
+    fallbacks = {
+        "temu_hot_skc": count_temu_hot_skc,
+        "shein_hot_skc": count_shein_hot_skc,
+    }
+    for key, loader in fallbacks.items():
+        if metrics.get(key, {}).get("value") is not None:
+            metrics[key]["source"] = "asset_db"
+            continue
+        fallback = loader()
+        metrics[key]["value"] = fallback.get("value")
+        metrics[key]["source_file"] = fallback.get("source_file", "")
+        metrics[key]["source"] = fallback.get("source", "latest_file")
+        if fallback.get("value") is not None:
+            record_asset_metric(metric_date, key, fallback.get("value"), fallback.get("source_file", ""))
+            metrics[key]["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return {
+        "database": str(IMPORTANT_ASSETS_DB),
+        "metrics": metrics,
+        "definitions": {
+            "temu_hot_skc": "Temu 爆旺款按店铺 + SKC 去重统计，不按 SKU 或链接行数统计。",
+            "shein_hot_skc": "Shein 爆款按店铺 + SKC 去重统计，优先使用系统爆款规则识别。",
+        },
+    }
+
+
+def export_asset_archive(output_path=""):
+    target = Path(output_path) if output_path else OUTPUT_DIR / f"{datetime.now():%Y%m%d-%H%M%S}-重要资产快照.xlsx"
+    return asset_store().export_archive(target)
+
+
+def import_asset_archive(source_path):
+    return asset_store().import_archive(source_path)
 
 
 def operator_accounts():
@@ -777,7 +880,7 @@ def source_recompute_state(category, uploaded_at):
     ]
     stale_names = [REPORTS.get(report_id, {}).get("name", report_id) for report_id in stale]
     needed = bool(uploaded_time and stale)
-    message = "最新数据源已生效，建议重算关联任务。" if needed else "关联任务已按当前数据源生成。"
+    message = "最新数据源已生效，建议重算关联报表；报表生成后会同步商品任务。" if needed else "关联报表已按当前数据源生成。"
     if not uploaded_time:
         message = "当前还没有正式提交的数据源批次。"
     return {
@@ -836,6 +939,20 @@ def erp_base_files():
         return [latest_sync]
     interface_files = sorted(
         ERP_DIR.glob("erp产品基础信息表_接口同步_*.xlsx"),
+        key=lambda path: path.stat().st_mtime if path.exists() else 0,
+        reverse=True,
+    )
+    if interface_files:
+        return [interface_files[0]]
+    return []
+
+
+def erp_stock_snapshot_files():
+    latest_sync = ERP_DIR / "erp库存同步_最新.xlsx"
+    if latest_sync.exists():
+        return [latest_sync]
+    interface_files = sorted(
+        ERP_DIR.glob("erp库存同步_*.xlsx"),
         key=lambda path: path.stat().st_mtime if path.exists() else 0,
         reverse=True,
     )
@@ -1285,6 +1402,16 @@ def source_file_state(path):
     }
 
 
+def source_retention_mode(category):
+    return SOURCE_RETENTION_BY_CATEGORY.get(category, "daily_keep")
+
+
+def source_retention_policy(category):
+    mode = source_retention_mode(category)
+    policy = SOURCE_RETENTION_POLICIES.get(mode, SOURCE_RETENTION_POLICIES["daily_keep"])
+    return {"mode": mode, **policy}
+
+
 def upload_batch_id(category):
     return f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{safe_name(category)}"
 
@@ -1308,6 +1435,30 @@ def record_uploaded_source(category, path):
     return {**state, "pending": True, "pending_count": len(pending_files), "batch_id": pending.get("batch_id", "")}
 
 
+def safely_remove_replaced_source_files(category, previous, current_paths):
+    if source_retention_mode(category) != "latest_replace":
+        return []
+    current_resolved = {str(Path(path).resolve()) for path in current_paths}
+    candidates = previous.get("paths") or ([previous.get("path")] if previous.get("path") else [])
+    removed = []
+    for raw in candidates:
+        if not raw:
+            continue
+        path = Path(raw)
+        try:
+            resolved = str(path.resolve())
+        except OSError:
+            continue
+        if resolved in current_resolved or not path.exists() or not path.is_file():
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            continue
+        removed.append(str(path))
+    return removed
+
+
 def pending_batch(category):
     return load_source_manifest().get("pending_batches", {}).get(category, {"files": []})
 
@@ -1326,9 +1477,11 @@ def finish_upload_batch(category):
     previous_hashes = set(previous.get("sha256_list") or ([previous.get("sha256")] if previous.get("sha256") else []))
     sha256_list = [item["sha256"] for item in files]
     changed = sha256_list != list(previous.get("sha256_list", [])) or any(value not in previous_hashes for value in sha256_list)
+    current_paths = [item["path"] for item in files]
+    removed_previous_files = safely_remove_replaced_source_files(category, previous, current_paths)
     categories[category] = {
         "batch_id": pending.get("batch_id") or upload_batch_id(category),
-        "paths": [item["path"] for item in files],
+        "paths": current_paths,
         "path": files[-1]["path"],
         "files": [item["file"] for item in files],
         "file": files[-1]["file"],
@@ -1340,6 +1493,7 @@ def finish_upload_batch(category):
         "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "changed": changed,
         "previous_file": "、".join(previous.get("files", [previous.get("file", "")])),
+        "removed_previous_files": removed_previous_files,
     }
     pending_batches.pop(category, None)
     save_source_manifest(manifest)
@@ -1362,6 +1516,7 @@ def source_group_status():
     pending_batches = load_source_manifest().get("pending_batches", {})
     groups = []
     for key, config in WEEKLY_SOURCE_GROUPS.items():
+        retention = source_retention_policy(key)
         uploaded_paths = [] if key == "erp_base" else manifest_paths(key)
         files = uploaded_paths if uploaded_paths else matching_files(config["folder"], config["patterns"])
         if key == "erp_base":
@@ -1387,6 +1542,9 @@ def source_group_status():
             "pending_started_at": pending_batches.get(key, {}).get("started_at", ""),
             "batch_id": "",
             "uploaded_at": "",
+            "retention_mode": retention["mode"],
+            "retention_label": retention["label"],
+            "retention_description": retention["description"],
         }
         if latest:
             stat = latest.stat()
@@ -1414,7 +1572,7 @@ def source_group_status():
             if uploaded_paths:
                 item["changed"] = bool(uploaded.get("changed"))
                 if item["recompute"].get("needed"):
-                    item["status"] = "需重算任务"
+                    item["status"] = "需重算报表"
                 else:
                     item["status"] = "已更新" if item["changed"] else "未变化"
             elif latest_hash and uploaded.get("sha256") == latest_hash:
@@ -1437,6 +1595,14 @@ def unique_upload_path(folder, filename):
     suffix = Path(name).suffix
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
     return folder / f"{stem}_{stamp}{suffix}"
+
+
+def upload_path_for_category(category, folder, filename):
+    folder.mkdir(exist_ok=True)
+    name = safe_name(Path(filename).name, "upload.xlsx")
+    if source_retention_mode(category) == "latest_replace":
+        return folder / name
+    return unique_upload_path(folder, filename)
 
 
 def xlsx_path_for_legacy_xls(path):
@@ -1543,6 +1709,9 @@ def desktop_status_for_operator(payload, role="admin"):
             "pending_started_at": "",
             "batch_id": "",
             "uploaded_at": "",
+            "retention_mode": group.get("retention_mode", ""),
+            "retention_label": group.get("retention_label", ""),
+            "retention_description": group.get("retention_description", ""),
         })
     return safe
 
@@ -1642,7 +1811,9 @@ def run_temu_hot(output):
     operation_rows = module.build_rows(owners, erp, hot_groups, sales_groups, champions)
     overview_rows = module.build_overview(operation_rows, hot_groups, owners)
     module.write_workbook(overview_rows, operation_rows)
-    return {"rows": len(operation_rows), "source_files": [p.name for p in sales_files], "hot_file": module.HOT_FILE.name}
+    hot_skc = len({(group["shop"], group["skc"]) for group in hot_groups.values() if group.get("skc")})
+    record_asset_metric(datetime.now().date().isoformat(), "temu_hot_skc", hot_skc, module.HOT_FILE.name)
+    return {"rows": len(operation_rows), "source_files": [p.name for p in sales_files], "hot_file": module.HOT_FILE.name, "hot_skc": hot_skc}
 
 
 def run_temu_slow(output):
@@ -1826,6 +1997,7 @@ def run_shein_hot(output):
         ],
     }
     write_shein_hot_workbook(payload, output)
+    record_asset_metric(datetime.now().date().isoformat(), "shein_hot_skc", len(hot), "、".join(sorted({path.name for paths in module.source_files().values() for path in paths})))
     return {**checks, "rows": len(operations), "hot_skc": len(hot)}
 
 
@@ -2208,53 +2380,122 @@ def search_database(query, limit=100):
     return [dict(row) for row in rows]
 
 
-def query_erp_product_info(query, limit=100):
+ERP_PRODUCT_INFO_COLUMNS = [
+    "货品编码", "货品名称", "规格名称", "商家编码（新）", "可销库存",
+    "批发价", "成本价", "零售价", "商品资料修改时间", "库存修改时间", "来源接口",
+]
+
+
+def _read_erp_sheet_records(path):
+    records = []
+    try:
+        wb = load_workbook(path, read_only=True, data_only=True)
+    except Exception:
+        return records
+    try:
+        for ws in wb.worksheets:
+            rows = ws.iter_rows(values_only=True)
+            try:
+                headers = [daily_ops_master_data.norm(value) or f"列{idx + 1}" for idx, value in enumerate(next(rows))]
+            except StopIteration:
+                continue
+            for row_index, row in enumerate(rows, start=2):
+                values = [daily_ops_master_data.norm(value) for value in row]
+                record = {
+                    headers[idx]: values[idx]
+                    for idx in range(min(len(headers), len(values)))
+                    if values[idx]
+                }
+                if record:
+                    records.append((ws.title, row_index, record))
+    finally:
+        wb.close()
+    return records
+
+
+def _erp_stock_lookup():
+    lookup = {}
+    for path in erp_stock_snapshot_files():
+        for _sheet_name, _row_index, record in _read_erp_sheet_records(path):
+            keys = [
+                record.get("商家编码（新）", ""),
+                record.get("商家编码", ""),
+                record.get("平台规格编码", ""),
+            ]
+            for key in keys:
+                if key and key not in lookup:
+                    lookup[key] = record
+    return lookup
+
+
+def _merged_product_record(product, stock):
+    source_parts = []
+    for value in [product.get("来源接口", ""), stock.get("来源接口", "") if stock else ""]:
+        if value and value not in source_parts:
+            source_parts.append(value)
+    return {
+        "货品编码": product.get("货品编码", ""),
+        "货品名称": product.get("货品名称", ""),
+        "规格名称": product.get("规格名称", ""),
+        "商家编码（新）": product.get("商家编码（新）", "") or product.get("商家编码", ""),
+        "可销库存": stock.get("可销库存", "") if stock else "",
+        "批发价": product.get("批发价", "") or product.get("批发报价", ""),
+        "成本价": product.get("成本价", ""),
+        "零售价": product.get("零售价", ""),
+        "商品资料修改时间": product.get("修改时间", ""),
+        "库存修改时间": stock.get("修改时间", "") if stock else "",
+        "来源接口": " / ".join(source_parts),
+    }
+
+
+def _product_matches(record, query_terms, product_code, merchant_code, product_name):
+    if product_code and product_code.lower() not in record.get("货品编码", "").lower():
+        return False
+    merchant_values = " ".join([
+        record.get("商家编码（新）", ""),
+        record.get("商家编码", ""),
+        record.get("平台规格编码", ""),
+    ]).lower()
+    if merchant_code and merchant_code.lower() not in merchant_values:
+        return False
+    if product_name and product_name.lower() not in record.get("货品名称", "").lower():
+        return False
+    if query_terms:
+        haystack = " ".join(record.values()).lower()
+        return all(term in haystack for term in query_terms)
+    return True
+
+
+def query_erp_product_info(query="", limit=100, product_code="", merchant_code="", product_name=""):
     query = (query or "").strip()
+    product_code = (product_code or "").strip()
+    merchant_code = (merchant_code or "").strip()
+    product_name = (product_name or "").strip()
     limit = max(1, min(int(limit or 100), 300))
     terms = [item.strip().lower() for item in re.split(r"\s+", query) if item.strip()]
     files = erp_base_files()
+    stock_lookup = _erp_stock_lookup()
     matches = []
-    preferred_headers = [
-        "商家编码（新）", "商家编码", "货品编号", "货品名称", "规格名称",
-        "成本价", "批发价", "零售价", "分类", "品牌", "供应商",
-    ]
     for path in files:
-        try:
-            wb = load_workbook(path, read_only=True, data_only=True)
-        except Exception:
-            continue
-        try:
-            for ws in wb.worksheets:
-                rows = ws.iter_rows(values_only=True)
-                try:
-                    headers = [daily_ops_master_data.norm(value) or f"列{idx + 1}" for idx, value in enumerate(next(rows))]
-                except StopIteration:
-                    continue
-                for row_index, row in enumerate(rows, start=2):
-                    values = [daily_ops_master_data.norm(value) for value in row]
-                    haystack = " ".join(values).lower()
-                    if terms and not all(term in haystack for term in terms):
-                        continue
-                    record = {
-                        headers[idx]: values[idx]
-                        for idx in range(min(len(headers), len(values)))
-                        if values[idx]
-                    }
-                    summary = {key: record.get(key, "") for key in preferred_headers if record.get(key)}
-                    if not summary:
-                        summary = dict(list(record.items())[:8])
-                    matches.append({
-                        "file_name": path.name,
-                        "sheet_name": ws.title,
-                        "source_row": row_index,
-                        "summary": summary,
-                        "content": "　".join(f"{key}: {value}" for key, value in list(record.items())[:12]),
-                    })
-                    if len(matches) >= limit:
-                        return {"items": matches, "source_files": [file.name for file in files]}
-        finally:
-            wb.close()
-    return {"items": matches, "source_files": [path.name for path in files]}
+        for sheet_name, row_index, record in _read_erp_sheet_records(path):
+            if not _product_matches(record, terms, product_code, merchant_code, product_name):
+                continue
+            stock_key = record.get("商家编码（新）", "") or record.get("商家编码", "") or record.get("平台规格编码", "")
+            stock = stock_lookup.get(stock_key, {})
+            merged = _merged_product_record(record, stock)
+            matches.append({
+                "file_name": path.name,
+                "sheet_name": sheet_name,
+                "source_row": row_index,
+                "record": merged,
+                "summary": merged,
+                "content": "　".join(f"{key}: {merged.get(key, '')}" for key in ERP_PRODUCT_INFO_COLUMNS),
+            })
+            if len(matches) >= limit:
+                source_files = [file.name for file in files] + [file.name for file in erp_stock_snapshot_files()]
+                return {"items": matches, "columns": ERP_PRODUCT_INFO_COLUMNS, "source_files": source_files}
+    source_files = [path.name for path in files] + [path.name for path in erp_stock_snapshot_files()]
+    return {"items": matches, "columns": ERP_PRODUCT_INFO_COLUMNS, "source_files": source_files}
 
 
 def export_search(query, limit=500):
@@ -2640,6 +2881,80 @@ def package_operation_tasks(rows):
     return operation_task_store().task_packages(rows)
 
 
+def task_display_group_key(row):
+    if norm(row.get("task_type")) != "价格异常":
+        return (norm(row.get("id")),)
+    return (
+        norm(row.get("platform")),
+        norm(row.get("store")),
+        norm(row.get("owner")),
+        norm(row.get("task_type")),
+        norm(row.get("status")),
+        norm(row.get("product_name")),
+        norm(row.get("skc")) or norm(row.get("merchant_code")),
+        daily_ops_tasks.price_action_bucket(row.get("system_action")),
+    )
+
+
+def display_operation_tasks(rows):
+    grouped = {}
+    order = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        key = task_display_group_key(row)
+        item = grouped.get(key)
+        if not item:
+            item = dict(row)
+            item["task_ids"] = [row.get("id", "")]
+            grouped[key] = item
+            order.append(key)
+            continue
+        item["task_ids"].append(row.get("id", ""))
+        item["merchant_code"] = daily_ops_tasks.merge_unique_text(item.get("merchant_code", ""), row.get("merchant_code", ""))
+        item["source_file"] = daily_ops_tasks.merge_unique_text(item.get("source_file", ""), row.get("source_file", ""))
+        item["source_row"] = daily_ops_tasks.merge_unique_text(item.get("source_row", ""), row.get("source_row", ""))
+        item["source_batch_id"] = daily_ops_tasks.merge_unique_text(item.get("source_batch_id", ""), row.get("source_batch_id", ""))
+        if norm(row.get("updated_at")) > norm(item.get("updated_at")):
+            item["updated_at"] = row.get("updated_at", "")
+    result = []
+    for key in order:
+        item = grouped[key]
+        ids = [task_id for task_id in item.get("task_ids", []) if task_id]
+        if len(ids) > 1:
+            detail = norm(item.get("task_detail"))
+            prefix = f"合并 {len(ids)} 条同 SKC/同产品任务"
+            item["task_detail"] = f"{prefix}；{detail}" if detail else prefix
+        result.append(item)
+    return result
+
+
+def task_page_payload(rows, limit="", offset=""):
+    if isinstance(rows, dict):
+        rows = rows.get("tasks") or rows.get("details") or []
+    rows = rows or []
+    display_rows = display_operation_tasks(rows)
+    total = len(display_rows)
+    try:
+        limit_value = int(limit or 0)
+    except (TypeError, ValueError):
+        limit_value = 0
+    try:
+        offset_value = int(offset or 0)
+    except (TypeError, ValueError):
+        offset_value = 0
+    limit_value = max(0, min(limit_value, 500))
+    offset_value = max(0, offset_value)
+    page = display_rows[offset_value:offset_value + limit_value] if limit_value else display_rows
+    return {
+        "tasks": page,
+        "task_total": total,
+        "task_limit": limit_value or total,
+        "task_offset": offset_value,
+        "has_more_tasks": offset_value + len(page) < total,
+    }
+
+
 def operation_owner_directory():
     owners = {row["owner"]: row for row in operation_task_store().owner_directory()}
     for assignment in load_store_owner_assignments():
@@ -2716,7 +3031,15 @@ def confirm_operation_tasks(task_ids, admin, remark=""):
 
 
 def list_task_suppressions():
-    return {"items": task_suppression_store().list_items()}
+    owner_by_store = {
+        assignment["store"]: assignment["owner"]
+        for assignment in load_store_owner_assignments()
+        if assignment.get("store") and assignment.get("owner")
+    }
+    items = []
+    for item in task_suppression_store().list_items():
+        items.append({**item, "owner": owner_by_store.get(item.get("store", ""), "")})
+    return {"items": items}
 
 
 def suppress_operation_tasks(task_ids, actor="管理员", reason="", duration="永久"):
@@ -2828,7 +3151,8 @@ def handle_tasks_api(action, headers, payload):
                 open_only=payload.get("open_only", ""),
                 search=payload.get("search", ""),
             )
-            return json_bytes({"ok": True, "operator": operator, "summary": summarize_operation_tasks(rows), "packages": package_operation_tasks(rows), "tasks": rows})
+            page = task_page_payload(rows, payload.get("limit", ""), payload.get("offset", ""))
+            return json_bytes({"ok": True, "operator": operator, "summary": summarize_operation_tasks(rows), "packages": package_operation_tasks(rows), **page})
         if action == "POST_SUBMIT":
             task_id = payload.get("id", "")
             if operator.get("role") != "owner":
@@ -4879,7 +5203,7 @@ class DailyOpsHandler(BaseHTTPRequestHandler):
         if file_item is None or not file_item.filename:
             raise ValueError("未收到上传文件")
         label, folder = UPLOAD_TARGETS[category]
-        target = unique_upload_path(folder, file_item.filename)
+        target = upload_path_for_category(category, folder, file_item.filename)
         with target.open("wb") as fh:
             shutil.copyfileobj(file_item.file, fh)
         target = normalize_uploaded_workbook(target)

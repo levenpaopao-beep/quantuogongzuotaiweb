@@ -422,7 +422,7 @@ button { cursor: pointer; }
 }
 .home-business-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 .home-business-card {
@@ -572,15 +572,26 @@ p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
 }
 .action-route {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(58px, auto) auto;
   align-items: center;
   gap: 12px;
+  min-height: 136px;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: #fff;
 }
 .action-route strong { display: block; }
 .action-route span { display: block; color: var(--muted); font-size: 12px; line-height: 1.45; margin-top: 4px; }
 .action-route button {
   white-space: nowrap;
-  min-width: 82px;
+  width: 100%;
+  min-width: 0;
+}
+.stack-list#todayActionList {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
 }
 .snapshot-list span,
 .flow-list span { display: block; color: var(--muted); margin-top: 4px; font-size: 12px; line-height: 1.45; }
@@ -1070,6 +1081,23 @@ label { color: var(--muted); font-size: 12px; }
   gap: 10px;
   margin-top: 10px;
 }
+.sales-history-query {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.sales-history-query h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.locked-note {
+  display: inline-block;
+  max-width: 150px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: normal;
+}
 .empty-state {
   border: 1px dashed var(--line);
   border-radius: 13px;
@@ -1256,6 +1284,7 @@ label { color: var(--muted); font-size: 12px; }
 .table-row > span,
 .table-cell { padding: 0 14px; min-width: 0; }
 .source-name { display: flex; align-items: center; gap: 10px; font-weight: 800; }
+.source-retention { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .source-badge {
   width: 36px;
   height: 36px;
@@ -1470,6 +1499,23 @@ label { color: var(--muted); font-size: 12px; }
   display: grid;
   gap: 10px;
   margin: 12px 0;
+}
+.task-pagebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.task-pagebar div {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .task-package-head,
 .task-package-card {
@@ -1780,6 +1826,115 @@ label { color: var(--muted); font-size: 12px; }
 .output-list { display: grid; gap: 8px; margin-top: 14px; }
 .output-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; }
 .output-row p { margin-top: 4px; }
+.compact-intro {
+  align-items: center;
+}
+.product-query-panel {
+  padding: 14px;
+}
+.product-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(150px, 180px) minmax(180px, 220px) minmax(220px, 1fr) 84px;
+  gap: 8px;
+  align-items: end;
+}
+.product-filter-grid label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.product-filter-grid input {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+}
+.product-filter-grid button {
+  height: 32px;
+  border-radius: 8px;
+  padding: 0 12px;
+}
+.product-info-table-wrap {
+  max-height: calc(100vh - 260px);
+}
+.product-info-table {
+  font-size: 12px;
+}
+.product-info-table th,
+.product-info-table td {
+  min-width: 112px;
+  max-width: 260px;
+  padding: 7px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.product-info-table th:nth-child(1),
+.product-info-table td:nth-child(1),
+.product-info-table th:nth-child(4),
+.product-info-table td:nth-child(4) {
+  min-width: 132px;
+}
+.product-info-table th:nth-child(2),
+.product-info-table td:nth-child(2) {
+  min-width: 220px;
+}
+.product-info-table th:nth-child(9),
+.product-info-table td:nth-child(9),
+.product-info-table th:nth-child(10),
+.product-info-table td:nth-child(10) {
+  min-width: 150px;
+}
+.suppression-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.suppression-filter-grid label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.suppression-filter-grid input {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+}
+.suppression-table-wrap {
+  max-height: min(58vh, 560px);
+}
+.suppression-table {
+  font-size: 12px;
+}
+.suppression-table th,
+.suppression-table td {
+  min-width: 96px;
+  max-width: 240px;
+  padding: 7px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.suppression-table th:nth-child(4),
+.suppression-table td:nth-child(4),
+.suppression-table th:nth-child(5),
+.suppression-table td:nth-child(5),
+.suppression-table th:nth-child(7),
+.suppression-table td:nth-child(7),
+.suppression-table th:nth-child(8),
+.suppression-table td:nth-child(8) {
+  min-width: 150px;
+}
 .business-report-shell {
   display: grid;
   gap: 14px;
@@ -2508,6 +2663,7 @@ label { color: var(--muted); font-size: 12px; }
   .hero-mascot { display: none; }
   .today-grid,
   .home-business-grid,
+  .stack-list#todayActionList,
   .workbench-grid,
   .module-grid,
   .master-module-grid,
@@ -2535,7 +2691,7 @@ label { color: var(--muted); font-size: 12px; }
   .titlebar, .page-intro { align-items: flex-start; flex-direction: column; height: auto; gap: 10px; padding: 12px 0; }
   .top-actions, .global-operator { width: 100%; }
   .global-operator { grid-template-columns: 1fr; }
-  .metric-row, .home-business-grid, .task-summary, .report-grid, .rules-grid, .erp-settings-grid, .erp-settings-layout, .erp-sync-options, .erp-sync-footer, .sales-report-filters, .business-kpi-grid, .business-filters, .business-first-screen, .business-mover-grid { grid-template-columns: 1fr; }
+  .metric-row, .home-business-grid, .stack-list#todayActionList, .task-summary, .report-grid, .rules-grid, .erp-settings-grid, .erp-settings-layout, .erp-sync-options, .erp-sync-footer, .sales-report-filters, .business-kpi-grid, .business-filters, .business-first-screen, .business-mover-grid { grid-template-columns: 1fr; }
   .compact-page-intro { align-items: flex-start; }
   .business-kpi-main { grid-column: span 1; }
   .backup-actions { grid-template-columns: 1fr; }

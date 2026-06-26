@@ -49,7 +49,7 @@ def import_source_files(category, source_paths):
         source = Path(source_path)
         if not source.exists() or not source.is_file():
             raise FileNotFoundError(f"文件不存在：{source}")
-        target = app.unique_upload_path(folder, source.name)
+        target = app.upload_path_for_category(category, folder, source.name)
         shutil.copy2(source, target)
         target = app.normalize_uploaded_workbook(target)
         imported.append(app.record_uploaded_source(category, target))
@@ -140,7 +140,8 @@ def operation_tasks_payload(payload):
     )
     if payload.get("summary_only"):
         return {"summary": result["summary"], "packages": [], "tasks": []}
-    return result
+    page = app.task_page_payload(result["tasks"], payload.get("limit", ""), payload.get("offset", ""))
+    return {**result, **page}
 
 
 def submit_operation_task(task_id, actor, action, remark="", proof=""):
@@ -374,7 +375,13 @@ def reset_operator_account_payload(payload):
 def erp_product_info_payload(payload):
     payload = payload or {}
     require_admin_payload(payload, "查询ERP商品信息")
-    return app.query_erp_product_info(payload.get("query", ""), payload.get("limit", 100))
+    return app.query_erp_product_info(
+        payload.get("query", ""),
+        payload.get("limit", 100),
+        payload.get("product_code", ""),
+        payload.get("merchant_code", ""),
+        payload.get("product_name", ""),
+    )
 
 
 def import_owner_master_payload(payload):
@@ -439,6 +446,21 @@ def backup_reminder_payload(payload):
     if operator_role(payload or {}) != "admin":
         return {"backup_exists": True, "message": ""}
     return app.monthly_backup_reminder()
+
+
+def asset_overview_payload(payload):
+    payload = payload or {}
+    return app.asset_overview(payload.get("anchor_date", ""))
+
+
+def export_asset_archive_payload(payload):
+    require_admin_payload(payload or {}, "导出重要资产存档")
+    return app.export_asset_archive(payload.get("path", ""))
+
+
+def import_asset_archive_payload(payload):
+    require_admin_payload(payload or {}, "初始化导入重要资产")
+    return app.import_asset_archive(payload.get("path", ""))
 
 
 def erp_sync_payload(payload):

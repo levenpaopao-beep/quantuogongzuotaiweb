@@ -11,6 +11,11 @@ const state = {
   taskPackages: [],
   taskSummary: {},
   taskOverview: {},
+  taskTotal: 0,
+  taskLimit: 200,
+  taskOffset: 0,
+  taskHasMore: false,
+  pendingTaskPackageSelection: null,
   reportTaskSync: {},
   reportTasks: {},
   storeOwners: [],
@@ -21,6 +26,7 @@ const state = {
   salesReport: null,
   businessReport: null,
   homeBusinessReports: {},
+  assetOverview: null,
   businessTab: "overview",
   businessRange: "30d",
   businessSource: "manual",
@@ -420,7 +426,7 @@ function renderSourceRecompute(group) {
   const staleNames = recompute.stale_report_names?.length ? recompute.stale_report_names : recompute.report_names;
   const latest = recompute.latest_generated_at ? `最近生成 ${recompute.latest_generated_at}` : "还没有生成记录";
   return `<div class="source-recompute ${tone}">
-    <strong>${recompute.needed ? "最新数据源待重算" : "关联任务已同步"}</strong>
+    <strong>${recompute.needed ? "最新数据源待重算报表" : "关联报表已同步"}</strong>
     <span>影响：${esc(staleNames.join("、"))}</span>
     <small>${esc(latest)}。${esc(recompute.message || "")}</small>
   </div>`;
@@ -431,11 +437,11 @@ function renderSources(groups) {
   rows.innerHTML = "";
   const pendingGroups = groups.filter((item) => item.pending_count);
   const recomputeGroups = groups.filter((item) => item.recompute?.needed);
-  $("#statusSummary").textContent = `共 ${groups.length} 个数据源，${pendingGroups.length} 个有待提交文件，${recomputeGroups.length} 个需要重算任务`;
+  $("#statusSummary").textContent = `共 ${groups.length} 个数据源，${pendingGroups.length} 个有待提交文件，${recomputeGroups.length} 个需要重算报表`;
   $("#syncHint").textContent = pendingGroups.length
     ? "有数据源等待结束上传，结束上传后才会正式生效。"
     : recomputeGroups.length
-      ? "发现最新数据源已生效但关联任务尚未重算，请按数据源选择是否重算。经营报表仍默认使用店长填报销量。"
+      ? "发现最新数据源已生效但关联报表尚未重算，请按数据源重算；报表生成后会同步商品任务。经营报表仍默认使用店长填报销量。"
       : "所有已启用的数据源和关联任务均已检查完成";
   renderImportHealth(groups);
   groups.forEach((group) => {
@@ -443,7 +449,7 @@ function renderSources(groups) {
     const row = document.createElement("div");
     row.className = "table-row";
     row.innerHTML = `
-      <div class="table-cell source-name"><span class="source-badge ${badgeClass}">${badgeText}</span><span>${group.name}</span></div>
+      <div class="table-cell source-name"><span class="source-badge ${badgeClass}">${badgeText}</span><span>${group.name}<small class="source-retention">${esc(group.retention_label || "日日留存")}</small></span></div>
       <div class="table-cell"><div class="file-name" title="${latestName(group)}">${latestName(group)}</div><div class="file-meta">${group.latest?.modified || "等待上传"}${group.batch_id ? ` · 批次 ${group.batch_id}` : ""}</div>${renderSourceProgress(group)}${renderSourceRecompute(group)}</div>
       <div class="table-cell pending">${group.pending_count || 0}</div>
       <div class="table-cell rows-count">${group.total_rows || group.latest?.rows || "-"}</div>
@@ -452,7 +458,7 @@ function renderSources(groups) {
         <button class="tool-button" data-action="select">选择文件</button>
         <button class="tool-button" data-action="upload">上传</button>
         <button class="tool-button" data-action="finish">结束上传</button>
-        ${group.recompute?.needed ? '<button class="tool-button primary-mini" data-action="recompute">重算关联任务</button>' : ""}
+        ${group.recompute?.needed ? '<button class="tool-button primary-mini" data-action="recompute">重算关联报表</button>' : ""}
       </div>
     `;
     row.querySelector('[data-action="select"]').addEventListener("click", () => selectFiles(group));
@@ -779,6 +785,15 @@ function setTaskCheck(id, value) {
   if (field) field.checked = Boolean(value);
 }
 
+function resetTaskPage() {
+  state.taskOffset = 0;
+}
+
+function loadTasksFromFirstPage(showToastOnDone = true) {
+  resetTaskPage();
+  return loadTasks(showToastOnDone);
+}
+
 function applyAdminQueueFilter(index) {
   const item = (state.taskOverview?.admin_queue || state.taskSummary?.admin_queue || [])[index];
   if (!item) return;
@@ -795,7 +810,7 @@ function applyAdminQueueFilter(index) {
   setTaskCheck("taskOverdue", filters.overdue === "1");
   setTaskCheck("taskUnassigned", filters.unassigned === "1");
   setTaskCheck("taskReworked", filters.reworked === "1");
-  loadTasks();
+  loadTasksFromFirstPage();
 }
 
 function renderOwnerTaskSummary() {
@@ -833,7 +848,7 @@ function applyOwnerSummaryFilter(index) {
   setTaskCheck("taskOverdue", false);
   setTaskCheck("taskUnassigned", item.owner === "未分配");
   setTaskCheck("taskReworked", false);
-  loadTasks();
+  loadTasksFromFirstPage();
 }
 
 function setTaskQuickFilters({ status = "", nextHandler = "", openOnly = true, unassigned = false, reworked = false } = {}) {
@@ -851,7 +866,7 @@ function setTaskQuickFilters({ status = "", nextHandler = "", openOnly = true, u
   setTaskCheck("taskOverdue", false);
   setTaskCheck("taskUnassigned", unassigned);
   setTaskCheck("taskReworked", reworked);
-  loadTasks();
+  loadTasksFromFirstPage();
 }
 
 function canCurrentRoleHandleTask(task) {
@@ -904,8 +919,8 @@ function renderTaskWorkbar() {
   }
   if (metrics) {
     metrics.innerHTML = [
-      ["当前筛选", state.tasks.length, `任务包 ${packages.length}`],
-      ["可直接处理", actionable, ownerMode ? "可整包提交" : "可推送/确认/归档"],
+      ["当前筛选", state.taskTotal || state.tasks.length, `本页 ${state.tasks.length} / 任务包 ${packages.length}`],
+      ["本页可处理", actionable, ownerMode ? "可整包提交" : "可推送/确认/归档/屏蔽"],
       ["已勾选", selected, "用于批量动作"],
       ["全局待办", ownerMode ? status["待店长处理"] || 0 : nextHandler["管理员"] || 0, ownerMode ? "我的口径" : "管理员口径"],
     ].map(([label, value, note]) => `
@@ -929,11 +944,15 @@ function renderTaskWorkbar() {
     ];
     actions.innerHTML = `
       <button class="tool-button primary-mini" data-task-work-action="select-actionable" type="button">选择可处理</button>
+      ${ownerMode ? "" : '<button class="tool-button primary-mini" data-task-work-action="push-selected" type="button">推送所选</button><button class="tool-button" data-task-work-action="confirm-selected" type="button">确认所选</button><button class="tool-button" data-task-work-action="suppress-selected" type="button">屏蔽所选</button>'}
       ${quickActions.map(([label, quickStatus, next, openOnly, unassigned, reworked]) => `
         <button class="tool-button" data-task-work-action="filter" data-status="${quickStatus}" data-next="${next}" data-open-only="${openOnly ? "1" : ""}" data-unassigned="${unassigned ? "1" : ""}" data-reworked="${reworked ? "1" : ""}" type="button">${label}</button>
       `).join("")}
     `;
     actions.querySelector('[data-task-work-action="select-actionable"]')?.addEventListener("click", selectActionableTasks);
+    actions.querySelector('[data-task-work-action="push-selected"]')?.addEventListener("click", () => pushTasks());
+    actions.querySelector('[data-task-work-action="confirm-selected"]')?.addEventListener("click", () => confirmTasks());
+    actions.querySelector('[data-task-work-action="suppress-selected"]')?.addEventListener("click", () => suppressTasks());
     actions.querySelectorAll('[data-task-work-action="filter"]').forEach((button) => {
       button.addEventListener("click", () => setTaskQuickFilters({
         status: button.dataset.status || "",
@@ -1011,6 +1030,7 @@ function packageActionIds(pkg, action) {
 function packageActionButtons(pkg) {
   const operator = currentOperator();
   const buttons = [];
+  buttons.push(`<button class="tool-button" data-package-action="select" data-id="${pkg.id}">选中本包</button>`);
   if (operator.role === "owner" && packageActionIds(pkg, "submit").length) {
     buttons.push(`<button class="tool-button primary-mini" data-package-action="submit" data-id="${pkg.id}">整包已处理</button>`);
   }
@@ -1036,8 +1056,33 @@ function applyPackageFilter(pkg) {
   setTaskField("taskStatus", "");
   setTaskField("taskSearch", pkg.system_action || "");
   document.querySelector(".task-table")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  loadTasks(false);
+  loadTasksFromFirstPage(false);
   showToast("已按任务包定位明细");
+}
+
+function selectPackageTasks(pkg, action = "all") {
+  if (!pkg) return;
+  const ids = action === "all" ? (pkg.task_ids || []) : packageActionIds(pkg, action);
+  const visible = new Set(ids);
+  let checked = 0;
+  document.querySelectorAll(".task-check").forEach((input) => {
+    input.checked = visible.has(input.value);
+    if (input.checked) checked += 1;
+  });
+  renderTaskWorkbar();
+  showToast(checked ? `已选中本页 ${checked} 条本包任务` : "本包明细不在当前页，正在按本包筛选");
+  if (!checked) {
+    state.pendingTaskPackageSelection = { packageId: pkg.id, action };
+    applyPackageFilter(pkg);
+  }
+}
+
+function applyPendingPackageSelection() {
+  const pending = state.pendingTaskPackageSelection;
+  if (!pending) return;
+  state.pendingTaskPackageSelection = null;
+  const pkg = taskPackageById(pending.packageId);
+  if (pkg) selectPackageTasks(pkg, pending.action || "all");
 }
 
 function renderTaskPackages() {
@@ -1100,20 +1145,39 @@ function canAssignTask(task) {
 
 function taskActionButtons(task) {
   const operator = currentOperator();
-  const historyButton = `<button class="tool-button" data-action="history" data-id="${task.id}" title="查看操作记录">记录</button>`;
-  const submitButton = !task.owner ? '<span class="file-meta">待指派</span>' : canSubmitOwnerTask(task) ? `<button class="tool-button" data-action="submit" data-id="${task.id}" title="店长填写处理结果">填写</button>` : '<span class="file-meta">-</span>';
+  const actionIds = (task.task_ids || [task.id]).filter(Boolean);
+  const dataIds = esc(actionIds.join(","));
+  const historyButton = `<button class="tool-button" data-action="history" data-id="${task.id}" data-ids="${dataIds}" title="查看操作记录">记录</button>`;
+  const submitButton = !task.owner ? '<span class="file-meta">待指派</span>' : canSubmitOwnerTask(task) ? `<button class="tool-button" data-action="submit" data-id="${task.id}" data-ids="${dataIds}" title="店长填写处理结果">填写</button>` : '<span class="file-meta">-</span>';
   if (operator.role === "owner") {
     return `${historyButton}${submitButton}`;
   }
-  const reviewButtons = canReviewTask(task) ? `<button class="tool-button primary-mini" data-action="confirm" data-id="${task.id}" title="确认店长已处理并完成">确认</button>` : "";
-  const suppressButton = task.status !== "已完成" ? `<button class="tool-button" data-action="suppress" data-id="${task.id}" title="加入屏蔽清单，不再重复提示">屏蔽</button>` : "";
-  const doneButton = canMarkDoneTask(task) ? `<button class="tool-button" data-action="done" data-id="${task.id}" title="标记完成">完成</button>` : "";
-  const assignButton = canAssignTask(task) ? `<button class="tool-button" data-action="assign" data-id="${task.id}" title="指派负责人">指派</button>` : "";
+  const reviewButtons = canReviewTask(task) ? `<button class="tool-button primary-mini" data-action="confirm" data-id="${task.id}" data-ids="${dataIds}" title="确认店长已处理并完成">确认</button>` : "";
+  const suppressButton = task.status !== "已完成" ? `<button class="tool-button" data-action="suppress" data-id="${task.id}" data-ids="${dataIds}" title="加入屏蔽清单，不再重复提示">屏蔽</button>` : "";
+  const doneButton = canMarkDoneTask(task) ? `<button class="tool-button" data-action="done" data-id="${task.id}" data-ids="${dataIds}" title="标记完成">完成</button>` : "";
+  const assignButton = canAssignTask(task) ? `<button class="tool-button" data-action="assign" data-id="${task.id}" data-ids="${dataIds}" title="指派负责人">指派</button>` : "";
   return `${historyButton}${assignButton}${reviewButtons}${doneButton}${suppressButton}`;
 }
 
 function selectedTaskIds() {
-  return Array.from(document.querySelectorAll(".task-check:checked")).map((input) => input.value).filter(Boolean);
+  const ids = [];
+  const seen = new Set();
+  Array.from(document.querySelectorAll(".task-check:checked")).forEach((input) => {
+    String(input.dataset.ids || input.value || "").split(",").map((item) => item.trim()).filter(Boolean).forEach((id) => {
+      if (!seen.has(id)) {
+        seen.add(id);
+        ids.push(id);
+      }
+    });
+  });
+  return ids;
+}
+
+function actionButtonIds(button) {
+  return String(button?.dataset?.ids || button?.dataset?.id || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function toggleAllTaskSelection(checked) {
@@ -1125,6 +1189,7 @@ function renderTaskCenter() {
   renderTaskSummary();
   renderTaskPackages();
   renderTaskWorkbar();
+  renderTaskPagebar();
   const rows = $("#taskRows");
   if (!rows) return;
   const selectAll = $("#taskSelectAll");
@@ -1142,7 +1207,7 @@ function renderTaskCenter() {
   }
   rows.innerHTML = state.tasks.map((task) => `
     <div class="task-row">
-      <div><input class="task-check" type="checkbox" value="${task.id || ""}" /></div>
+      <div><input class="task-check" type="checkbox" value="${task.id || ""}" data-ids="${esc(((task.task_ids || [task.id]).filter(Boolean)).join(","))}" /></div>
       <div><span class="status-pill ${taskBadge(task.status)}">${taskStatusLabel(task.status)}</span></div>
       <div><span class="status-pill ${task.priority === "高" ? "status-danger" : task.priority === "中" ? "status-warn" : task.priority === "低" ? "status-ok" : ""}">${task.priority || "低"}</span></div>
       <div class="task-copy">${task.platform || ""}</div>
@@ -1166,10 +1231,14 @@ function renderTaskCenter() {
   });
   rows.querySelectorAll('[data-action="history"]').forEach((button) => button.addEventListener("click", () => showTaskHistory(button.dataset.id)));
   rows.querySelectorAll('[data-action="assign"]').forEach((button) => button.addEventListener("click", () => assignTask(button.dataset.id)));
-  rows.querySelectorAll('[data-action="submit"]').forEach((button) => button.addEventListener("click", () => submitTask(button.dataset.id)));
-  rows.querySelectorAll('[data-action="confirm"]').forEach((button) => button.addEventListener("click", () => confirmTasks([button.dataset.id])));
-  rows.querySelectorAll('[data-action="done"]').forEach((button) => button.addEventListener("click", () => doneTask(button.dataset.id)));
-  rows.querySelectorAll('[data-action="suppress"]').forEach((button) => button.addEventListener("click", () => suppressTasks([button.dataset.id])));
+  rows.querySelectorAll('[data-action="submit"]').forEach((button) => button.addEventListener("click", () => {
+    const ids = actionButtonIds(button);
+    if (ids.length > 1) batchSubmitSpecificTasks(ids);
+    else submitTask(button.dataset.id);
+  }));
+  rows.querySelectorAll('[data-action="confirm"]').forEach((button) => button.addEventListener("click", () => confirmTasks(actionButtonIds(button))));
+  rows.querySelectorAll('[data-action="done"]').forEach((button) => button.addEventListener("click", () => doneTasks(actionButtonIds(button))));
+  rows.querySelectorAll('[data-action="suppress"]').forEach((button) => button.addEventListener("click", () => suppressTasks(actionButtonIds(button))));
   renderTodayDashboard();
 }
 
@@ -1199,9 +1268,46 @@ function showTaskHistory(id) {
 
 function showTaskError(error) {
   const line = $("#taskStatusLine");
-  const message = error.message || "任务操作失败";
+  const message = userFacingError(error) || "任务操作失败";
   if (line) line.textContent = message;
   showToast(message);
+}
+
+function taskPageStatusText() {
+  const total = Number(state.taskTotal || 0);
+  if (!total) return "当前筛选 0 条任务";
+  const start = Math.min(total, Number(state.taskOffset || 0) + 1);
+  const end = Math.min(total, Number(state.taskOffset || 0) + Number(state.tasks.length || 0));
+  return `当前筛选 ${total} 条任务，正在显示 ${start}-${end} 条`;
+}
+
+function renderTaskPagebar() {
+  const wrap = $("#taskPagebar");
+  if (!wrap) return;
+  const total = Number(state.taskTotal || 0);
+  const limit = Math.max(1, Number(state.taskLimit || 200));
+  const offset = Math.max(0, Number(state.taskOffset || 0));
+  if (!total || total <= limit) {
+    wrap.innerHTML = "";
+    return;
+  }
+  const page = Math.floor(offset / limit) + 1;
+  const pages = Math.max(1, Math.ceil(total / limit));
+  wrap.innerHTML = `
+    <span>${taskPageStatusText()}，第 ${page}/${pages} 页</span>
+    <div>
+      <button class="tool-button" data-task-page="prev" type="button" ${offset <= 0 ? "disabled" : ""}>上一页</button>
+      <button class="tool-button" data-task-page="next" type="button" ${state.taskHasMore ? "" : "disabled"}>下一页</button>
+    </div>
+  `;
+  wrap.querySelector('[data-task-page="prev"]')?.addEventListener("click", () => {
+    state.taskOffset = Math.max(0, offset - limit);
+    loadTasks(false);
+  });
+  wrap.querySelector('[data-task-page="next"]')?.addEventListener("click", () => {
+    state.taskOffset = offset + limit;
+    loadTasks(false);
+  });
 }
 
 async function loadTasks(showToastOnDone = true) {
@@ -1210,13 +1316,18 @@ async function loadTasks(showToastOnDone = true) {
     if (line) line.textContent = "正在读取任务...";
     const overview = await api.tasks(operatorPayload({ filters: taskOverviewFilters(), summary_only: true }));
     state.taskOverview = overview.summary || {};
-    const result = await api.tasks(operatorPayload({ filters: taskFilters() }));
+    const result = await api.tasks(operatorPayload({ filters: taskFilters(), limit: state.taskLimit, offset: state.taskOffset }));
     state.taskSummary = result.summary || {};
     state.taskPackages = result.packages || [];
     state.tasks = result.tasks || [];
+    state.taskTotal = Number(result.task_total || state.tasks.length || 0);
+    state.taskLimit = Number(result.task_limit || state.taskLimit || 200);
+    state.taskOffset = Number(result.task_offset || 0);
+    state.taskHasMore = Boolean(result.has_more_tasks);
     renderTaskCenter();
+    applyPendingPackageSelection();
     renderTodayDashboard();
-    if (line) line.textContent = `当前筛选 ${state.tasks.length} 条任务`;
+    if (line) line.textContent = taskPageStatusText();
     if (showToastOnDone) showToast("任务已刷新");
   } catch (error) {
     showTaskError(error);
@@ -1281,7 +1392,7 @@ function applyRouteIntent(route = {}) {
     setTimeout(() => document.querySelector("#salesReportTable")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
   if (route.emptyPage === "tasks" && (route.taskUser || route.taskStatus || route.taskNextHandler || route.taskOpenOnly)) {
-    loadTasks();
+    loadTasksFromFirstPage();
   }
   if (route.focus === "import-matrix") {
     setTimeout(() => document.querySelector("#importMatrixRows")?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
@@ -1312,13 +1423,23 @@ function salesFocusEntries(entries) {
 function renderSalesFocus(summary = {}, entries = []) {
   const title = $("#salesFocusTitle");
   const hint = $("#salesFocusHint");
+  const notice = $("#salesPendingNotice");
   const visible = salesFocusEntries(entries);
+  const missingEntries = entries.filter((item) => !item.submitted);
+  const missingStores = new Set(missingEntries.map((item) => `${item.platform || ""}::${item.store || ""}`));
+  const ownerMode = (currentOperator().role || "admin") === "owner";
   if (title) {
     const label = state.salesFocus === "abnormal" ? "只看异常波动" : state.salesFocus === "all" ? "查看全部店铺" : "先补未填销售日";
     title.textContent = `${label} · ${visible.length} 条`;
   }
   if (hint) {
-    hint.textContent = `应填 ${summary.required || 0}，已填 ${summary.submitted || 0}，未填 ${summary.missing || 0}，异常 ${summary.abnormal || 0}。输入销量后按回车可提交当前行。`;
+    hint.textContent = `应填 ${summary.required || 0}，已填 ${summary.submitted || 0}，未填 ${summary.missing || 0}，异常 ${summary.abnormal || 0}。输入销量后按回车可保存当前行。`;
+  }
+  if (notice) {
+    const prefix = ownerMode ? "你" : "当前";
+    notice.textContent = missingEntries.length
+      ? `${prefix}还有 ${missingStores.size} 个店铺、1 天的数据没有填写，请尽快填写。`
+      : `${prefix}选择的销售日已填写完成。`;
   }
   document.querySelectorAll(".sales-focus-tabs [data-sales-focus]").forEach((button) => {
     button.classList.toggle("active", button.dataset.salesFocus === state.salesFocus);
@@ -1341,6 +1462,7 @@ function renderSalesManagement() {
       });
       bindEmptyActions(list);
     } else {
+      const visibleEntries = salesFocusEntries(entries).map((item) => ({ item, index: entries.indexOf(item) }));
       list.innerHTML = `
         <div class="sales-day-summary">
           <span>销售日期：<strong>${esc($("#salesDate")?.value || salesDefaultDateText())}</strong></span>
@@ -1353,8 +1475,9 @@ function renderSalesManagement() {
           <table class="report-data-table sales-day-table">
             <thead><tr><th>平台</th><th>店铺</th><th>负责人</th><th>销量</th><th>状态</th><th>异常</th><th>备注</th><th>操作</th></tr></thead>
             <tbody>
-              ${entries.map((item, index) => {
-                const editing = state.salesEditingIndex === index || !item.submitted || item.needs_confirmation;
+              ${visibleEntries.length ? visibleEntries.map(({ item, index }) => {
+                const canEdit = item.editable !== false;
+                const editing = canEdit && (state.salesEditingIndex === index || !item.submitted || item.needs_confirmation);
                 const statusLabel = item.needs_confirmation ? "待确认" : (item.submitted ? "已填写" : "未填写");
                 const sourceHint = item.needs_confirmation ? "历史导入待确认" : statusLabel;
                 return `
@@ -1362,18 +1485,20 @@ function renderSalesManagement() {
                     <td>${esc(item.platform || "")}</td>
                     <td><strong>${esc(item.store || "")}</strong></td>
                     <td>${esc(item.owner || "未分配")}</td>
-                    <td><input data-sales-index="${index}" inputmode="numeric" value="${item.sales || ""}" placeholder="" ${editing ? "" : "disabled"} /></td>
+                    <td><input data-sales-index="${index}" inputmode="numeric" value="${esc(item.sales || "")}" placeholder="" ${editing ? "" : "disabled"} /></td>
                     <td><span class="status-pill ${item.submitted ? "status-ok" : "status-warn"}">${esc(sourceHint)}</span></td>
                     <td>${item.abnormal ? `<span class="status-pill status-danger">${esc(item.abnormal)}</span>` : "正常"}</td>
                     <td><input data-remark-index="${index}" value="${esc(item.remark || "")}" placeholder="可空" ${editing ? "" : "disabled"} /></td>
                     <td>
                       ${editing
                         ? `<button class="primary-button compact-button" data-action="submit-sales" data-index="${index}">确认</button>`
-                        : `<button class="tool-button" data-action="edit-sales" data-index="${index}">编辑</button>`}
+                        : canEdit
+                          ? `<button class="tool-button" data-action="edit-sales" data-index="${index}">编辑</button>`
+                          : `<span class="locked-note">${esc(item.locked_reason || "已锁定")}</span>`}
                     </td>
                   </tr>
                 `;
-              }).join("")}
+              }).join("") : `<tr><td class="empty-table-cell" colspan="8">当前筛选下没有数据。</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -1803,16 +1928,32 @@ function homeRangeCard(rangeKey, label) {
 function renderHomeBusinessOverview() {
   const wrap = $("#homeBusinessOverview");
   if (!wrap) return;
-  const hot = temuHotSnapshot();
   wrap.innerHTML = `
     ${homeRangeCard("7d", "最近7天销量")}
     ${homeRangeCard("30d", "最近30天销量")}
     ${homeRangeCard("90d", "最近90天销量")}
+    ${assetMetricCard("temu_hot_skc", "Temu 爆旺款 SKC")}
+    ${assetMetricCard("shein_hot_skc", "Shein 爆款 SKC")}
+  `;
+}
+
+function assetCompareText(label, compare) {
+  if (!compare || compare.value === null || compare.value === undefined) return `${label}：暂无数据`;
+  return `${label}：${esc(compare.value)} 条（${esc(signedNumber(compare.delta || 0))}）`;
+}
+
+function assetMetricCard(metricKey, label) {
+  const item = state.assetOverview?.metrics?.[metricKey] || {};
+  const definition = state.assetOverview?.definitions?.[metricKey] || "";
+  const value = item.value === null || item.value === undefined ? "暂无" : `${item.value} 条`;
+  const sourceLabel = item.source === "asset_db" ? "重要资产库" : (item.source_file ? "最新数据源兜底" : "暂无数据源");
+  return `
     <div class="home-business-card hot-card">
-      <span>Temu 爆旺款链接</span>
-      <strong>${esc(hot.rows)} 个</strong>
-      <small>${esc(hot.label)}</small>
-      <small>较上月同期：暂无历史同期数据</small>
+      <span>${label} <b class="info-dot" title="${esc(definition)}">?</b></span>
+      <strong>${esc(value)}</strong>
+      <small>${esc(sourceLabel)}${item.date ? ` · ${esc(item.date)}` : ""}</small>
+      <small>${assetCompareText("较上月同期", item.previous_month)}</small>
+      <small>${assetCompareText("较去年同期", item.previous_year)}</small>
     </div>
   `;
 }
@@ -2139,6 +2280,17 @@ async function loadHomeBusinessReports() {
   }
 }
 
+async function loadAssetOverview(showToastOnDone = false) {
+  if (!api.assetOverview) return;
+  try {
+    state.assetOverview = await api.assetOverview(operatorPayload());
+    renderHomeBusinessOverview();
+    if (showToastOnDone) showToast("重要资产概览已刷新");
+  } catch (error) {
+    showToast(userFacingError(error) || "重要资产概览读取失败");
+  }
+}
+
 async function loadImportMatrix(showToastOnDone = false) {
   if (!api.importMatrix) return;
   try {
@@ -2154,6 +2306,10 @@ async function loadImportMatrix(showToastOnDone = false) {
 async function submitSalesEntry(index) {
   const entry = (state.sales?.entries || [])[index];
   if (!entry) return;
+  if (entry.editable === false) {
+    showToast(entry.locked_reason || "这条销量已过当天修改时间，请联系管理员修改");
+    return;
+  }
   const salesInput = document.querySelector(`[data-sales-index="${index}"]`);
   const remarkInput = document.querySelector(`[data-remark-index="${index}"]`);
   const sales = salesInput?.value.trim() || "";
@@ -2181,6 +2337,7 @@ async function submitSalesEntry(index) {
     await loadSalesReport(false);
     await loadBusinessReport(false);
     await loadHomeBusinessReports();
+    await loadAssetOverview(false);
     await loadSalesCompare(false);
     focusNextSalesEntry(index);
     showToast("销量已保存");
@@ -2200,7 +2357,7 @@ async function submitSalesBatch() {
       const remark = document.querySelector(`[data-remark-index="${index}"]`)?.value.trim() || "";
       return { index, entry, sales, remark };
     })
-    .filter((item) => item.entry && item.sales !== "");
+    .filter((item) => item.entry && item.entry.editable !== false && item.sales !== "");
   if (!filled.length) {
     showToast("当前列表没有已填写的销量");
     return;
@@ -2228,6 +2385,7 @@ async function submitSalesBatch() {
     await loadSalesReport(false);
     await loadBusinessReport(false);
     await loadHomeBusinessReports();
+    await loadAssetOverview(false);
     await loadSalesCompare(false);
     const missing = Number(state.sales?.summary?.missing || 0);
     showToast(missing ? `已保存 ${saved} 条，还有 ${missing} 个店铺未填写` : `已保存 ${saved} 条，当前日期已填完`);
@@ -2662,11 +2820,52 @@ async function batchSubmitTasks() {
   });
 }
 
-async function pushTasks(ids) {
-  const selected = (ids || selectedTaskIds()).filter(Boolean);
+async function batchSubmitSpecificTasks(ids) {
+  const selected = (ids || []).filter(Boolean);
   if (!selected.length) {
-    showToast("请先选择要推送给店长的任务");
+    showToast("请先选择要处理的任务");
     return;
+  }
+  const operator = currentOperator();
+  if (operator.role !== "owner") {
+    showToast("只有店长可以批量填写处理结果");
+    return;
+  }
+  openTaskDialog({
+    pill: "合并处理",
+    title: "填写合并任务处理结果",
+    description: "同一 SKC/同一产品的重复明细会使用同一套处理动作和依据。",
+    ids: selected,
+    submitLabel: "提交处理",
+    fields: [
+      { name: "action", label: "处理动作", type: "select", value: "已处理", required: true, options: ["已处理", "已下架", "申请退货", "继续观察", "同意议价", "已改价", "已补库存"] },
+      { name: "remark", label: "处理备注", type: "textarea", placeholder: "说明这一组合并任务的处理结果" },
+      { name: "proof", label: "处理凭证", placeholder: "截图链接、后台单号、表格行号等" },
+    ],
+    onSubmit: async (values) => {
+      if (!String(values.remark || "").trim() && !String(values.proof || "").trim()) {
+        throw new Error("店长提交必须填写处理依据：备注或处理凭证至少填一个");
+      }
+      const result = await api.batchSubmitTasks(operatorPayload({ ids: selected, ...values }));
+      await loadTasks(false);
+      showToast(`已提交 ${result.count || 0} 条合并任务，等待管理员确认`);
+    },
+  });
+}
+
+async function pushTasks(ids) {
+  const rawSelected = (ids || selectedTaskIds()).filter(Boolean);
+  const byId = new Map((state.tasks || []).map((task) => [task.id, task]));
+  const selected = rawSelected.filter((id) => {
+    const task = byId.get(id);
+    return !task || (task.status === "待推送" && task.owner);
+  });
+  if (!selected.length) {
+    showTaskError(new Error(rawSelected.length ? "所选任务里没有可推送项；只有已指派负责人且状态为待推送的任务可以推送" : "请先选择要推送给店长的任务"));
+    return;
+  }
+  if (selected.length < rawSelected.length) {
+    showToast(`已自动跳过 ${rawSelected.length - selected.length} 条不可推送任务`);
   }
   openTaskDialog({
     pill: "管理员推送",
@@ -2711,6 +2910,10 @@ async function doneTasks(ids) {
 function handlePackageAction(packageId, action) {
   const pkg = taskPackageById(packageId);
   if (!pkg) return;
+  if (action === "select") {
+    selectPackageTasks(pkg, "all");
+    return;
+  }
   if (action === "filter") {
     applyPackageFilter(pkg);
     return;
@@ -2867,39 +3070,57 @@ async function loadTaskSuppressions() {
 }
 
 function renderTaskSuppressions() {
-  const wrap = $("#taskSuppressionRows");
-  if (!wrap) return;
+  const table = $("#taskSuppressionTable");
+  const status = $("#taskSuppressionStatus");
+  if (!table) return;
   const operator = currentOperator();
   if (operator.role === "owner") {
-    wrap.innerHTML = actionEmpty({
-      title: "屏蔽清单由管理员维护",
-      body: "店长只处理已推送到自己名下的任务包；反复出现但不再提示的 SKC/SPU 由管理员统一设置。",
-      primary: "去商品任务",
-      page: "tasks",
-    });
-    bindEmptyActions(wrap);
+    if (status) status.textContent = "屏蔽清单由管理员维护。";
+    table.innerHTML = `<tbody><tr><td class="empty-table-cell">店长只处理已推送到自己名下的任务包；屏蔽清单由管理员统一维护。</td></tr></tbody>`;
     return;
   }
-  const rows = state.taskSuppressions || [];
+  const filters = {
+    store: $("#suppressionStoreFilter")?.value.trim().toLowerCase() || "",
+    owner: $("#suppressionOwnerFilter")?.value.trim().toLowerCase() || "",
+    skc: $("#suppressionSkcFilter")?.value.trim().toLowerCase() || "",
+    merchant: $("#suppressionMerchantFilter")?.value.trim().toLowerCase() || "",
+  };
+  const allRows = state.taskSuppressions || [];
+  const rows = allRows.filter((item) => {
+    if (filters.store && !String(item.store || "").toLowerCase().includes(filters.store)) return false;
+    if (filters.owner && !String(item.owner || "").toLowerCase().includes(filters.owner)) return false;
+    if (filters.skc && !String(item.skc || "").toLowerCase().includes(filters.skc)) return false;
+    if (filters.merchant && !String(item.merchant_code || "").toLowerCase().includes(filters.merchant)) return false;
+    return true;
+  });
+  if (status) status.textContent = `当前显示 ${rows.length} 条，共 ${allRows.length} 条屏蔽记录。`;
   if (!rows.length) {
-    wrap.innerHTML = actionEmpty({
-      title: "暂无屏蔽项",
-      body: "如果某个 SKC/SPU 每周重复出现但确认暂不处理，可在商品任务里勾选后加入屏蔽清单。",
-      primary: "去商品任务",
-      page: "tasks",
-    });
-    bindEmptyActions(wrap);
+    table.innerHTML = `<tbody><tr><td class="empty-table-cell">暂无匹配屏蔽项。可调整店铺、店长、SKC 或商家编码筛选条件。</td></tr></tbody>`;
     return;
   }
-  wrap.innerHTML = rows.slice(0, 80).map((item) => `
-    <div class="output-row">
-      <div>
-        <strong>${item.platform || "-"} · ${item.store || "-"} · ${item.task_type || "-"}</strong>
-        <p>${[item.product_name, item.merchant_code, item.skc ? `SKC ${item.skc}` : "", item.spu ? `SPU ${item.spu}` : "", item.system_action].filter(Boolean).join("　")}</p>
-        <p>原因：${item.reason || "未填写"}　时长：${item.duration || "永久"}　更新：${item.updated_at || "-"}</p>
-      </div>
-    </div>
-  `).join("");
+  const columns = ["店铺", "店长", "SKC", "商家编码", "商品名称", "任务类型", "系统建议", "原因", "状态", "时长", "更新时间", "更新人"];
+  table.innerHTML = `
+    <thead><tr>${columns.map((column) => `<th>${column}</th>`).join("")}</tr></thead>
+    <tbody>
+      ${rows.map((item) => {
+        const record = {
+          "店铺": item.store || "",
+          "店长": item.owner || "",
+          "SKC": item.skc || "",
+          "商家编码": item.merchant_code || "",
+          "商品名称": item.product_name || "",
+          "任务类型": item.task_type || "",
+          "系统建议": item.system_action || "",
+          "原因": item.reason || "",
+          "状态": item.status || "",
+          "时长": item.duration || "",
+          "更新时间": item.updated_at || "",
+          "更新人": item.updated_by || "",
+        };
+        return `<tr>${columns.map((column) => `<td title="${esc(record[column])}">${esc(record[column] || "-")}</td>`).join("")}</tr>`;
+      }).join("")}
+    </tbody>
+  `;
 }
 
 async function suppressTasks(ids = selectedTaskIds()) {
@@ -3374,44 +3595,49 @@ async function resetOperatorPassword(username) {
 }
 
 function renderProductInfoRows(result = {}) {
-  const rows = $("#productSearchRows");
+  const table = $("#productSearchTable");
   const status = $("#productSearchStatus");
-  if (!rows) return;
+  if (!table) return;
   const items = result.items || [];
+  const columns = result.columns || ["货品编码", "货品名称", "规格名称", "商家编码（新）", "可销库存", "批发价", "成本价", "零售价", "商品资料修改时间", "库存修改时间", "来源接口"];
   const sourceFiles = result.source_files || [];
   if (status) {
     const sourceText = sourceFiles.length ? `来源：${sourceFiles.slice(0, 3).join("、")}` : "未读取到 ERP 商品基础信息文件";
     status.textContent = `查询到 ${items.length} 条商品信息。${sourceText}`;
   }
   if (!items.length) {
-    rows.innerHTML = actionEmpty({
-      title: "没有匹配商品",
-      body: "请换商家编码、货品名称或规格关键词再查；如果没有来源文件，请先在系统设置里同步 ERP。",
-      primary: "去系统设置",
-      page: "rules",
-    });
-    bindEmptyActions(rows);
+    table.innerHTML = `<tbody><tr><td class="empty-table-cell">没有匹配商品。请换货品编码、商家编码或商品名再查；如果没有来源文件，请先在系统设置里同步 ERP。</td></tr></tbody>`;
     return;
   }
-  rows.innerHTML = items.map((item) => {
-    const summary = Object.entries(item.summary || {}).map(([key, value]) => `${esc(key)}：${esc(value)}`).join("　");
-    return `
-      <div class="output-row">
-        <div>
-          <strong>${esc(item.file_name || "ERP 商品信息")} · ${esc(item.sheet_name || "-")} · 第 ${esc(item.source_row || "-")} 行</strong>
-          <p>${summary || esc(item.content || "")}</p>
-        </div>
-      </div>
-    `;
-  }).join("");
+  table.innerHTML = `
+    <thead><tr>${columns.map((column) => `<th>${esc(column)}</th>`).join("")}</tr></thead>
+    <tbody>
+      ${items.map((item) => {
+        const record = item.record || item.summary || {};
+        return `<tr>${columns.map((column) => {
+          const value = record[column] || "";
+          const numeric = ["可销库存", "批发价", "成本价", "零售价"].includes(column);
+          return `<td class="${numeric ? "num" : ""}" title="${esc(value)}">${esc(value || "-")}</td>`;
+        }).join("")}</tr>`;
+      }).join("")}
+    </tbody>
+  `;
 }
 
 async function loadProductInfo() {
-  const query = $("#productSearchInput")?.value.trim() || "";
+  const productCode = $("#productCodeFilter")?.value.trim() || "";
+  const merchantCode = $("#merchantCodeFilter")?.value.trim() || "";
+  const productName = $("#productNameFilter")?.value.trim() || "";
   const status = $("#productSearchStatus");
   try {
-    if (status) status.textContent = query ? "正在查询 ERP 商品信息..." : "正在读取最新 ERP 商品信息...";
-    const result = await api.erpProductInfo(operatorPayload({ query, limit: 80 }));
+    const hasFilter = productCode || merchantCode || productName;
+    if (status) status.textContent = hasFilter ? "正在查询 ERP 商品信息..." : "正在读取最新 ERP 商品信息...";
+    const result = await api.erpProductInfo(operatorPayload({
+      product_code: productCode,
+      merchant_code: merchantCode,
+      product_name: productName,
+      limit: 200,
+    }));
     state.productInfo = result.items || [];
     renderProductInfoRows(result);
   } catch (error) {
@@ -3699,6 +3925,37 @@ async function createBackup() {
   } catch (error) {
     if (status) status.textContent = error.message || "生成备份失败";
     showToast(error.message || "生成备份失败");
+  }
+}
+
+async function exportAssetArchive() {
+  const status = $("#assetArchiveStatus");
+  try {
+    const result = await api.exportAssetArchive(operatorPayload());
+    if (status) status.textContent = `重要资产存档已导出：${result.file || result.path}，共 ${result.rows || 0} 条。`;
+    showToast("重要资产存档已导出");
+  } catch (error) {
+    if (status) status.textContent = userFacingError(error) || "导出重要资产失败";
+    showToast(userFacingError(error) || "导出重要资产失败");
+  }
+}
+
+async function importAssetArchive() {
+  const status = $("#assetArchiveStatus");
+  const path = $("#assetArchivePath")?.value.trim() || "";
+  if (!path) {
+    showToast("请先填写重要资产存档路径");
+    $("#assetArchivePath")?.focus();
+    return;
+  }
+  try {
+    const result = await api.importAssetArchive(operatorPayload({ path }));
+    await loadAssetOverview(false);
+    if (status) status.textContent = `重要资产初始化导入完成：${result.file || path}，共 ${result.rows || 0} 条。`;
+    showToast("重要资产初始化导入完成");
+  } catch (error) {
+    if (status) status.textContent = userFacingError(error) || "导入重要资产失败";
+    showToast(userFacingError(error) || "导入重要资产失败");
   }
 }
 
@@ -4366,6 +4623,7 @@ async function refreshAll() {
     await loadSalesReport(false);
     await loadBusinessReport(false);
     await loadHomeBusinessReports();
+    await loadAssetOverview(false);
     await loadSalesCompare(false);
     await loadImportMatrix(false);
     await loadTaskSuppressions();
@@ -4472,10 +4730,10 @@ async function generateWeeklyReports() {
 async function recomputeSource(group) {
   if (!api.recomputeSource || !group?.upload_target) return;
   const names = group.recompute?.stale_report_names?.length ? group.recompute.stale_report_names : group.recompute?.report_names || [];
-  const ok = confirm(`确认根据「${group.name}」最新数据源重算关联任务？\n\n将重算：${names.join("、") || "关联任务"}`);
+  const ok = confirm(`确认根据「${group.name}」最新数据源重算关联报表？\n\n将重算：${names.join("、") || "关联报表"}\n\n报表生成后会同步商品任务。`);
   if (!ok) return;
   try {
-    showToast(`开始重算 ${group.name} 关联任务`);
+    showToast(`开始重算 ${group.name} 关联报表`);
     const result = await api.recomputeSource(group.upload_target, operatorPayload());
     (result.results || []).forEach((item) => {
       if (item.status === "ok") state.reportTaskSync[item.report] = item.task_sync || {};
@@ -4483,7 +4741,7 @@ async function recomputeSource(group) {
     const failed = (result.results || []).filter((item) => item.status !== "ok");
     state.sourceProgress[group.key] = {
       kind: failed.length ? "error" : "done",
-      title: failed.length ? "重算完成但有失败" : "关联任务重算成功",
+      title: failed.length ? "重算完成但有失败" : "关联报表重算成功",
       message: `成功 ${result.summary?.ok || 0} 个，失败 ${result.summary?.failed || 0} 个；${taskSyncSummary(result.task_sync)}`,
       detail: failed.map((item) => `${item.name || item.report}：${item.error || "未知原因"}`).join("；"),
     };
@@ -4503,6 +4761,7 @@ function showPage(name) {
     imports: "importPage",
     reports: "reportsPage",
     masterdata: "masterDataPage",
+    productInfo: "productInfoPage",
     rules: "rulesPage",
     erpSettings: "erpSettingsPage",
   };
@@ -4512,8 +4771,8 @@ function showPage(name) {
   if (page) page.classList.add("page-active");
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === next));
   const active = document.querySelector(`.nav-item[data-page="${next}"] span`);
-  setText("#pageTitle", next === "erpSettings" ? "ERP 接口设置" : (active?.textContent || "今日工作台"));
-  if (next === "masterdata") loadProductInfo();
+  setText("#pageTitle", next === "erpSettings" ? "ERP 接口设置" : next === "productInfo" ? "商品信息查询" : (active?.textContent || "今日工作台"));
+  if (next === "productInfo") loadProductInfo();
   if (next === "erpSettings") renderErpSettings();
   if (next === "bargain" && currentOperator().role !== "owner") {
     openBargainHistoryDialog("pending");
@@ -4596,7 +4855,7 @@ function bindEvents() {
     button.addEventListener("click", () => setImportFocus(button.dataset.importFocus));
   });
   $("#exportSalesBtn")?.addEventListener("click", exportSales);
-  $("#loadTasksBtn")?.addEventListener("click", () => loadTasks());
+  $("#loadTasksBtn")?.addEventListener("click", () => loadTasksFromFirstPage());
   $("#exportTasksBtn")?.addEventListener("click", exportTasks);
   $("#batchPushTasksBtn")?.addEventListener("click", () => pushTasks());
   $("#batchSubmitTasksBtn")?.addEventListener("click", batchSubmitTasks);
@@ -4671,6 +4930,8 @@ function bindEvents() {
   $("#manualErpSyncBtn")?.addEventListener("click", manualErpSync);
   $("#testErpSettingsBtn")?.addEventListener("click", testErpSettings);
   $("#createBackupBtn")?.addEventListener("click", createBackup);
+  $("#exportAssetArchiveBtn")?.addEventListener("click", exportAssetArchive);
+  $("#importAssetArchiveBtn")?.addEventListener("click", importAssetArchive);
   $("#selectBackupBtn")?.addEventListener("click", selectBackupFile);
   $("#restoreBackupBtn")?.addEventListener("click", restoreBackup);
   $("#runDoctorBtn")?.addEventListener("click", runDoctorCheck);
@@ -4689,14 +4950,13 @@ function bindEvents() {
   $("#createOperatorAccountBtn")?.addEventListener("click", createOperatorAccount);
   $("#productSearchBtn")?.addEventListener("click", queryProductInfo);
   $("#reloadProductInfoBtn")?.addEventListener("click", loadProductInfo);
-  $("#productSearchInput")?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") queryProductInfo();
-  });
-  document.querySelectorAll('[data-action="focus-product-info"]').forEach((button) => {
-    button.addEventListener("click", () => {
-      $("#erpProductPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      loadProductInfo();
+  ["#productCodeFilter", "#merchantCodeFilter", "#productNameFilter"].forEach((selector) => {
+    $(selector)?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") queryProductInfo();
     });
+  });
+  ["#suppressionStoreFilter", "#suppressionOwnerFilter", "#suppressionSkcFilter", "#suppressionMerchantFilter"].forEach((selector) => {
+    $(selector)?.addEventListener("input", renderTaskSuppressions);
   });
   document.querySelectorAll("[data-master-module]").forEach((button) => {
     button.addEventListener("click", () => openMasterModule(button.dataset.masterModule));

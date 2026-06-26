@@ -189,6 +189,16 @@ def command(argv):
         return ok(adapter.business_report_payload(read_payload()))
     if name == "backup-reminder":
         return ok(adapter.backup_reminder_payload(read_payload()))
+    if name == "asset-overview":
+        return ok(adapter.asset_overview_payload(read_payload()))
+    if name == "export-asset-archive":
+        payload = read_payload()
+        require_admin(payload, "导出重要资产存档")
+        return ok(adapter.export_asset_archive_payload(payload))
+    if name == "import-asset-archive":
+        payload = read_payload()
+        require_admin(payload, "初始化导入重要资产")
+        return ok(adapter.import_asset_archive_payload(payload))
     if name == "import-matrix":
         return ok(adapter.import_matrix_payload(read_payload()))
     if name == "erp-sync":

@@ -268,7 +268,7 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("closeMasterModule", js)
         self.assertIn("master-module-card", css)
         self.assertIn("商品信息查询", html)
-        self.assertIn("erpProductPanel", html)
+        self.assertIn("productInfoPage", html)
         self.assertIn("loadProductInfo", js)
         self.assertNotIn('data-master-panel="product-info"', html)
         self.assertNotIn("基础数据查询", html)
@@ -361,7 +361,7 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("renderSourceProgress", source)
         self.assertIn("renderSourceRecompute", source)
         self.assertIn("recomputeSource", source)
-        self.assertIn("重算关联任务", source)
+        self.assertIn("重算关联报表", source)
         self.assertIn("api.recomputeSource", source)
         self.assertIn("已选择", source)
         self.assertIn("上传成功", source)
@@ -472,8 +472,26 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn("homeBusinessReports", source)
         self.assertIn('"7d", "30d", "90d"', source)
         self.assertIn('source: "manual"', source)
-        for text in ["最近7天销量", "最近30天销量", "最近90天销量", "Temu 爆旺款链接"]:
+        for text in ["最近7天销量", "最近30天销量", "最近90天销量", "Temu 爆旺款 SKC", "Shein 爆款 SKC"]:
             self.assertIn(text, source + html)
+
+    def test_important_assets_archive_is_available_to_home_and_settings(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        preload = (ROOT / "electron" / "preload.js").read_text(encoding="utf-8")
+        main = (ROOT / "electron" / "main.js").read_text(encoding="utf-8")
+        cli = (ROOT / "daily_ops_cli.py").read_text(encoding="utf-8")
+        adapter = (ROOT / "daily_ops_desktop_adapter.py").read_text(encoding="utf-8")
+        for text in ["assetOverview", "exportAssetArchive", "importAssetArchive"]:
+            self.assertIn(text, source + preload)
+        for channel in ["api:asset-overview", "api:export-asset-archive", "api:import-asset-archive"]:
+            self.assertIn(channel, main)
+        for command in ["asset-overview", "export-asset-archive", "import-asset-archive"]:
+            self.assertIn(command, cli)
+        for text in ["important_asset", "重要资产", "导出资产存档", "初始化导入"]:
+            self.assertIn(text, html + source + adapter)
+        refresh_body = source[source.index("async function refreshAll"):]
+        self.assertLess(refresh_body.index("await loadAssetOverview(false)"), refresh_body.index("renderTodayDashboard()"))
 
     def test_erp_settings_show_manual_pull_choices(self):
         html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
