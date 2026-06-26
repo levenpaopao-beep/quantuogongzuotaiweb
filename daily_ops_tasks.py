@@ -19,6 +19,7 @@ STATUS_REJECTED = "已驳回"
 STATUS_DONE = "已完成"
 OWNER_OVERDUE_DAYS = 3
 REVIEW_OVERDUE_DAYS = 1
+CLEARANCE_PRICE_CATEGORIES = {"杂款混发", "赠品", "8元", "12元", "清仓产品", "15元", "5元"}
 
 TASK_COLUMNS = [
     ("id", "任务ID"),
@@ -35,6 +36,7 @@ TASK_COLUMNS = [
     ("skc", "SKC"),
     ("spu", "SPU"),
     ("product_name", "货品名称"),
+    ("product_category", "货品分类名称"),
     ("system_action", "系统建议动作"),
     ("task_detail", "任务详情"),
     ("owner_action", "店长处理动作"),
@@ -149,14 +151,14 @@ def task_age_days(row, now=None):
 
 def task_identity(row):
     task_type = norm(row.get("task_type"))
-    if task_type == "价格异常":
+    if task_type in {"价格异常", "滞销处理"}:
         parts = [
             norm(row.get("platform")),
             task_type,
             norm(row.get("store")),
-            norm(row.get("skc")) or norm(row.get("product_name")) or norm(row.get("merchant_code")),
+            norm(row.get("skc")),
+            norm(row.get("merchant_code")),
             norm(row.get("product_name")),
-            price_action_bucket(row.get("system_action") or row.get("source_sheet")),
         ]
     else:
         parts = [
@@ -232,6 +234,8 @@ def task_priority(row, now=None):
         norm(row.get(key))
         for key in ["task_type", "system_action", "task_detail", "source_report", "source_sheet"]
     )
+    if is_clearance_low_price_task(row):
+        return "低", "清仓款低价默认不进待办"
     if task_type == "价格异常" and ("低于成本" in business_text or "亏损" in business_text):
         return "高", "低于成本价亏损销售"
     if task_type == "爆旺冲突":
@@ -259,6 +263,19 @@ def task_sort_key(row):
         -timestamp,
         norm(row.get("id")),
     )
+
+
+def is_clearance_price_category(value):
+    return norm(value) in CLEARANCE_PRICE_CATEGORIES
+
+
+def is_low_price_action(row):
+    text = " ".join(norm(row.get(key)) for key in ["system_action", "task_detail", "source_sheet"])
+    return "低于成本" in text or "亏损" in text or "低于批发价80" in text or "批发价80%" in text
+
+
+def is_clearance_low_price_task(row):
+    return norm(row.get("task_type")) == "价格异常" and is_clearance_price_category(row.get("product_category")) and is_low_price_action(row)
 
 
 def task_package_id(row):
@@ -371,6 +388,101 @@ def can_update_generated_owner(task):
     return True
 
 
+def task_status_rank(status):
+    order = {
+        STATUS_PENDING_REVIEW: 0,
+        STATUS_REJECTED: 1,
+        STATUS_PENDING_OWNER: 2,
+        STATUS_PENDING_PUSH: 3,
+        STATUS_APPROVED: 4,
+        STATUS_DONE: 5,
+    }
+    return order.get(norm(status), 9)
+
+
+def compact_legacy_price_tasks(payload, timestamp=""):
+    tasks = payload.get("tasks") if isinstance(payload, dict) else []
+    if not isinstance(tasks, list):
+        return False
+    groups = {}
+    for task in tasks:
+        if not isinstance(task, dict) or norm(task.get("task_type")) not in {"价格异常", "滞销处理"}:
+            continue
+        groups.setdefault(task_identity(task), []).append(task)
+    changed = False
+    timestamp = timestamp or now_text()
+    for rows in groups.values():
+        if len(rows) <= 1:
+            continue
+        def source_key(row):
+            return (
+                norm(row.get("source_batch_id")),
+                norm(row.get("source_file")),
+                norm(row.get("updated_at")) or norm(row.get("created_at")),
+            )
+        latest_source = max(source_key(row) for row in rows)
+        current_rows = [row for row in rows if source_key(row) == latest_source] or rows
+        latest_file = norm(current_rows[0].get("source_file")) if current_rows else ""
+        canonical = sorted(
+            current_rows,
+            key=lambda row: (
+                task_status_rank(row.get("status")),
+                norm(row.get("updated_at")) or norm(row.get("created_at")),
+                norm(row.get("id")),
+            ),
+        )[0]
+        for key in ["system_action", "source_sheet", "source_row", "source_batch_id"]:
+            merged = merge_unique_text(*(row.get(key, "") for row in current_rows))
+            if norm(canonical.get(key)) != merged:
+                canonical[key] = merged
+                changed = True
+        if latest_file and norm(canonical.get("source_file")) != latest_file:
+            canonical["source_file"] = latest_file
+            changed = True
+        for row in current_rows:
+            if row is canonical:
+                continue
+            if norm(row.get("owner")) and not norm(canonical.get("owner")):
+                canonical["owner"] = norm(row.get("owner"))
+                changed = True
+        active_rows = [row for row in rows if row is not canonical and norm(row.get("status")) != STATUS_DONE]
+        if norm(canonical.get("status")) == STATUS_DONE and "重复" in norm(canonical.get("completed_remark")) and active_rows:
+            source_status = sorted(active_rows, key=lambda row: task_status_rank(row.get("status")))[0]
+            canonical["status"] = source_status.get("status", STATUS_PENDING_OWNER)
+            canonical["completed_by"] = ""
+            canonical["completed_at"] = ""
+            canonical["completed_remark"] = ""
+            canonical.setdefault("history", []).append(history_entry(
+                canonical,
+                "系统",
+                "重复任务合并",
+                "恢复最新任务",
+                "最新来源任务被误归档，已恢复为当前待处理",
+                time=timestamp,
+            ))
+            changed = True
+        for row in rows:
+            if row is canonical or norm(row.get("status")) == STATUS_DONE:
+                continue
+            row["status"] = STATUS_DONE
+            row["completed_by"] = "系统"
+            row["completed_at"] = timestamp
+            row["completed_remark"] = "同 SKC/同商品/同异常类型重复历史任务，自动合并归档"
+            row["updated_at"] = timestamp
+            row.setdefault("history", []).append(history_entry(
+                row,
+                "系统",
+                "重复任务合并",
+                "自动归档",
+                "同 SKC/同商品/同异常类型已合并到最新报表任务",
+                time=timestamp,
+            ))
+            changed = True
+        if changed:
+            canonical["updated_at"] = timestamp
+    return changed
+
+
 def generated_task_remark(row):
     parts = []
     for key, label in [
@@ -431,7 +543,10 @@ class OperationTaskStore:
             if not isinstance(payload, dict):
                 return {"tasks": []}
             tasks = payload.get("tasks")
-            return {"tasks": tasks if isinstance(tasks, list) else []}
+            payload = {"tasks": tasks if isinstance(tasks, list) else []}
+            if compact_legacy_price_tasks(payload):
+                self.save(payload)
+            return payload
 
     def save(self, payload):
         with self._lock:
@@ -440,7 +555,7 @@ class OperationTaskStore:
             tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
             os.replace(tmp, self.path)
 
-    def list_tasks(self, role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only="", now=None):
+    def list_tasks(self, role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only="", clearance_low_price="", now=None):
         role = norm(role) or "admin"
         user = norm(user)
         rows = [public_task(row, now=now) for row in self.load()["tasks"]]
@@ -467,6 +582,10 @@ class OperationTaskStore:
             rows = [row for row in rows if norm(row.get("priority")) == norm(priority)]
         if norm(reworked) in {"1", "true", "是", "返工"}:
             rows = [row for row in rows if int(row.get("rejection_count") or 0) > 0]
+        if norm(clearance_low_price) in {"1", "true", "是", "清仓低价"}:
+            rows = [row for row in rows if is_clearance_low_price_task(row)]
+        else:
+            rows = [row for row in rows if not is_clearance_low_price_task(row)]
         if norm(open_only) in {"1", "true", "是", "未完成", "待办"}:
             rows = [row for row in rows if norm(row.get("status")) != STATUS_DONE]
             if role != "admin":
@@ -657,6 +776,7 @@ class OperationTaskStore:
                     "skc",
                     "spu",
                     "product_name",
+                    "product_category",
                     "system_action",
                     "task_detail",
                     "source_report",
@@ -694,6 +814,7 @@ class OperationTaskStore:
                     "skc": row.get("skc", ""),
                     "spu": row.get("spu", ""),
                     "product_name": row.get("product_name", ""),
+                    "product_category": row.get("product_category", ""),
                     "system_action": row.get("system_action", ""),
                     "task_detail": row.get("task_detail", ""),
                     "owner_action": "",
@@ -1235,8 +1356,8 @@ REPORT_PLATFORM = {
 }
 
 REPORT_DETAIL_FIELDS = {
-    "temu_price": ["申报价", "成本价", "批发价", "批发价80%", "7天销量", "30天销量"],
-    "shein_price": ["申报价", "成本价", "批发价", "批发价80%", "7天销量", "30天销量"],
+    "temu_price": ["货品分类名称", "申报价", "成本价", "批发价", "批发价80%", "7天销量", "30天销量"],
+    "shein_price": ["货品分类名称", "申报价", "成本价", "批发价", "批发价80%", "7天销量", "30天销量"],
     "temu_inventory": ["仓备可用", "30天销量", "7天销量", "触发规则"],
     "shein_inventory": ["仓备可用", "30天销量", "7天销量", "触发规则"],
     "temu_hot": ["冲突类型", "爆旺款skc", "爆旺skc", "申报价", "7天销量", "30天销量", "库存", "平台仓备货"],
@@ -1299,6 +1420,7 @@ def map_report_row(report_id, report_name, file_name, sheet_name, row_number, ro
     skc = row_value(row, headers, "SKC", "skc", "爆旺款skc")
     spu = row_value(row, headers, "SPU", "spu", "爆旺skc")
     product_name = row_value(row, headers, "货品名称", "ERP货品名称", "品名", "名称")
+    product_category = row_value(row, headers, "货品分类名称", "货品分类")
     system_action = row_value(row, headers, "处理意见", "建议动作", "操作", "是否通过")
     if not norm(system_action) and report_id in {"temu_price", "shein_price", "temu_inventory", "shein_inventory"}:
         system_action = sheet_name
@@ -1314,6 +1436,7 @@ def map_report_row(report_id, report_name, file_name, sheet_name, row_number, ro
         "skc": skc,
         "spu": spu,
         "product_name": product_name,
+        "product_category": product_category,
         "system_action": system_action,
         "task_detail": task_detail,
         "source_report": report_name,

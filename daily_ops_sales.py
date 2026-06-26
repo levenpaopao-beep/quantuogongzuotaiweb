@@ -93,6 +93,18 @@ def is_manual_sales_record(record):
     return source != "历史导入" and status != "历史导入"
 
 
+def record_submission_day(record):
+    return norm(record.get("submitted_at") or record.get("updated_at"))[:10]
+
+
+def sales_record_editable(record, role="admin"):
+    if norm(role) == "admin":
+        return True
+    if not is_manual_sales_record(record):
+        return True
+    return record_submission_day(record) == today_text()
+
+
 def platform_summary(entries):
     summary = {}
     for item in entries:
@@ -217,6 +229,8 @@ class DailySalesStore:
         records = payload["records"]
         record_id = sales_record_id(day, platform, store)
         existing = next((row for row in records if row.get("id") == record_id), None)
+        if existing and norm(role) != "admin" and not sales_record_editable(existing, role):
+            raise PermissionError("店长只能修改当天填写的数据，请联系管理员修改历史销量")
         old_sales = existing.get("sales") if existing else ""
         abnormal = self.abnormal_hint(platform, store, day, number)
         history_item = {
@@ -275,6 +289,8 @@ class DailySalesStore:
                 "updated_at": record.get("updated_at", "") if record else "",
                 "source": record.get("source", "") if record else "",
                 "needs_confirmation": bool(record and not submitted),
+                "editable": sales_record_editable(record, role) if record else True,
+                "locked_reason": "" if (sales_record_editable(record, role) if record else True) else "已过当天修改时间，请联系管理员",
             })
         required = len(entries)
         submitted = sum(1 for item in entries if item["submitted"])

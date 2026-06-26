@@ -169,6 +169,7 @@ class ErpSyncTest(unittest.TestCase):
             "shop_name": "宠物圈仓库",
             "goods_no": "SKU",
             "goods_name": "猫抓板",
+            "category_name": "宠物玩具",
             "cost_price": "8.5",
             "wholesale_price": "12.8",
             "spec_list": [{
@@ -180,16 +181,18 @@ class ErpSyncTest(unittest.TestCase):
         self.assertEqual(rows[0]["商家编码（新）"], "SKU-XL")
         self.assertEqual(rows[0]["货品名称"], "猫抓板")
         self.assertEqual(rows[0]["规格名称"], "XL")
+        self.assertEqual(rows[0]["货品分类名称"], "宠物玩具")
         self.assertEqual(rows[0]["成本价"], "8.5")
         self.assertEqual(rows[0]["批发价"], "12.8")
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "erp产品基础信息表_接口同步_test.xlsx"
-            daily_ops_erp._write_rows(path, ["商家编码（新）", "货品名称", "规格名称", "成本价", "批发价"], rows)
+            daily_ops_erp._write_rows(path, ["商家编码（新）", "货品名称", "规格名称", "货品分类名称", "成本价", "批发价"], rows)
             wb = load_workbook(path)
             ws = wb.active
             self.assertEqual(ws.cell(2, 1).value, "SKU-XL")
-            self.assertEqual(ws.cell(2, 4).value, "8.5")
+            self.assertEqual(ws.cell(2, 4).value, "宠物玩具")
+            self.assertEqual(ws.cell(2, 5).value, "8.5")
             wb.close()
 
     def test_stock_rows_keep_warehouse_and_unified_merchant_code(self):
@@ -219,6 +222,92 @@ class ErpSyncTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["商家编码"], "SKU-1")
         self.assertEqual(rows[0]["仓库"], "宠物圈仓库")
+
+    def test_query_erp_product_info_merges_stock_snapshot_for_dense_table(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            erp_dir = Path(tmp)
+            daily_ops_erp._write_rows(
+                erp_dir / "erp产品基础信息表_接口同步_最新.xlsx",
+                ["货品编码", "货品名称", "规格名称", "货品分类名称", "商家编码（新）", "批发价", "成本价", "零售价", "修改时间", "来源接口"],
+                [{
+                    "货品编码": "3303177721",
+                    "货品名称": "元气四脚冲锋衣-黄紫",
+                    "规格名称": "黄紫/XS",
+                    "货品分类名称": "宠物服饰",
+                    "商家编码（新）": "3303177721-XS",
+                    "批发价": "18.8",
+                    "成本价": "12.3",
+                    "零售价": "29.9",
+                    "修改时间": "2026-05-29 09:55:08",
+                    "来源接口": "goods_query.php",
+                }],
+            )
+            daily_ops_erp._write_rows(
+                erp_dir / "erp库存同步_最新.xlsx",
+                ["平台规格编码", "商家编码（新）", "商家编码", "可销库存", "修改时间", "来源接口"],
+                [{
+                    "平台规格编码": "3303177721-XS",
+                    "商家编码（新）": "3303177721-XS",
+                    "商家编码": "3303177721-XS",
+                    "可销库存": "211.0000",
+                    "修改时间": "2026-06-25 15:56:10",
+                    "来源接口": "stock_query.php",
+                }],
+            )
+
+            with patch.object(daily_ops_app, "ERP_DIR", erp_dir):
+                result = daily_ops_app.query_erp_product_info("3303177721-XS", 20)
+
+        self.assertEqual(result["columns"], [
+            "货品编码", "货品名称", "规格名称", "货品分类名称", "商家编码（新）", "可销库存",
+            "批发价", "成本价", "零售价", "商品资料修改时间", "库存修改时间", "来源接口",
+        ])
+        self.assertEqual(result["items"][0]["record"]["货品分类名称"], "宠物服饰")
+        self.assertEqual(result["items"][0]["record"]["可销库存"], "211.0000")
+        self.assertEqual(result["items"][0]["record"]["库存修改时间"], "2026-06-25 15:56:10")
+        self.assertEqual(result["items"][0]["record"]["来源接口"], "goods_query.php / stock_query.php")
+
+    def test_query_erp_product_info_hides_products_without_stock_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            erp_dir = Path(tmp)
+            daily_ops_erp._write_rows(
+                erp_dir / "erp产品基础信息表_接口同步_最新.xlsx",
+                ["货品编码", "货品名称", "规格名称", "商家编码（新）", "批发价", "成本价", "零售价", "修改时间", "来源接口"],
+                [
+                    {
+                        "货品编码": "PET-001",
+                        "货品名称": "宠物圈仓款",
+                        "规格名称": "红色/S",
+                        "商家编码（新）": "PET-001-S",
+                        "来源接口": "goods_query.php",
+                    },
+                    {
+                        "货品编码": "OTHER-001",
+                        "货品名称": "甜心仓库款",
+                        "规格名称": "粉色/S",
+                        "商家编码（新）": "OTHER-001-S",
+                        "来源接口": "goods_query.php",
+                    },
+                ],
+            )
+            daily_ops_erp._write_rows(
+                erp_dir / "erp库存同步_最新.xlsx",
+                ["商家编码（新）", "商家编码", "可销库存", "修改时间", "来源接口"],
+                [{
+                    "商家编码（新）": "PET-001-S",
+                    "商家编码": "PET-001-S",
+                    "可销库存": "8",
+                    "修改时间": "2026-06-26 10:00:00",
+                    "来源接口": "stock_query.php",
+                }],
+            )
+
+            with patch.object(daily_ops_app, "ERP_DIR", erp_dir):
+                result = daily_ops_app.query_erp_product_info("", 20)
+                hidden = daily_ops_app.query_erp_product_info(product_name="甜心仓库款", limit=20)
+
+        self.assertEqual([item["record"]["商家编码（新）"] for item in result["items"]], ["PET-001-S"])
+        self.assertEqual(hidden["items"], [])
 
     def test_manual_sync_reads_multiple_product_pages_and_one_stock_snapshot(self):
         settings = {

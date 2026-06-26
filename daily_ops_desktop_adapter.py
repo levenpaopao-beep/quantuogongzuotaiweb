@@ -105,6 +105,22 @@ def require_admin_payload(payload, action):
         raise PermissionError(f"只有管理员可以{action}")
 
 
+def visible_assignments_for_payload(payload):
+    payload = payload or {}
+    return app.visible_store_owner_assignments({"role": operator_role(payload), "user": operator_user(payload, "")})
+
+
+def account_store_scope_enabled(payload):
+    if operator_role(payload) == "admin":
+        return False
+    account = app.account_for_operator(operator_user(payload, ""))
+    return bool(app.normalize_store_keys(account.get("store_keys", [])))
+
+
+def assignment_read_role(payload):
+    return "admin" if account_store_scope_enabled(payload) else operator_role(payload)
+
+
 def operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only="", search=""):
     rows = app.list_operation_tasks(role, user, status, task_type, store, platform, overdue, unassigned, next_handler, priority, reworked, open_only, search)
     return {"summary": app.summarize_operation_tasks(rows), "packages": app.package_operation_tasks(rows), "tasks": rows}
@@ -272,8 +288,11 @@ def mark_operation_tasks_done_payload(payload):
 
 def store_owners_payload(payload=None):
     payload = payload or {}
-    require_admin_payload(payload, "读取负责人配置")
-    return {"assignments": app.load_store_owner_assignments(), "owners": app.operation_owner_directory()}
+    if operator_role(payload) == "admin":
+        assignments = app.load_store_owner_assignments()
+    else:
+        assignments = visible_assignments_for_payload(payload)
+    return {"assignments": assignments, "owners": app.operation_owner_directory()}
 
 
 def store_owners():
@@ -294,9 +313,9 @@ def save_store_owners_payload(payload):
 
 def sales_payload(payload):
     payload = payload or {}
-    role = operator_role(payload)
+    role = assignment_read_role(payload)
     user = operator_user(payload, "")
-    return DailySalesStore(SALES_DB_PATH).daily_payload(app.load_store_owner_assignments(), role, user, payload.get("date", ""))
+    return DailySalesStore(SALES_DB_PATH).daily_payload(visible_assignments_for_payload(payload), role, user, payload.get("date", ""))
 
 
 def submit_sales_payload(payload):
@@ -304,8 +323,8 @@ def submit_sales_payload(payload):
     role = operator_role(payload)
     user = operator_user(payload)
     return DailySalesStore(SALES_DB_PATH).submit(
-        app.load_store_owner_assignments(),
-        role=role,
+        visible_assignments_for_payload(payload),
+        role=assignment_read_role(payload),
         user=user,
         day=payload.get("date", ""),
         platform=payload.get("platform", ""),
@@ -317,23 +336,23 @@ def submit_sales_payload(payload):
 
 def import_matrix_payload(payload):
     payload = payload or {}
-    role = operator_role(payload)
+    role = assignment_read_role(payload)
     user = operator_user(payload, "")
-    return build_import_matrix(app.load_store_owner_assignments(), app.source_group_status(), role, user)
+    return build_import_matrix(visible_assignments_for_payload(payload), app.source_group_status(), role, user)
 
 
 def export_sales_payload(payload):
     payload = payload or {}
-    role = operator_role(payload)
+    role = assignment_read_role(payload)
     user = operator_user(payload, "")
-    return DailySalesStore(SALES_DB_PATH).export_daily_workbook(app.load_store_owner_assignments(), app.OUTPUT_DIR, role, user, payload.get("date", ""))
+    return DailySalesStore(SALES_DB_PATH).export_daily_workbook(visible_assignments_for_payload(payload), app.OUTPUT_DIR, role, user, payload.get("date", ""))
 
 
 def sales_compare_payload(payload):
     payload = payload or {}
-    role = operator_role(payload)
+    role = assignment_read_role(payload)
     user = operator_user(payload, "")
-    sales_payload_data = DailySalesStore(SALES_DB_PATH).daily_payload(app.load_store_owner_assignments(), role, user, payload.get("date", ""))
+    sales_payload_data = DailySalesStore(SALES_DB_PATH).daily_payload(visible_assignments_for_payload(payload), role, user, payload.get("date", ""))
     source_sales = aggregate_source_sales({
         "Temu": app.temu_sales_files(),
         "Shein": app.shein_platform_files(),
@@ -364,7 +383,27 @@ def create_operator_account_payload(payload):
         payload.get("username", ""),
         payload.get("password", ""),
         payload.get("enabled", True),
+        payload.get("account_role", payload.get("role_value", "owner")),
+        payload.get("store_keys", []),
     )
+
+
+def update_operator_account_payload(payload):
+    payload = payload or {}
+    require_admin_payload(payload, "修改员工账号")
+    return app.update_operator_account(
+        payload.get("username", ""),
+        payload.get("owner", ""),
+        payload.get("account_role", payload.get("role_value", "owner")),
+        payload.get("enabled", True),
+        payload.get("store_keys", []),
+    )
+
+
+def delete_operator_account_payload(payload):
+    payload = payload or {}
+    require_admin_payload(payload, "删除店长账号")
+    return app.delete_operator_account(payload.get("username", ""))
 
 
 def reset_operator_account_payload(payload):
@@ -450,7 +489,9 @@ def backup_reminder_payload(payload):
 
 def asset_overview_payload(payload):
     payload = payload or {}
-    return app.asset_overview(payload.get("anchor_date", ""))
+    role = operator_role(payload)
+    user = operator_user(payload, "")
+    return app.asset_overview(payload.get("anchor_date", ""), role=role, user=user)
 
 
 def export_asset_archive_payload(payload):

@@ -171,6 +171,10 @@ def command(argv):
         payload = read_payload()
         require_admin(payload, "新增店长账号")
         return ok(adapter.create_operator_account_payload(payload))
+    if name == "update-operator-account":
+        return ok(adapter.update_operator_account_payload(read_payload()))
+    if name == "delete-operator-account":
+        return ok(adapter.delete_operator_account_payload(read_payload()))
     if name == "reset-operator-password":
         return ok(adapter.reset_operator_account_payload(read_payload()))
     if name == "erp-product-info":

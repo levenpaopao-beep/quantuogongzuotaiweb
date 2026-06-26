@@ -179,6 +179,7 @@ def save_operator_accounts(path, accounts, password_factory=None):
             "owner": owner,
             "username": username,
             "enabled": account.get("enabled", current.get("enabled", True)) is not False,
+            "store_keys": list(account.get("store_keys", current.get("store_keys", [])) or []),
             "updated_at": now_text(),
         })
         saved.append(current)

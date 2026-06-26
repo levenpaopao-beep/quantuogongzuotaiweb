@@ -184,22 +184,29 @@
                 <p id="taskStatusLine">读取任务包状态</p>
               </div>
             </div>
-            <div class="task-filters">
-              <select id="taskRole"><option value="admin">管理员</option><option value="owner">店长</option></select>
-              <input id="taskUser" placeholder="负责人姓名" />
+            <div class="task-role-entry" id="taskRoleEntry"></div>
+            <div class="task-filters task-simple-filters">
+              <select id="taskRole" class="hidden"><option value="admin">管理员</option><option value="owner">店长</option></select>
               <input id="taskSearch" placeholder="店铺 / 商家编码 / SKC / SPU / 商品名" />
-              <select id="taskStatus"><option value="">全部状态</option><option>待推送</option><option>待店长处理</option><option value="待管理员审核">待管理员确认</option><option value="已通过">已确认</option><option value="已驳回">已返工</option><option>已完成</option></select>
-              <select id="taskPlatform"><option value="">全部平台</option><option>Temu</option><option>Shein</option><option>速卖通</option><option>TK</option><option>Ozon</option></select>
-              <select id="taskType"><option value="">全部类型</option><option>价格异常</option><option>库存异常</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
-              <input id="taskStore" placeholder="店铺" />
-              <select id="taskNextHandler"><option value="">全部下一步</option><option>管理员</option><option>店长</option><option>无需处理</option></select>
-              <select id="taskPriority"><option value="">全部优先级</option><option>高</option><option>中</option><option>低</option></select>
+              <select id="taskPlatform" data-admin-only="1"><option value="">全部平台</option><option>Temu</option><option>Shein</option><option>速卖通</option><option>TK</option><option>Ozon</option></select>
               <label><input id="taskOpenOnly" type="checkbox" /> 只看未完成</label>
-              <label><input id="taskOverdue" type="checkbox" /> 只看超时</label>
-              <label><input id="taskUnassigned" type="checkbox" /> 只看未分配</label>
-              <label><input id="taskReworked" type="checkbox" /> 只看返工</label>
               <button class="ghost-button" id="loadTasksBtn">查询</button>
             </div>
+            <details class="task-more-filters">
+              <summary>更多筛选</summary>
+              <div class="task-filters">
+                <select id="taskStatus"><option value="">全部状态</option><option>待推送</option><option>待店长处理</option><option value="待管理员审核">待管理员确认</option><option value="已通过">已确认</option><option value="已驳回">已返工</option><option>已完成</option></select>
+                <select id="taskType" data-admin-only="1"><option value="">全部类型</option><option>价格异常</option><option>库存异常</option><option>爆旺冲突</option><option>低分预警</option><option>滞销处理</option><option>议价审核</option></select>
+                <input id="taskUser" data-admin-only="1" placeholder="负责人" />
+                <input id="taskStore" data-admin-only="1" placeholder="店铺" />
+                <select id="taskNextHandler" data-admin-only="1"><option value="">全部下一步</option><option>管理员</option><option>店长</option><option>无需处理</option></select>
+                <select id="taskPriority" data-admin-only="1"><option value="">全部优先级</option><option>高</option><option>中</option><option>低</option></select>
+                <label data-admin-only="1"><input id="taskOverdue" type="checkbox" /> 只看超时</label>
+                <label data-admin-only="1"><input id="taskUnassigned" type="checkbox" /> 只看未分配</label>
+                <label><input id="taskReworked" type="checkbox" /> 只看返工</label>
+                <label class="hidden"><input id="taskClearanceLowPrice" type="checkbox" /> 清仓低价</label>
+              </div>
+            </details>
             <div class="task-package-list" id="taskPackageRows"></div>
             <div class="task-pagebar" id="taskPagebar"></div>
             <div class="task-table">
@@ -486,11 +493,11 @@
               <strong>基础资料导入</strong>
               <span>导入负责人表、历史销量表，生成整理结果。</span>
             </button>
-            <button class="master-module-card" data-action="open-master-module" data-master-module="operator-accounts" data-admin-only="operator-accounts">
+            <button class="master-module-card" data-page="operatorAccounts" data-admin-only="operator-accounts">
               <strong>员工管理</strong>
-              <span>查看、手动新增店长账号，重置登录密码。</span>
+              <span>查看、手动新增店长账号，重置或删除登录账号。</span>
             </button>
-            <button class="master-module-card" data-action="open-master-module" data-master-module="store-info" data-admin-only="store-info">
+            <button class="master-module-card" data-page="storeInfo" data-admin-only="store-info">
               <strong>店铺信息管理</strong>
               <span>维护平台、店铺、负责人和每日填报开关。</span>
             </button>
@@ -498,7 +505,7 @@
               <strong>商品信息查询</strong>
               <span>高密度查询 ERP 货品、价格和库存字段。</span>
             </button>
-            <button class="master-module-card" data-action="open-master-module" data-master-module="task-suppressions" data-admin-only="task-suppressions">
+            <button class="master-module-card" data-page="taskSuppressions" data-admin-only="task-suppressions">
               <strong>任务屏蔽清单</strong>
               <span>查看已屏蔽的重复商品任务和处理原因。</span>
             </button>
@@ -529,18 +536,53 @@
               </div>
               <p id="masterImportStatus">导入后会在下载目录生成“基础信息导入整理表.xlsx”。</p>
             </section>
-                <section class="master-module-panel" data-master-panel="operator-accounts" data-admin-only="operator-accounts">
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="page" id="operatorAccountsPage" data-admin-only="operator-accounts">
+          <div class="page-intro compact-intro">
+            <div>
+              <span class="pill">员工</span>
               <h2>员工管理</h2>
               <p>负责人导入会自动生成店长账号；管理员也可以在这里手动新增。</p>
-              <div class="operator-create-row">
-                <input id="newOperatorOwner" placeholder="店长姓名" />
-                <input id="newOperatorUsername" placeholder="登录账号，留空默认同姓名" />
-                <input id="newOperatorPassword" placeholder="初始密码，留空自动生成" />
-                <button class="primary-button" id="createOperatorAccountBtn">新增账号</button>
-              </div>
-              <div id="operatorAccountRows" class="output-list"></div>
-            </section>
-                <section class="master-module-panel" data-master-panel="store-info" data-admin-only="store-info">
+            </div>
+            <div class="download-actions">
+              <button class="ghost-button" type="button" data-page="masterdata">返回基础资料</button>
+              <button class="ghost-button" id="reloadOperatorAccountsBtn">刷新</button>
+            </div>
+          </div>
+          <section class="simple-panel operator-page-panel">
+            <div class="operator-create-row">
+              <input id="newOperatorOwner" placeholder="员工姓名" />
+              <input id="newOperatorUsername" placeholder="登录账号，留空默认同姓名" />
+              <input id="newOperatorPassword" placeholder="初始密码，留空自动生成" />
+              <select id="newOperatorRole">
+                <option value="owner">店长权限</option>
+                <option value="admin">管理员权限</option>
+              </select>
+              <button class="primary-button" id="createOperatorAccountBtn">新增账号</button>
+            </div>
+            <div class="operator-store-picker" id="newOperatorStoreList"></div>
+            <p id="operatorAccountStatus">等待读取员工账号。</p>
+            <div id="operatorAccountRows" class="output-list"></div>
+          </section>
+        </section>
+
+        <section class="page" id="storeInfoPage" data-admin-only="store-info">
+          <div class="page-intro compact-intro">
+            <div>
+              <span class="pill">店铺</span>
+              <h2>店铺信息管理</h2>
+              <p>维护平台、店铺、负责人和每日填报开关；保存后会用于销量填报和任务分配。</p>
+            </div>
+            <div class="download-actions">
+              <button class="ghost-button" type="button" data-page="masterdata">返回基础资料</button>
+              <button class="ghost-button" id="loadStoreOwnersBtn">重新读取</button>
+            </div>
+          </div>
+          <section class="simple-panel store-info-page-panel">
               <div class="platform-chip-row">
                 <span>平台</span><div id="platformChipList" class="platform-chip-list"><strong>Temu</strong><strong>Shein</strong><strong>速卖通</strong><strong>TK</strong><strong>Ozon</strong></div>
               </div>
@@ -557,7 +599,6 @@
               <div class="download-actions">
                 <button class="ghost-button" id="addStoreOwnerBtn">新增店铺</button>
                 <button class="primary-button" id="saveStoreOwnersBtn">保存店铺配置</button>
-                <button class="ghost-button" id="loadStoreOwnersBtn">重新读取</button>
               </div>
               <details class="compat-editor">
                 <summary>批量文本编辑</summary>
@@ -565,9 +606,21 @@
               </details>
               <p id="storeOwnerStatus">等待读取负责人配置</p>
             </section>
-                <section class="master-module-panel" data-master-panel="task-suppressions" data-admin-only="task-suppressions">
-            <h2>任务屏蔽清单</h2>
-            <p>用于处理每周反复出现但管理员判断暂不需要再提示的 SKC/SPU/商家编码。</p>
+        </section>
+
+        <section class="page" id="taskSuppressionsPage" data-admin-only="task-suppressions">
+          <div class="page-intro compact-intro">
+            <div>
+              <span class="pill">任务屏蔽</span>
+              <h2>任务屏蔽清单</h2>
+              <p>按店铺、店长、SKC 和商家编码查看已屏蔽的重复商品任务。</p>
+            </div>
+            <div class="download-actions">
+              <button class="ghost-button" type="button" data-page="masterdata">返回基础资料</button>
+              <button class="ghost-button" id="reloadTaskSuppressionsBtn">刷新</button>
+            </div>
+          </div>
+          <section class="simple-panel suppression-query-panel">
             <div class="suppression-filter-grid">
               <label>店铺<input id="suppressionStoreFilter" placeholder="店铺" /></label>
               <label>店长<input id="suppressionOwnerFilter" placeholder="店长/负责人" /></label>
@@ -579,9 +632,6 @@
               <table class="report-data-table suppression-table" id="taskSuppressionTable"></table>
             </div>
           </section>
-              </div>
-            </section>
-          </div>
         </section>
 
         <section class="page" id="productInfoPage" data-admin-only="product-info">

@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from openpyxl import load_workbook
 
@@ -35,6 +36,31 @@ class DailySalesStoreTest(unittest.TestCase):
         self.assertEqual(payload["summary"]["required"], 1)
         self.assertEqual(payload["summary"]["submitted"], 1)
         self.assertEqual(payload["summary"]["total_sales"], 15)
+
+    def test_owner_can_only_update_existing_sales_on_submission_day(self):
+        with patch("daily_ops_sales.today_text", return_value="2026-06-23"), patch("daily_ops_sales.now_text", return_value="2026-06-23 10:00:00"):
+            self.store.submit(self.assignments, role="owner", user="小琴", day="2026-06-18", platform="Temu", store="七弟", sales="12")
+            updated = self.store.submit(self.assignments, role="owner", user="小琴", day="2026-06-18", platform="Temu", store="七弟", sales="15")
+        self.assertEqual(updated["sales"], 15)
+
+        with patch("daily_ops_sales.today_text", return_value="2026-06-24"), patch("daily_ops_sales.now_text", return_value="2026-06-24 10:00:00"):
+            with self.assertRaisesRegex(PermissionError, "店长只能修改当天填写的数据"):
+                self.store.submit(self.assignments, role="owner", user="小琴", day="2026-06-18", platform="Temu", store="七弟", sales="18")
+            admin_updated = self.store.submit(self.assignments, role="admin", user="管理员", day="2026-06-18", platform="Temu", store="七弟", sales="20")
+
+        self.assertEqual(admin_updated["sales"], 20)
+
+    def test_daily_payload_marks_owner_history_as_locked_after_submission_day(self):
+        with patch("daily_ops_sales.today_text", return_value="2026-06-23"), patch("daily_ops_sales.now_text", return_value="2026-06-23 10:00:00"):
+            self.store.submit(self.assignments, role="owner", user="小琴", day="2026-06-18", platform="Temu", store="七弟", sales="12")
+
+        with patch("daily_ops_sales.today_text", return_value="2026-06-24"):
+            owner_payload = self.store.daily_payload(self.assignments, role="owner", user="小琴", day="2026-06-18")
+            admin_payload = self.store.daily_payload(self.assignments, role="admin", user="管理员", day="2026-06-18")
+
+        self.assertFalse(owner_payload["entries"][0]["editable"])
+        self.assertIn("已过当天", owner_payload["entries"][0]["locked_reason"])
+        self.assertTrue(admin_payload["entries"][0]["editable"])
 
     def test_history_import_does_not_count_as_owner_daily_submission(self):
         data = self.store.load()

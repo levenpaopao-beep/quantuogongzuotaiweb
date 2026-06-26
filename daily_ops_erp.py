@@ -287,6 +287,7 @@ def normalize_product_rows(items):
             "货品编码": _text(item.get("goods_no") or item.get("api_goods_no")),
             "货品名称": _text(item.get("goods_name") or item.get("api_goods_name")),
             "规格名称": _text(item.get("spec_name") or item.get("api_spec_name")),
+            "货品分类名称": _text(item.get("category_name")),
             "条码": _text(item.get("barcode")),
             "平台库存": _text(item.get("stock_num")),
             "成本价": _text(item.get("cost_price") or item.get("purchase_price") or item.get("成本价")),
@@ -442,7 +443,7 @@ def manual_sync(settings, erp_dir, now=None):
     if sync_product_archive:
         product_file = _write_rows(
             erp_dir / product_name,
-            ["店铺编号", "店铺", "平台ID", "平台货品编码", "平台规格编码", "商家编码（新）", "货品编码", "货品名称", "规格名称", "条码", "平台库存", "成本价", "批发报价", "批发价", "零售价", "修改时间", "来源接口"],
+            ["店铺编号", "店铺", "平台ID", "平台货品编码", "平台规格编码", "商家编码（新）", "货品编码", "货品名称", "规格名称", "货品分类名称", "条码", "平台库存", "成本价", "批发报价", "批发价", "零售价", "修改时间", "来源接口"],
             product_rows,
         )
     if sync_stock_snapshot:

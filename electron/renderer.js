@@ -175,7 +175,7 @@ function applyOperatorToTasks() {
 
 function defaultOpenTasksForOwner(role = currentOperator().role || "admin") {
   const openOnly = $("#taskOpenOnly");
-  if (role === "owner" && openOnly) openOnly.checked = true;
+  if (openOnly) openOnly.checked = true;
 }
 
 function applyRoleVisibility(role = currentOperator().role || "admin") {
@@ -725,6 +725,7 @@ function taskFilters() {
     overdue: $("#taskOverdue")?.checked ? "1" : "",
     unassigned: $("#taskUnassigned")?.checked ? "1" : "",
     reworked: $("#taskReworked")?.checked ? "1" : "",
+    clearance_low_price: $("#taskClearanceLowPrice")?.checked ? "1" : "",
     search: $("#taskSearch")?.value.trim() || "",
   };
 }
@@ -758,7 +759,46 @@ function renderTaskSummary() {
   wrap.innerHTML = cards.map(([label, value]) => `<div class="task-kpi"><span>${label}</span><strong>${value}</strong></div>`).join("");
   renderAdminTaskQueue();
   renderOwnerTaskSummary();
+  renderTaskRoleEntry();
   renderOperatorOwnerOptions();
+}
+
+function taskEntryCount(filters = {}) {
+  const status = state.taskOverview?.by_status || {};
+  const overdue = state.taskOverview?.overdue || {};
+  if (filters.status) return status[filters.status] || 0;
+  if (filters.overdue) return overdue.total || 0;
+  if (filters.unassigned) return state.taskOverview?.unassigned || 0;
+  return 0;
+}
+
+function renderTaskRoleEntry() {
+  const wrap = $("#taskRoleEntry");
+  if (!wrap) return;
+  const operator = currentOperator();
+  const adminEntries = [
+    { key: "push", label: "待推送给店长", hint: "确认后整包推送", filters: { status: "待推送", openOnly: true } },
+    { key: "assign", label: "待指派负责人", hint: "先补负责人", filters: { unassigned: true, openOnly: true } },
+    { key: "review", label: "待管理员确认", hint: "审核店长处理结果", filters: { status: "待管理员审核", openOnly: true } },
+    { key: "overdue", label: "超时未处理", hint: "优先催办", filters: { overdue: true, openOnly: true } },
+    { key: "clearance", label: "清仓低价", hint: "只查看/导出", filters: { clearanceLowPrice: true, openOnly: false } },
+  ];
+  const ownerEntries = [
+    { key: "mine", label: "我的待处理", hint: "整包提交", filters: { status: "待店长处理", openOnly: true } },
+    { key: "rework", label: "被驳回返工", hint: "按驳回原因重做", filters: { status: "已驳回", openOnly: true, reworked: true } },
+    { key: "submitted", label: "已提交待确认", hint: "等待管理员确认", filters: { status: "待管理员审核", openOnly: true } },
+  ];
+  const entries = operator.role === "owner" ? ownerEntries : adminEntries;
+  wrap.innerHTML = entries.map((entry) => {
+    const count = entry.filters.clearanceLowPrice ? "看" : taskEntryCount(entry.filters);
+    return `<button class="task-entry-button" type="button" data-task-entry="${entry.key}"><strong>${esc(count)}</strong><span>${esc(entry.label)}</span><span>${esc(entry.hint)}</span></button>`;
+  }).join("");
+  wrap.querySelectorAll("[data-task-entry]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const entry = entries.find((item) => item.key === button.dataset.taskEntry);
+      if (entry) setTaskQuickFilters(entry.filters);
+    });
+  });
 }
 
 function renderAdminTaskQueue() {
@@ -810,6 +850,7 @@ function applyAdminQueueFilter(index) {
   setTaskCheck("taskOverdue", filters.overdue === "1");
   setTaskCheck("taskUnassigned", filters.unassigned === "1");
   setTaskCheck("taskReworked", filters.reworked === "1");
+  setTaskCheck("taskClearanceLowPrice", false);
   loadTasksFromFirstPage();
 }
 
@@ -848,10 +889,11 @@ function applyOwnerSummaryFilter(index) {
   setTaskCheck("taskOverdue", false);
   setTaskCheck("taskUnassigned", item.owner === "未分配");
   setTaskCheck("taskReworked", false);
+  setTaskCheck("taskClearanceLowPrice", false);
   loadTasksFromFirstPage();
 }
 
-function setTaskQuickFilters({ status = "", nextHandler = "", openOnly = true, unassigned = false, reworked = false } = {}) {
+function setTaskQuickFilters({ status = "", nextHandler = "", openOnly = true, unassigned = false, reworked = false, overdue = false, clearanceLowPrice = false } = {}) {
   const operator = currentOperator();
   setTaskField("taskRole", operator.role || "admin");
   setTaskField("taskUser", operator.role === "owner" ? operator.user || "" : "");
@@ -863,9 +905,10 @@ function setTaskQuickFilters({ status = "", nextHandler = "", openOnly = true, u
   setTaskField("taskStore", "");
   setTaskField("taskSearch", "");
   setTaskCheck("taskOpenOnly", openOnly);
-  setTaskCheck("taskOverdue", false);
+  setTaskCheck("taskOverdue", overdue);
   setTaskCheck("taskUnassigned", unassigned);
   setTaskCheck("taskReworked", reworked);
+  setTaskCheck("taskClearanceLowPrice", clearanceLowPrice);
   loadTasksFromFirstPage();
 }
 
@@ -1055,6 +1098,7 @@ function applyPackageFilter(pkg) {
   setTaskField("taskType", pkg.task_type || "");
   setTaskField("taskStatus", "");
   setTaskField("taskSearch", pkg.system_action || "");
+  setTaskCheck("taskClearanceLowPrice", false);
   document.querySelector(".task-table")?.scrollIntoView({ behavior: "smooth", block: "start" });
   loadTasksFromFirstPage(false);
   showToast("已按任务包定位明细");
@@ -2067,7 +2111,7 @@ function businessActionAttrs(item) {
     return `data-empty-page="sales" data-sales-focus="all" data-sales-platform="${platform}" data-sales-store="${store}"`;
   }
   if (item.action === "assign_owner") {
-    return `data-empty-page="masterdata" data-master-module="store-info"`;
+    return `data-empty-page="storeInfo"`;
   }
   return `data-empty-page="reports" data-business-action="trend" data-business-platform="${platform}" data-business-store="${store}"`;
 }
@@ -3358,6 +3402,7 @@ function renderStoreOwners(assignments = state.storeOwners) {
     line.textContent = `已读取 ${items.length} 条店铺配置，其中 ${dailyCount} 条进入每日销量填报`;
   }
   renderOperatorOwnerOptions();
+  renderNewOperatorStoreList();
 }
 
 function storeOwnerPlatformOptions(assignments = state.storeOwners) {
@@ -3449,23 +3494,8 @@ function addStoreOwnerRow() {
 async function loadStoreOwners() {
   const operator = currentOperator();
   if (operator.role === "owner") {
-    const owned = (state.sales?.entries || [])
-      .filter((item) => !operator.user || item.owner === operator.user)
-      .map((item) => ({
-        platform: item.platform,
-        store: item.store,
-        owner: item.owner || operator.user,
-        enabled: true,
-        daily_required: true,
-      }))
-      .filter((item) => item.platform && item.store);
-    const seen = new Set();
-    state.storeOwners = owned.filter((item) => {
-      const key = `${item.platform}::${item.store}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    const result = await api.storeOwners(operatorPayload());
+    state.storeOwners = result.assignments || [];
     state.customPlatforms = storeOwnerPlatformOptions(state.storeOwners).filter((platform) => !BUILT_IN_PLATFORMS.includes(platform));
     renderOperatorOwnerOptions();
     renderBargainStoreOptions();
@@ -3525,8 +3555,12 @@ async function loadOperatorAccounts(showMessage = false) {
     return;
   }
   try {
+    if (!state.storeOwners.length) {
+      await loadStoreOwners();
+    }
     const result = await api.operatorAccounts(operatorPayload());
     state.operatorAccounts = result.accounts || [];
+    renderNewOperatorStoreList();
     renderOperatorAccounts();
     if (showMessage) showToast("店长账号已刷新");
   } catch (error) {
@@ -3535,28 +3569,117 @@ async function loadOperatorAccounts(showMessage = false) {
   }
 }
 
+function operatorStoreKey(item) {
+  const platform = String(item?.platform || "").trim();
+  const store = String(item?.store || "").trim();
+  return platform && store ? `${platform}::${store}` : "";
+}
+
+function operatorStoreLabelByKey(key) {
+  const item = (state.storeOwners || []).find((row) => operatorStoreKey(row) === key);
+  if (!item) return key;
+  return [item.platform, item.store, item.owner ? `负责人：${item.owner}` : ""].filter(Boolean).join(" · ");
+}
+
+function renderOperatorStorePicker(container, selectedKeys = [], accountIndex = "") {
+  if (!container) return;
+  const selected = new Set(selectedKeys || []);
+  const stores = (state.storeOwners || []).filter((item) => item.enabled !== false && operatorStoreKey(item));
+  if (!stores.length) {
+    container.innerHTML = `<div class="action-empty compact-empty"><strong>暂无可选店铺</strong><span>先到店铺信息管理维护店铺。</span></div>`;
+    return;
+  }
+  container.innerHTML = stores.map((item) => {
+    const key = operatorStoreKey(item);
+    return `
+      <label class="operator-store-option">
+        <input type="checkbox" data-account-store="${esc(key)}" ${accountIndex !== "" ? `data-account-index="${accountIndex}"` : ""} ${selected.has(key) ? "checked" : ""} />
+        <span>${esc(item.platform)} · ${esc(item.store)}${item.owner ? ` · ${esc(item.owner)}` : ""}</span>
+      </label>
+    `;
+  }).join("");
+}
+
+function renderNewOperatorStoreList() {
+  const role = $("#newOperatorRole")?.value || "owner";
+  const box = $("#newOperatorStoreList");
+  if (!box) return;
+  box.classList.toggle("hidden", role === "admin");
+  if (role === "admin") {
+    box.innerHTML = "";
+    return;
+  }
+  renderOperatorStorePicker(box, []);
+}
+
+function collectCheckedStoreKeys(root) {
+  return [...(root?.querySelectorAll('[data-account-store]:checked') || [])].map((item) => item.dataset.accountStore).filter(Boolean);
+}
+
 function renderOperatorAccounts(error = "") {
   const box = $("#operatorAccountRows");
   if (!box) return;
   if (error) {
     box.innerHTML = `<div class="action-empty"><strong>账号读取失败</strong><span>${esc(error)}</span></div>`;
+    const status = $("#operatorAccountStatus");
+    if (status) status.textContent = error;
     return;
   }
   if (!state.operatorAccounts.length) {
-    box.innerHTML = `<div class="action-empty"><strong>暂无店长账号</strong><span>导入负责人表后会自动生成账号。</span></div>`;
+    box.innerHTML = `<div class="action-empty"><strong>暂无员工账号</strong><span>导入负责人表后会自动生成账号，也可以手动新增。</span></div>`;
+    const status = $("#operatorAccountStatus");
+    if (status) status.textContent = "暂无员工账号";
     return;
   }
-  box.innerHTML = state.operatorAccounts.map((account) => `
-    <div class="output-row">
-      <div>
+  box.innerHTML = state.operatorAccounts.map((account, index) => {
+    const role = account.role === "admin" ? "admin" : "owner";
+    const selectedStores = account.store_keys || [];
+    const storeText = role === "admin"
+      ? "管理员可查看全部店铺"
+      : (selectedStores.length ? selectedStores.map(operatorStoreLabelByKey).join("；") : "未单独分配店铺，按原店铺负责人姓名匹配");
+    return `
+    <div class="output-row operator-account-row" data-account-row="${index}">
+      <div class="operator-account-main">
         <strong>${esc(account.owner || account.username)}</strong>
-        <p>账号：${esc(account.username)} · ${account.enabled === false ? "停用" : "启用"}</p>
+        <p>账号：${esc(account.username)} · ${role === "admin" ? "管理员权限" : "店长权限"} · ${account.enabled === false ? "停用" : "启用"}</p>
+        <span>${esc(storeText)}</span>
+        <div class="operator-account-edit">
+          <input data-account-owner="${index}" value="${esc(account.owner || "")}" placeholder="员工姓名" />
+          <select data-account-role="${index}">
+            <option value="owner" ${role === "owner" ? "selected" : ""}>店长权限</option>
+            <option value="admin" ${role === "admin" ? "selected" : ""}>管理员权限</option>
+          </select>
+          <label class="check-line"><input type="checkbox" data-account-enabled="${index}" ${account.enabled === false ? "" : "checked"} /> 启用</label>
+        </div>
+        <div class="operator-store-picker ${role === "admin" ? "hidden" : ""}" data-account-store-list="${index}"></div>
       </div>
-      <button class="ghost-button" data-reset-account="${esc(account.username)}">重置密码</button>
+      <div class="download-actions">
+        <button class="primary-button" data-save-account="${esc(account.username)}" data-account-index="${index}">保存修改</button>
+        <button class="ghost-button" data-reset-account="${esc(account.username)}">重置密码</button>
+        <button class="tool-button danger-mini" data-delete-account="${esc(account.username)}">删除</button>
+      </div>
     </div>
-  `).join("");
+  `;
+  }).join("");
+  state.operatorAccounts.forEach((account, index) => {
+    renderOperatorStorePicker(box.querySelector(`[data-account-store-list="${index}"]`), account.store_keys || [], index);
+  });
+  const status = $("#operatorAccountStatus");
+  if (status) status.textContent = `已读取 ${state.operatorAccounts.length} 个员工账号`;
+  box.querySelectorAll("[data-account-role]").forEach((select) => {
+    select.addEventListener("change", () => {
+      const list = box.querySelector(`[data-account-store-list="${select.dataset.accountRole}"]`);
+      list?.classList.toggle("hidden", select.value === "admin");
+    });
+  });
+  box.querySelectorAll("[data-save-account]").forEach((button) => {
+    button.addEventListener("click", () => updateOperatorAccount(button.dataset.saveAccount, Number(button.dataset.accountIndex)));
+  });
   box.querySelectorAll("[data-reset-account]").forEach((button) => {
     button.addEventListener("click", () => resetOperatorPassword(button.dataset.resetAccount));
+  });
+  box.querySelectorAll("[data-delete-account]").forEach((button) => {
+    button.addEventListener("click", () => deleteOperatorAccount(button.dataset.deleteAccount));
   });
 }
 
@@ -3564,14 +3687,17 @@ async function createOperatorAccount() {
   const owner = $("#newOperatorOwner")?.value.trim() || "";
   const username = $("#newOperatorUsername")?.value.trim() || owner;
   const password = $("#newOperatorPassword")?.value.trim() || "";
+  const accountRole = $("#newOperatorRole")?.value || "owner";
+  const storeKeys = accountRole === "owner" ? collectCheckedStoreKeys($("#newOperatorStoreList")) : [];
   if (!owner) {
-    showToast("请先填写店长姓名");
+    showToast("请先填写员工姓名");
     $("#newOperatorOwner")?.focus();
     return;
   }
   try {
-    const result = await api.createOperatorAccount(operatorPayload({ owner, username, password }));
+    const result = await api.createOperatorAccount(operatorPayload({ owner, username, password, account_role: accountRole, store_keys: storeKeys }));
     state.operatorAccounts = result.accounts || [];
+    renderNewOperatorStoreList();
     renderOperatorAccounts();
     $("#newOperatorOwner").value = "";
     $("#newOperatorUsername").value = "";
@@ -3582,13 +3708,44 @@ async function createOperatorAccount() {
   }
 }
 
+async function updateOperatorAccount(username, index) {
+  const row = document.querySelector(`[data-account-row="${index}"]`);
+  if (!row) return;
+  const accountRole = row.querySelector(`[data-account-role="${index}"]`)?.value || "owner";
+  const owner = row.querySelector(`[data-account-owner="${index}"]`)?.value.trim() || "";
+  const enabled = row.querySelector(`[data-account-enabled="${index}"]`)?.checked !== false;
+  const storeKeys = accountRole === "owner" ? collectCheckedStoreKeys(row) : [];
+  try {
+    const result = await api.updateOperatorAccount(operatorPayload({ username, owner, account_role: accountRole, enabled, store_keys: storeKeys }));
+    state.operatorAccounts = result.accounts || [];
+    renderOperatorAccounts();
+    showToast(`账号已更新：${username}`);
+  } catch (error) {
+    showToast(userFacingError(error));
+  }
+}
+
 async function resetOperatorPassword(username) {
   try {
     const result = await api.resetOperatorPassword(operatorPayload({ username }));
     showToast(`新密码：${result.initial_password}`);
-    const status = $("#masterImportStatus");
+    const status = $("#operatorAccountStatus") || $("#masterImportStatus");
     if (status) status.textContent = `${username} 的新密码：${result.initial_password}`;
     await loadOperatorAccounts(false);
+  } catch (error) {
+    showToast(userFacingError(error));
+  }
+}
+
+async function deleteOperatorAccount(username) {
+  if (!username) return;
+  const ok = confirm(`确认删除员工账号“${username}”？\n\n只删除登录账号，不删除店铺负责人配置。`);
+  if (!ok) return;
+  try {
+    const result = await api.deleteOperatorAccount(operatorPayload({ username }));
+    state.operatorAccounts = result.accounts || [];
+    renderOperatorAccounts();
+    showToast(`已删除账号：${result.deleted || username}`);
   } catch (error) {
     showToast(userFacingError(error));
   }
@@ -3599,7 +3756,7 @@ function renderProductInfoRows(result = {}) {
   const status = $("#productSearchStatus");
   if (!table) return;
   const items = result.items || [];
-  const columns = result.columns || ["货品编码", "货品名称", "规格名称", "商家编码（新）", "可销库存", "批发价", "成本价", "零售价", "商品资料修改时间", "库存修改时间", "来源接口"];
+  const columns = result.columns || ["货品编码", "货品名称", "规格名称", "货品分类名称", "商家编码（新）", "可销库存", "批发价", "成本价", "零售价", "商品资料修改时间", "库存修改时间", "来源接口"];
   const sourceFiles = result.source_files || [];
   if (status) {
     const sourceText = sourceFiles.length ? `来源：${sourceFiles.slice(0, 3).join("、")}` : "未读取到 ERP 商品基础信息文件";
@@ -4761,7 +4918,10 @@ function showPage(name) {
     imports: "importPage",
     reports: "reportsPage",
     masterdata: "masterDataPage",
+    operatorAccounts: "operatorAccountsPage",
+    storeInfo: "storeInfoPage",
     productInfo: "productInfoPage",
+    taskSuppressions: "taskSuppressionsPage",
     rules: "rulesPage",
     erpSettings: "erpSettingsPage",
   };
@@ -4771,8 +4931,11 @@ function showPage(name) {
   if (page) page.classList.add("page-active");
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === next));
   const active = document.querySelector(`.nav-item[data-page="${next}"] span`);
-  setText("#pageTitle", next === "erpSettings" ? "ERP 接口设置" : next === "productInfo" ? "商品信息查询" : (active?.textContent || "今日工作台"));
+  setText("#pageTitle", next === "erpSettings" ? "ERP 接口设置" : next === "operatorAccounts" ? "员工管理" : next === "storeInfo" ? "店铺信息管理" : next === "productInfo" ? "商品信息查询" : next === "taskSuppressions" ? "任务屏蔽清单" : (active?.textContent || "今日工作台"));
+  if (next === "operatorAccounts") loadOperatorAccounts(false);
+  if (next === "storeInfo") loadStoreOwners();
   if (next === "productInfo") loadProductInfo();
+  if (next === "taskSuppressions") loadTaskSuppressions();
   if (next === "erpSettings") renderErpSettings();
   if (next === "bargain" && currentOperator().role !== "owner") {
     openBargainHistoryDialog("pending");
@@ -4948,6 +5111,8 @@ function bindEvents() {
   $("#importOwnerMasterBtn")?.addEventListener("click", importOwnerMaster);
   $("#importSalesHistoryBtn")?.addEventListener("click", importSalesHistory);
   $("#createOperatorAccountBtn")?.addEventListener("click", createOperatorAccount);
+  $("#reloadOperatorAccountsBtn")?.addEventListener("click", () => loadOperatorAccounts(true));
+  $("#newOperatorRole")?.addEventListener("change", renderNewOperatorStoreList);
   $("#productSearchBtn")?.addEventListener("click", queryProductInfo);
   $("#reloadProductInfoBtn")?.addEventListener("click", loadProductInfo);
   ["#productCodeFilter", "#merchantCodeFilter", "#productNameFilter"].forEach((selector) => {
@@ -4958,6 +5123,7 @@ function bindEvents() {
   ["#suppressionStoreFilter", "#suppressionOwnerFilter", "#suppressionSkcFilter", "#suppressionMerchantFilter"].forEach((selector) => {
     $(selector)?.addEventListener("input", renderTaskSuppressions);
   });
+  $("#reloadTaskSuppressionsBtn")?.addEventListener("click", loadTaskSuppressions);
   document.querySelectorAll("[data-master-module]").forEach((button) => {
     button.addEventListener("click", () => openMasterModule(button.dataset.masterModule));
   });

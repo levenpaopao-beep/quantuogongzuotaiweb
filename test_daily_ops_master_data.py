@@ -79,7 +79,56 @@ class MasterDataImportTest(unittest.TestCase):
         self.assertEqual(result["username"], "胡娟")
         self.assertEqual(result["initial_password"], "Hu123456")
         self.assertEqual(accounts[0]["owner"], "胡娟")
+        self.assertEqual(accounts[0]["role"], "owner")
         self.assertNotIn("password_hash", accounts[0])
+
+    def test_create_and_update_operator_account_permissions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "operator_accounts.json"
+            with patch.object(daily_ops_app, "OPERATOR_ACCOUNTS_FILE", path):
+                daily_ops_app.create_operator_account(
+                    "胡娟",
+                    "hujuan",
+                    "Hu123456",
+                    role="owner",
+                    store_keys=["Temu::一弟", "Shein::琪琪"],
+                )
+                updated = daily_ops_app.update_operator_account(
+                    "hujuan",
+                    owner="胡娟",
+                    role="admin",
+                    store_keys=["Temu::一弟"],
+                )
+                accounts = updated["accounts"]
+
+        self.assertEqual(accounts[0]["username"], "hujuan")
+        self.assertEqual(accounts[0]["role"], "admin")
+        self.assertEqual(accounts[0]["store_keys"], [])
+
+    def test_operator_store_assignments_filter_by_account_permission(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            account_path = Path(tmp) / "operator_accounts.json"
+            owner_path = Path(tmp) / "store_owner_map.json"
+            with patch.object(daily_ops_app, "OPERATOR_ACCOUNTS_FILE", account_path), patch.object(daily_ops_app, "STORE_OWNER_MAP_FILE", owner_path):
+                daily_ops_app.save_store_owner_assignments([
+                    {"platform": "Temu", "store": "一弟", "owner": "小琴"},
+                    {"platform": "Shein", "store": "琪琪", "owner": "别人"},
+                ])
+                daily_ops_app.create_operator_account("胡娟", "hujuan", "Hu123456", role="owner", store_keys=["Shein::琪琪"])
+                rows = daily_ops_app.visible_store_owner_assignments({"role": "owner", "user": "hujuan"})
+
+        self.assertEqual([(row["platform"], row["store"]) for row in rows], [("Shein", "琪琪")])
+
+    def test_delete_operator_account_removes_manual_login(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "operator_accounts.json"
+            with patch.object(daily_ops_app, "OPERATOR_ACCOUNTS_FILE", path):
+                daily_ops_app.create_operator_account("胡娟", "", "Hu123456")
+                result = daily_ops_app.delete_operator_account("胡娟")
+                accounts = daily_ops_app.operator_accounts()["accounts"]
+
+        self.assertEqual(result["deleted"], "胡娟")
+        self.assertEqual(accounts, [])
 
     def test_query_erp_product_info_reads_latest_erp_product_file(self):
         with tempfile.TemporaryDirectory() as tmp:

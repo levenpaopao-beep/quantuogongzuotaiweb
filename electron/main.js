@@ -241,13 +241,11 @@ function renderSmokeScript() {
       requireVisible("#businessKpis", "经营报表关键指标");
       requireVisible("#businessStoreTable", "经营报表店铺表格");
       await openPage("masterdata", "#masterDataPage.page-active", "基础资料页面");
-      requireVisible('[data-master-module="store-info"]', "店铺信息管理模块入口");
-      document.querySelector('[data-master-module="store-info"]')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      requireVisible('[data-page="storeInfo"]', "店铺信息管理模块入口");
+      await openPage("storeInfo", "#storeInfoPage.page-active", "店铺信息管理页面");
       requireVisible("#saveStoreOwnersBtn", "保存店铺配置按钮");
       requireVisible("#platformChipList", "平台标签");
-      document.querySelector("[data-master-dialog-close]")?.click();
-      await new Promise((resolve) => setTimeout(resolve, 40));
+      await openPage("masterdata", "#masterDataPage.page-active", "基础资料页面");
       requireVisible('[data-admin-only="master-import"]', "管理员基础资料导入入口");
       document.querySelector('[data-master-module="master-import"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 80));
@@ -256,10 +254,8 @@ function renderSmokeScript() {
       document.querySelector("[data-master-dialog-close]")?.click();
       await new Promise((resolve) => setTimeout(resolve, 40));
       requireVisible('[data-admin-only="operator-accounts"]', "管理员店长账号入口");
-      document.querySelector('[data-master-module="operator-accounts"]')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await openPage("operatorAccounts", "#operatorAccountsPage.page-active", "员工管理页面");
       requireVisible("#createOperatorAccountBtn", "管理员新增店长账号按钮");
-      document.querySelector("[data-master-dialog-close]")?.click();
       await openPage("rules", "#rulesPage.page-active", "系统设置页面");
       requireVisible('[data-settings-module="erp-settings"]', "ERP 接口设置模块入口");
       document.querySelector('[data-settings-module="erp-settings"]')?.click();
@@ -530,6 +526,8 @@ ipcMain.handle("api:export-sales", (_event, payload) => runPython("export-sales"
 ipcMain.handle("api:sales-compare", (_event, payload) => runPython("sales-compare", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:operator-accounts", (_event, payload) => runPython("operator-accounts", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:create-operator-account", (_event, payload) => runPython("create-operator-account", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:update-operator-account", (_event, payload) => runPython("update-operator-account", [], JSON.stringify(payload || {})));
+ipcMain.handle("api:delete-operator-account", (_event, payload) => runPython("delete-operator-account", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:reset-operator-password", (_event, payload) => runPython("reset-operator-password", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:erp-product-info", (_event, payload) => runPython("erp-product-info", [], JSON.stringify(payload || {})));
 ipcMain.handle("api:import-owner-master", (_event, payload) => runPython("import-owner-master", [], JSON.stringify(payload || {})));

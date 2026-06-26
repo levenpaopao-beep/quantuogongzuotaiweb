@@ -488,6 +488,7 @@ def task_query_payload(params):
         "overdue": params.get("overdue", [""])[0],
         "unassigned": params.get("unassigned", [""])[0],
         "reworked": params.get("reworked", [""])[0],
+        "clearance_low_price": params.get("clearance_low_price", [""])[0],
         "search": params.get("search", [""])[0],
     }
 
@@ -614,11 +615,11 @@ def asset_store():
     return daily_ops_assets.AssetSnapshotStore(IMPORTANT_ASSETS_DB)
 
 
-def record_asset_metric(metric_date, metric_key, value, source_file=""):
-    return asset_store().upsert_metric(metric_date, metric_key, value, source_file)
+def record_asset_metric(metric_date, metric_key, value, source_file="", owner=""):
+    return asset_store().upsert_metric(metric_date, metric_key, value, source_file, owner=owner)
 
 
-def count_temu_hot_skc():
+def count_temu_hot_skc(owner=""):
     hot_files = temu_hot_files()
     if not hot_files:
         return {"value": None, "source_file": "", "source": "missing"}
@@ -628,10 +629,17 @@ def count_temu_hot_skc():
     module.HOT_FILES = hot_files
     rows = module.read_hot_rows()
     groups = module.aggregate_groups(rows)
-    return {"value": len({(group["shop"], group["skc"]) for group in groups.values() if group.get("skc")}), "source_file": hot_files[-1].name, "source": "latest_file"}
+    owner_name = norm(owner)
+    owners = load_owners()
+    values = {
+        (group["shop"], group["skc"])
+        for group in groups.values()
+        if group.get("skc") and (not owner_name or owners.get(group["shop"], "") == owner_name)
+    }
+    return {"value": len(values), "source_file": hot_files[-1].name, "source": "latest_file"}
 
 
-def count_shein_hot_skc():
+def count_shein_hot_skc(owner=""):
     try:
         module = load_module(ROOT / "shein_hot_warning_v11_analysis.py", "_daily_shein_hot_assets")
         module.ROOT = ROOT
@@ -645,14 +653,18 @@ def count_shein_hot_skc():
         source_names = []
         for paths in module.source_files().values():
             source_names.extend(path.name for path in paths)
+        owner_name = norm(owner)
+        if owner_name:
+            hot = {key: item for key, item in hot.items() if norm(item.get("负责人") or module.STORE_OWNER.get(key[0], "")) == owner_name}
         return {"value": len(hot), "source_file": "、".join(sorted(set(source_names))), "source": "latest_file"}
     except Exception:
         return {"value": None, "source_file": "", "source": "missing"}
 
 
-def asset_overview(anchor_date=""):
+def asset_overview(anchor_date="", role="admin", user=""):
     metric_date = anchor_date or datetime.now().date().isoformat()
-    metrics = asset_store().overview(["temu_hot_skc", "shein_hot_skc"], metric_date)
+    owner = norm(user) if role != "admin" else ""
+    metrics = asset_store().overview(["temu_hot_skc", "shein_hot_skc"], metric_date, owner=owner)
     fallbacks = {
         "temu_hot_skc": count_temu_hot_skc,
         "shein_hot_skc": count_shein_hot_skc,
@@ -661,12 +673,12 @@ def asset_overview(anchor_date=""):
         if metrics.get(key, {}).get("value") is not None:
             metrics[key]["source"] = "asset_db"
             continue
-        fallback = loader()
+        fallback = loader(owner)
         metrics[key]["value"] = fallback.get("value")
         metrics[key]["source_file"] = fallback.get("source_file", "")
         metrics[key]["source"] = fallback.get("source", "latest_file")
         if fallback.get("value") is not None:
-            record_asset_metric(metric_date, key, fallback.get("value"), fallback.get("source_file", ""))
+            record_asset_metric(metric_date, key, fallback.get("value"), fallback.get("source_file", ""), owner=owner)
             metrics[key]["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return {
         "database": str(IMPORTANT_ASSETS_DB),
@@ -698,18 +710,62 @@ def operator_accounts():
     return {"accounts": accounts}
 
 
-def create_operator_account(owner, username="", password="", enabled=True):
+def store_permission_key(platform, store):
+    platform = daily_ops_master_data.platform_name(platform, "")
+    store = daily_ops_master_data.clean_store_name(store)
+    return f"{platform}::{store}" if platform and store else ""
+
+
+def normalize_store_keys(store_keys):
+    keys = []
+    seen = set()
+    for raw in store_keys or []:
+        text = daily_ops_master_data.norm(raw)
+        if "::" in text:
+            platform, store = text.split("::", 1)
+            key = store_permission_key(platform, store)
+        else:
+            key = text
+        if key and key not in seen:
+            seen.add(key)
+            keys.append(key)
+    return keys
+
+
+def account_for_operator(user):
+    user = daily_ops_master_data.norm(user)
+    if not user:
+        return {}
+    for account in daily_ops_master_data.load_operator_accounts(OPERATOR_ACCOUNTS_FILE).get("accounts", []):
+        if daily_ops_master_data.norm(account.get("username")) == user or daily_ops_master_data.norm(account.get("owner")) == user:
+            safe = dict(account)
+            safe.pop("password_hash", None)
+            safe.pop("password_salt", None)
+            return safe
+    return {}
+
+
+def create_operator_account(owner, username="", password="", enabled=True, role="owner", store_keys=None):
     owner = daily_ops_master_data.norm(owner)
     username = daily_ops_master_data.norm(username) or owner
+    role = daily_ops_master_data.norm(role) or "owner"
+    if role not in {"admin", "owner"}:
+        raise ValueError("权限只能选择管理员或店长")
     if not owner:
-        raise ValueError("请填写店长姓名")
+        raise ValueError("请填写员工姓名")
     if not username:
         raise ValueError("请填写登录账号")
     payload = daily_ops_master_data.load_operator_accounts(OPERATOR_ACCOUNTS_FILE)
     existing = payload.get("accounts", [])
     if any(daily_ops_master_data.norm(row.get("username")) == username for row in existing):
         raise ValueError("账号已存在")
-    account = {"owner": owner, "username": username, "role": "owner", "enabled": enabled is not False}
+    account = {
+        "owner": owner,
+        "username": username,
+        "role": role,
+        "enabled": enabled is not False,
+        "store_keys": normalize_store_keys(store_keys) if role == "owner" else [],
+    }
     password_factory = (lambda _account: password) if password else None
     result = daily_ops_master_data.save_operator_accounts(OPERATOR_ACCOUNTS_FILE, existing + [account], password_factory)
     return {
@@ -717,6 +773,43 @@ def create_operator_account(owner, username="", password="", enabled=True):
         "username": username,
         "initial_password": result.get("initial_passwords", {}).get(username, ""),
     }
+
+
+def update_operator_account(username, owner="", role="owner", enabled=True, store_keys=None):
+    username = daily_ops_master_data.norm(username)
+    role = daily_ops_master_data.norm(role) or "owner"
+    if role not in {"admin", "owner"}:
+        raise ValueError("权限只能选择管理员或店长")
+    if not username:
+        raise ValueError("请选择要修改的账号")
+    payload = daily_ops_master_data.load_operator_accounts(OPERATOR_ACCOUNTS_FILE)
+    accounts = payload.get("accounts", [])
+    account = next((row for row in accounts if daily_ops_master_data.norm(row.get("username")) == username), None)
+    if not account:
+        raise ValueError("账号不存在")
+    account["owner"] = daily_ops_master_data.norm(owner) or daily_ops_master_data.norm(account.get("owner")) or username
+    account["role"] = role
+    account["enabled"] = enabled is not False
+    account["store_keys"] = normalize_store_keys(store_keys) if role == "owner" else []
+    account["updated_at"] = f"{datetime.now():%Y-%m-%d %H:%M:%S}"
+    OPERATOR_ACCOUNTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    OPERATOR_ACCOUNTS_FILE.write_text(json.dumps({"accounts": accounts, "updated_at": account["updated_at"]}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"username": username, "accounts": operator_accounts()["accounts"]}
+
+
+def delete_operator_account(username):
+    username = daily_ops_master_data.norm(username)
+    if not username:
+        raise ValueError("请选择要删除的账号")
+    payload = daily_ops_master_data.load_operator_accounts(OPERATOR_ACCOUNTS_FILE)
+    existing = payload.get("accounts", [])
+    kept = [row for row in existing if daily_ops_master_data.norm(row.get("username")) != username]
+    if len(kept) == len(existing):
+        raise ValueError("账号不存在")
+    payload["accounts"] = kept
+    payload["updated_at"] = f"{datetime.now():%Y-%m-%d %H:%M:%S}"
+    OPERATOR_ACCOUNTS_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"deleted": username, "accounts": operator_accounts()["accounts"]}
 
 
 def reset_operator_account_password(username, password=""):
@@ -1175,6 +1268,13 @@ def visible_store_owner_assignments(operator):
     rows = load_store_owner_assignments()
     if role == "admin":
         return rows
+    account = account_for_operator(user)
+    allowed_keys = set(normalize_store_keys(account.get("store_keys", [])))
+    if allowed_keys:
+        return [
+            item for item in rows
+            if item.get("enabled", True) is not False and store_permission_key(item.get("platform"), item.get("store")) in allowed_keys
+        ]
     return [
         item for item in rows
         if item.get("enabled", True) is not False and norm(item.get("owner")) == user
@@ -1749,6 +1849,7 @@ def run_temu_inventory(output):
     module.COMBO_FILE = erp_combo_files()[0] if erp_combo_files() else ERP_DIR / "erp产品组合装基础信息表.xlsx"
     module.OWNER_FILE = OWNER_FILE
     module.OUTPUT = output
+    module.load_owner_map = load_owners
     def latest_files_override(pattern):
         if "Temu爆旺款" in pattern:
             return temu_hot_files()
@@ -1756,7 +1857,7 @@ def run_temu_inventory(output):
             return temu_sales_files()
         return latest_by_date(TEMU_DIR, pattern)
     module.latest_files = latest_files_override
-    owners = module.load_owner_map()
+    owners = load_owners()
     erp, erp_rows, combo_rows = module.load_erp_records()
     hot, hot_files = module.load_hot_skc()
     groups, summary, source_rows, skipped, source_files = module.read_temu_rows(erp, owners)
@@ -1801,7 +1902,8 @@ def run_temu_hot(output):
     module.COMBO_FILE = erp_combo_files()[0] if erp_combo_files() else ERP_DIR / "erp产品组合装基础信息表.xlsx"
     module.OWNER_FILE = OWNER_FILE
     module.OUTPUT_FILE = output
-    owners = module.load_owners()
+    module.load_owners = load_owners
+    owners = load_owners()
     erp = module.load_erp()
     hot_rows = module.read_hot_rows()
     hot_groups = module.aggregate_groups(hot_rows)
@@ -1812,7 +1914,15 @@ def run_temu_hot(output):
     overview_rows = module.build_overview(operation_rows, hot_groups, owners)
     module.write_workbook(overview_rows, operation_rows)
     hot_skc = len({(group["shop"], group["skc"]) for group in hot_groups.values() if group.get("skc")})
-    record_asset_metric(datetime.now().date().isoformat(), "temu_hot_skc", hot_skc, module.HOT_FILE.name)
+    today = datetime.now().date().isoformat()
+    record_asset_metric(today, "temu_hot_skc", hot_skc, module.HOT_FILE.name)
+    owner_skc = defaultdict(set)
+    for group in hot_groups.values():
+        owner = owners.get(group["shop"], "")
+        if owner and group.get("skc"):
+            owner_skc[owner].add((group["shop"], group["skc"]))
+    for owner, values in owner_skc.items():
+        record_asset_metric(today, "temu_hot_skc", len(values), module.HOT_FILE.name, owner=owner)
     return {"rows": len(operation_rows), "source_files": [p.name for p in sales_files], "hot_file": module.HOT_FILE.name, "hot_skc": hot_skc}
 
 
@@ -1826,6 +1936,7 @@ def run_temu_slow(output):
     module.RULES = load_rules()
     module.OUTPUT_DIR = OUTPUT_DIR
     module.OUTPUT = output
+    module.load_owner_map = load_owners
     module.main()
     return {"source_files": [p.name for p in module.TEMU_SALES_FILES]}
 
@@ -1882,6 +1993,7 @@ def run_low_score_warning(output):
     module.TEMU_HOT_FILES = hot_files
     module.ERP_FILES = erp_files
     module.OUTPUT = output
+    module.load_owner_map = load_owners
     result = module.main()
     result["sales_files"] = [path.name for path in sales_files]
     result["hot_files"] = [path.name for path in hot_files]
@@ -1997,7 +2109,16 @@ def run_shein_hot(output):
         ],
     }
     write_shein_hot_workbook(payload, output)
-    record_asset_metric(datetime.now().date().isoformat(), "shein_hot_skc", len(hot), "、".join(sorted({path.name for paths in module.source_files().values() for path in paths})))
+    today = datetime.now().date().isoformat()
+    source_files = "、".join(sorted({path.name for paths in module.source_files().values() for path in paths}))
+    record_asset_metric(today, "shein_hot_skc", len(hot), source_files)
+    owner_skc = defaultdict(set)
+    for (store, skc_value), item in hot.items():
+        owner = norm(item.get("负责人") or module.STORE_OWNER.get(store, ""))
+        if owner and skc_value:
+            owner_skc[owner].add((store, skc_value))
+    for owner, values in owner_skc.items():
+        record_asset_metric(today, "shein_hot_skc", len(values), source_files, owner=owner)
     return {**checks, "rows": len(operations), "hot_skc": len(hot)}
 
 
@@ -2173,6 +2294,7 @@ def load_erp_price_map():
             records[code] = {
                 "货品名称": norm(cell(row, headers, "货品名称")),
                 "规格名称": norm(cell(row, headers, "规格名称")),
+                "货品分类名称": norm(cell(row, headers, "货品分类名称", "货品分类")),
                 "成本价": to_number(cell(row, headers, "成本价")),
                 "批发价": to_number(cell(row, headers, "批发报价", "批发价")),
                 "来源": path.name,
@@ -2187,6 +2309,7 @@ def load_erp_price_map():
             records[code] = {
                 "货品名称": norm(cell(row, headers, "组合装名称", "货品名称")),
                 "规格名称": norm(cell(row, headers, "组合装简称", "规格名称")),
+                "货品分类名称": norm(cell(row, headers, "货品分类名称", "货品分类")),
                 "成本价": to_number(cell(row, headers, "成本价")),
                 "批发价": to_number(cell(row, headers, "批发价", "批发报价")),
                 "来源": combo.name,
@@ -2240,6 +2363,7 @@ def run_temu_price(output):
                 "商家编码": sku,
                 "货品名称": info["货品名称"],
                 "货品规格": info["规格名称"],
+                "货品分类名称": info.get("货品分类名称", ""),
                 "申报价": price,
                 "成本价": info["成本价"],
                 "批发价": info["批发价"],
@@ -2265,8 +2389,8 @@ def run_temu_price(output):
     for store in sorted(summary):
         item = summary[store]
         ws.append([store, owners.get(store, ""), len(item["skc"]), item["sales7"], item["sales30"], len(item["cost_skc"]), len(item["wholesale_skc"])])
-    write_rows(wb, "低于成本价", below_cost, ["店铺", "SKC", "商家编码", "货品名称", "货品规格", "申报价", "成本价", "负责人", "7天销量", "30天销量", "源SKU", "源文件", "源行"])
-    write_rows(wb, "低于批发价80%", below_wholesale, ["店铺", "SKC", "商家编码", "货品名称", "货品规格", "申报价", "成本价", "批发价", "批发价80%", "负责人", "7天销量", "30天销量", "源SKU", "源文件", "源行"])
+    write_rows(wb, "低于成本价", below_cost, ["店铺", "SKC", "商家编码", "货品名称", "货品规格", "货品分类名称", "申报价", "成本价", "负责人", "7天销量", "30天销量", "源SKU", "源文件", "源行"])
+    write_rows(wb, "低于批发价80%", below_wholesale, ["店铺", "SKC", "商家编码", "货品名称", "货品规格", "货品分类名称", "申报价", "成本价", "批发价", "批发价80%", "负责人", "7天销量", "30天销量", "源SKU", "源文件", "源行"])
     check = wb.create_sheet("数据校验")
     for row in [
         ["检查项", "结果"],
@@ -2381,7 +2505,7 @@ def search_database(query, limit=100):
 
 
 ERP_PRODUCT_INFO_COLUMNS = [
-    "货品编码", "货品名称", "规格名称", "商家编码（新）", "可销库存",
+    "货品编码", "货品名称", "规格名称", "货品分类名称", "商家编码（新）", "可销库存",
     "批发价", "成本价", "零售价", "商品资料修改时间", "库存修改时间", "来源接口",
 ]
 
@@ -2437,6 +2561,7 @@ def _merged_product_record(product, stock):
         "货品编码": product.get("货品编码", ""),
         "货品名称": product.get("货品名称", ""),
         "规格名称": product.get("规格名称", ""),
+        "货品分类名称": product.get("货品分类名称", ""),
         "商家编码（新）": product.get("商家编码（新）", "") or product.get("商家编码", ""),
         "可销库存": stock.get("可销库存", "") if stock else "",
         "批发价": product.get("批发价", "") or product.get("批发报价", ""),
@@ -2482,6 +2607,8 @@ def query_erp_product_info(query="", limit=100, product_code="", merchant_code="
                 continue
             stock_key = record.get("商家编码（新）", "") or record.get("商家编码", "") or record.get("平台规格编码", "")
             stock = stock_lookup.get(stock_key, {})
+            if stock_lookup and not stock:
+                continue
             merged = _merged_product_record(record, stock)
             matches.append({
                 "file_name": path.name,
@@ -2986,7 +3113,7 @@ def filter_operation_task_search(rows, search=""):
     ]
 
 
-def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only="", search=""):
+def list_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only="", clearance_low_price="", search=""):
     rows = operation_task_store().list_tasks(
         role=role,
         user=user if norm(role) != "admin" else "",
@@ -3000,6 +3127,7 @@ def list_operation_tasks(role="admin", user="", status="", task_type="", store="
         priority=priority,
         reworked=reworked,
         open_only=open_only,
+        clearance_low_price=clearance_low_price,
     )
     if norm(role) == "admin" and norm(user):
         rows = [row for row in rows if norm(row.get("owner")) == norm(user)]
@@ -3100,13 +3228,15 @@ def operation_task_export_title(filters):
         parts.append("未分配")
     if norm(filters.get("reworked")) in {"1", "true", "是", "返工"}:
         parts.append("返工")
+    if norm(filters.get("clearance_low_price")) in {"1", "true", "是", "清仓低价"}:
+        parts.append("清仓低价")
     if norm(filters.get("open_only")) in {"1", "true", "是", "未完成", "待办"}:
         parts.append("未完成")
     return "-".join(parts)
 
 
-def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only="", search=""):
-    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned, next_handler=next_handler, priority=priority, reworked=reworked, open_only=open_only, search=search)
+def export_operation_tasks(role="admin", user="", status="", task_type="", store="", platform="", overdue="", unassigned="", next_handler="", priority="", reworked="", open_only="", clearance_low_price="", search=""):
+    rows = list_operation_tasks(role=role, user=user, status=status, task_type=task_type, store=store, platform=platform, overdue=overdue, unassigned=unassigned, next_handler=next_handler, priority=priority, reworked=reworked, open_only=open_only, clearance_low_price=clearance_low_price, search=search)
     history_rows = sum(len(row.get("history") or []) for row in rows)
     filters = {
         "role": role,
@@ -3121,6 +3251,7 @@ def export_operation_tasks(role="admin", user="", status="", task_type="", store
         "priority": priority,
         "reworked": reworked,
         "open_only": open_only,
+        "clearance_low_price": clearance_low_price,
         "search": search,
     }
     out = output_path(operation_task_export_title(filters), "V1")
@@ -3153,6 +3284,7 @@ def handle_tasks_api(action, headers, payload):
                 priority=payload.get("priority", ""),
                 reworked=payload.get("reworked", ""),
                 open_only=payload.get("open_only", ""),
+                clearance_low_price=payload.get("clearance_low_price", "") if operator.get("role") == "admin" else "",
                 search=payload.get("search", ""),
             )
             page = task_page_payload(rows, payload.get("limit", ""), payload.get("offset", ""))
@@ -3211,6 +3343,7 @@ def handle_tasks_api(action, headers, payload):
                 priority=payload.get("priority", ""),
                 reworked=payload.get("reworked", ""),
                 open_only=payload.get("open_only", ""),
+                clearance_low_price=payload.get("clearance_low_price", "") if operator.get("role") == "admin" else "",
                 search=payload.get("search", ""),
             )
             grant_download(token, result.get("file", ""))

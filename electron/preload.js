@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld("dailyOps", {
   salesCompare: (payload) => ipcRenderer.invoke("api:sales-compare", payload || {}),
   operatorAccounts: (payload) => ipcRenderer.invoke("api:operator-accounts", payload || {}),
   createOperatorAccount: (payload) => ipcRenderer.invoke("api:create-operator-account", payload || {}),
+  updateOperatorAccount: (payload) => ipcRenderer.invoke("api:update-operator-account", payload || {}),
+  deleteOperatorAccount: (payload) => ipcRenderer.invoke("api:delete-operator-account", payload || {}),
   resetOperatorPassword: (payload) => ipcRenderer.invoke("api:reset-operator-password", payload || {}),
   erpProductInfo: (payload) => ipcRenderer.invoke("api:erp-product-info", payload || {}),
   importOwnerMaster: (payload) => ipcRenderer.invoke("api:import-owner-master", payload || {}),
