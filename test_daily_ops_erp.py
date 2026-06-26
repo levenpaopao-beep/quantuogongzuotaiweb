@@ -552,6 +552,42 @@ class ErpSyncTest(unittest.TestCase):
         self.assertEqual(saved["last_stock_count"], 8)
         self.assertIn("接口超时", saved["last_manual_sync_message"])
 
+    def test_sync_erp_base_data_records_available_stock_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rules_file = root / "report_rules.json"
+            local_file = root / "erp_api.local.json"
+            lock_file = root / "erp_sync.lock"
+            erp_dir = root / "erp数据源"
+            available_file = erp_dir / "erp可用库存_接口同步_最新.xlsx"
+            rules_file.write_text(json.dumps({"erp_api": {"enabled": True}}, ensure_ascii=False), encoding="utf-8")
+
+            def synced(_settings, _erp_dir):
+                return {
+                    "status": "synced",
+                    "message": "已同步货品档案 2 条、库存快照 0 条、可用库存 1 条",
+                    "product_count": 2,
+                    "stock_count": 0,
+                    "available_stock_count": 1,
+                    "product_pages": 1,
+                    "stock_pages": 1,
+                    "product_file": str(erp_dir / "erp产品基础信息表_接口同步_最新.xlsx"),
+                    "stock_file": str(erp_dir / "erp库存同步_最新.xlsx"),
+                    "extra_files": {"available_stock": str(available_file)},
+                }
+
+            with patch.object(daily_ops_app, "RULES_FILE", rules_file), \
+                patch.object(daily_ops_app, "ERP_API_LOCAL_FILE", local_file), \
+                patch.object(daily_ops_app, "ERP_SYNC_LOCK_FILE", lock_file), \
+                patch.object(daily_ops_app, "ERP_DIR", erp_dir), \
+                patch("daily_ops_erp.manual_sync", side_effect=synced):
+                result = daily_ops_app.sync_erp_base_data()
+                saved = json.loads(rules_file.read_text(encoding="utf-8"))["erp_api"]
+
+        self.assertEqual(result["status"], "synced")
+        self.assertEqual(saved["last_available_stock_count"], 1)
+        self.assertEqual(saved["last_available_stock_file"], str(available_file))
+
     def test_erp_base_files_prefers_latest_sync_file_without_deleting_history_or_uploaded_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             erp_dir = Path(tmp)

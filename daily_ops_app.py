@@ -1245,10 +1245,12 @@ def sync_erp_base_data():
             settings["last_success_sync_at"] = now_text
             settings["last_product_count"] = result.get("product_count", 0)
             settings["last_stock_count"] = result.get("stock_count", 0)
+            settings["last_available_stock_count"] = result.get("available_stock_count", 0)
             settings["last_product_pages"] = result.get("product_pages", 0)
             settings["last_stock_pages"] = result.get("stock_pages", 0)
             settings["last_product_file"] = result.get("product_file", "")
             settings["last_stock_file"] = result.get("stock_file", "")
+            settings["last_available_stock_file"] = result.get("extra_files", {}).get("available_stock", "")
         rules["erp_api"] = settings
         save_rules(rules)
         return result

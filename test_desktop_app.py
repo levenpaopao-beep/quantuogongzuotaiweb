@@ -498,6 +498,15 @@ class DesktopAppTest(unittest.TestCase):
         self.assertIn('setErpStatus("running", "ERP 同步未开始"', body)
         self.assertLess(body.index('result.status === "blocked"'), body.index("const pages ="))
 
+    def test_erp_settings_shows_latest_data_overview(self):
+        html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
+        source = (ROOT / "electron" / "renderer.js").read_text(encoding="utf-8")
+        self.assertIn("erpLatestDataOverview", html)
+        self.assertIn("最新 ERP 数据", html)
+        self.assertIn("renderErpLatestOverview", source)
+        for text in ["最新成功", "商品资料", "库存快照", "可用库存", "文件位置"]:
+            self.assertIn(text, source + html)
+
     def test_bargain_draft_table_has_horizontal_scroll_boundary(self):
         html = (ROOT / "electron" / "renderer.html").read_text(encoding="utf-8")
         css = (ROOT / "electron" / "renderer.css").read_text(encoding="utf-8")

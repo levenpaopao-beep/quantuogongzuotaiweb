@@ -2127,6 +2127,63 @@ label { color: var(--muted); font-size: 12px; }
   color: var(--muted);
   font-weight: 800;
 }
+.erp-latest-data {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+.erp-latest-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: var(--ink);
+}
+.erp-latest-head span,
+.erp-latest-empty {
+  color: var(--muted);
+  font-weight: 800;
+}
+.erp-latest-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.erp-latest-grid div {
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #fff;
+  display: grid;
+  gap: 3px;
+}
+.erp-latest-grid span,
+.erp-latest-grid em,
+.erp-latest-files {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+.erp-latest-grid strong {
+  color: var(--ink);
+  font-size: 18px;
+}
+.erp-latest-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.erp-latest-files strong {
+  color: var(--ink);
+}
+.erp-overview-note {
+  border: 1px solid #ffd89a;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff8e8;
+  color: #8a5b00;
+  font-weight: 800;
+}
 .compact-page-intro {
   display: flex;
   align-items: center;

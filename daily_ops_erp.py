@@ -480,6 +480,7 @@ def manual_sync(settings, erp_dir, now=None):
         "message": f"已同步{'、'.join(message_parts)}",
         "product_count": len(product_rows),
         "stock_count": len(stock_rows),
+        "available_stock_count": len(available_sync["rows"]),
         "product_pages": product_sync["pages"],
         "stock_pages": stock_sync["pages"],
         "product_total": product_sync["total"],

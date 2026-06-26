@@ -3007,6 +3007,7 @@ function renderErpSettings() {
       input.value = value || "";
     }
   });
+  renderErpLatestOverview(settings);
   const enabled = settings.enabled ? "已启用" : "未启用";
   const auto = settings.auto_sync ? "自动同步开启" : "手动同步为主";
   const failed = settings.last_manual_sync_status === "failed";
@@ -3021,6 +3022,62 @@ function renderErpSettings() {
   const environment = settings.environment === "prod" ? "正式环境" : "测试环境";
   const message = `${settings.provider || "旺店通"} · ${environment} · ${enabled} · ${auto} · 仓库 ${warehouse} · ${last}${success ? ` · ${success}` : ""}${counts ? ` · ${counts}` : ""}`;
   setErpStatus(failed ? "failed" : "idle", failed ? "ERP 今日同步失败" : "ERP 设置状态", message, failed ? settings.last_manual_sync_message : "");
+}
+
+function erpNumber(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function erpFileName(path = "") {
+  return String(path || "").split(/[\\/]/).filter(Boolean).pop() || "未生成";
+}
+
+function erpAvailableStockCount(settings = {}) {
+  if (settings.last_available_stock_count !== undefined && settings.last_available_stock_count !== null) {
+    return erpNumber(settings.last_available_stock_count);
+  }
+  const match = String(settings.last_manual_sync_message || "").match(/可用库存\s*(\d+)\s*条/);
+  return match ? erpNumber(match[1]) : 0;
+}
+
+function renderErpLatestOverview(settings = {}) {
+  const box = $("#erpLatestDataOverview");
+  if (!box) return;
+  const lastSuccess = settings.last_success_sync_at || (settings.last_manual_sync_status === "synced" ? settings.last_manual_sync_at : "");
+  const productCount = erpNumber(settings.last_product_count);
+  const stockCount = erpNumber(settings.last_stock_count);
+  const availableCount = erpAvailableStockCount(settings);
+  const productPages = erpNumber(settings.last_product_pages);
+  const stockPages = erpNumber(settings.last_stock_pages);
+  const productFile = settings.last_product_file || "";
+  const stockFile = settings.last_stock_file || "";
+  const availableFile = settings.last_available_stock_file || "";
+  if (!lastSuccess && !productFile && !stockFile && !availableFile) {
+    box.innerHTML = `<div class="erp-latest-empty">最新 ERP 数据：还没有成功同步记录。</div>`;
+    return;
+  }
+  const stockNote = settings.last_manual_sync_status === "synced" && stockCount === 0
+    ? `<div class="erp-overview-note">库存快照接口返回 0 条，不代表商品资料失败；商品资料仍按最新成功数据使用。</div>`
+    : "";
+  box.innerHTML = `
+    <div class="erp-latest-head">
+      <strong>最新 ERP 数据</strong>
+      <span>最新成功：${esc(lastSuccess || "未记录")}</span>
+    </div>
+    <div class="erp-latest-grid">
+      <div><span>商品资料</span><strong>${productCount} 条</strong><em>${productPages} 页</em></div>
+      <div><span>库存快照</span><strong>${stockCount} 条</strong><em>${stockPages} 页</em></div>
+      <div><span>可用库存</span><strong>${availableCount} 条</strong><em>${availableFile ? "已生成文件" : "未生成文件"}</em></div>
+    </div>
+    <div class="erp-latest-files">
+      <strong>文件位置</strong>
+      <span>商品：${esc(erpFileName(productFile))}</span>
+      <span>库存：${esc(erpFileName(stockFile))}</span>
+      <span>可用库存：${esc(erpFileName(availableFile))}</span>
+    </div>
+    ${stockNote}
+  `;
 }
 
 function renderStoreOwners(assignments = state.storeOwners) {
